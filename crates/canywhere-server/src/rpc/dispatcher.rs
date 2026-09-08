@@ -124,12 +124,49 @@ impl RpcDispatcher {
                 };
                 let _ = self.repo.record_message(&user_msg);
 
-                let turn_id = self.adapter.submit_turn(&chat.id, &thread_id, &message_id, &params.content).await?;
+                let turn_id = self.adapter.submit_turn(
+                    &chat.id,
+                    &thread_id,
+                    &message_id,
+                    &params.content,
+                    params.model.as_deref(),
+                ).await?;
 
                 let _ = self.repo.update_chat_status(&chat.id, ChatStatus::Running, None);
 
                 Ok(serde_json::to_value(TurnSendResult {
                     turn_id,
+                    status: ChatStatus::Running,
+                })?)
+            }
+
+            "turn.steer" => {
+                let params: TurnSteerParams = serde_json::from_value(p)?;
+                let chat = match self.repo.get_chat(&params.chat_id)? {
+                    Some(c) => c,
+                    None => anyhow::bail!("Chat not found"),
+                };
+                let thread_id = chat.external_thread_id.unwrap_or_default();
+                let message_id = nanoid::nanoid!(16);
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+
+                let user_msg = Message {
+                    id: message_id,
+                    chat_id: chat.id.clone(),
+                    turn_id: Some(params.turn_id.clone()),
+                    role: MessageRole::User,
+                    blocks: vec![MessageBlock::Text { content: format!("[Steer] {}", params.content) }],
+                    created_at: now,
+                    streaming: false,
+                };
+                let _ = self.repo.record_message(&user_msg);
+
+                let steered_turn_id = self.adapter.steer_turn(&thread_id, &params.turn_id, &params.content).await?;
+                Ok(serde_json::to_value(TurnSteerResult {
+                    turn_id: steered_turn_id,
                     status: ChatStatus::Running,
                 })?)
             }
@@ -148,7 +185,8 @@ impl RpcDispatcher {
             "approval.respond" => {
                 let approval_id = p["approvalId"].as_str().ok_or_else(|| anyhow::anyhow!("approvalId required"))?;
                 let decision = p["decision"].as_str().unwrap_or("accept");
-                // Notify adapter of approval decision if needed
+                // Notify adapter of approval decision
+                let _ = self.adapter.respond_approval(approval_id, decision).await;
                 Ok(serde_json::json!({ "status": "ok", "approvalId": approval_id, "decision": decision }))
             }
 
@@ -160,6 +198,28 @@ impl RpcDispatcher {
             "device.list" => {
                 let devices = self.repo.list_devices()?;
                 Ok(serde_json::to_value(DeviceListResult { devices })?)
+            }
+
+            "model.list" => {
+                let models = self.adapter.list_models().await?;
+                Ok(serde_json::to_value(ModelListResult { models })?)
+            }
+
+            "provider.list" => {
+                let providers = vec![Provider {
+                    id: "codex".to_string(),
+                    name: "OpenAI Codex".to_string(),
+                    description: "Local Codex CLI via app-server --stdio".to_string(),
+                    is_configured: true,
+                    capabilities: AdapterCapabilities {
+                        supports_reasoning_stream: true,
+                        supports_file_diffs: true,
+                        supports_steering: true,
+                        supports_interrupt: true,
+                        supports_session_resumption: true,
+                    },
+                }];
+                Ok(serde_json::to_value(ProviderListResult { providers })?)
             }
 
             _ => anyhow::bail!("Method not found: {}", method),

@@ -10,7 +10,8 @@ import {
   useWorkspaceStore,
   useChatStore,
   useApprovalStore,
-  useDeviceStore
+  useDeviceStore,
+  useModelStore,
 } from "../store/index.js";
 
 export class CanywhereClient {
@@ -96,6 +97,11 @@ export class CanywhereClient {
 
       const devRes = await this.call("device.list", {});
       useDeviceStore.getState().setDevices(devRes.devices);
+
+      const modelRes = await this.call("model.list", {});
+      if (modelRes.models) {
+        useModelStore.getState().setModels(modelRes.models);
+      }
     } catch (err) {
       console.error("[CanywhereClient] Bootstrap failed", err);
     }
@@ -136,7 +142,7 @@ export class CanywhereClient {
     return res.chat;
   }
 
-  async sendTurn(chatId: string, content: string): Promise<void> {
+  async sendTurn(chatId: string, content: string, model?: string): Promise<void> {
     const now = BigInt(Date.now());
     useChatStore.getState().addMessage(chatId, {
       id: "optimistic-" + Date.now(),
@@ -163,10 +169,30 @@ export class CanywhereClient {
 
     const res = await this.call("turn.send", {
       chatId,
-      content
+      content,
+      model: model || useModelStore.getState().selectedModel,
     });
 
     useChatStore.getState().setActiveTurn(chatId, res.turnId);
+  }
+
+  async steerTurn(chatId: string, turnId: string, content: string): Promise<void> {
+    const now = BigInt(Date.now());
+    useChatStore.getState().addMessage(chatId, {
+      id: "steer-" + Date.now(),
+      chatId,
+      turnId,
+      role: "user",
+      blocks: [{ type: "text", content: `[Steer] ${content}` }],
+      createdAt: now,
+      streaming: false
+    });
+
+    await this.call("turn.steer", {
+      chatId,
+      turnId,
+      content
+    });
   }
 
   async interruptTurn(chatId: string, turnId: string): Promise<void> {

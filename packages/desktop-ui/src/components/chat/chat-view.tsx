@@ -9,15 +9,30 @@ import {
   Cpu,
   CornerDownLeft,
   Paperclip,
+  Compass,
+  Check,
 } from "lucide-react";
-import { useChatStore, useWorkspaceStore } from "../../store/index.js";
+import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { Message } from "../../types/index.js";
 import { Button } from "../ui/button.js";
 import { Badge } from "../ui/badge.js";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu.js";
 import { RenderBlock } from "./render-block.js";
+import { InlineApprovalCard } from "./inline-approval-card.js";
 
 const EMPTY_MESSAGES: Message[] = [];
+
+const SLASH_COMMANDS = [
+  { cmd: "/reset", desc: "Clear conversational state & start fresh" },
+  { cmd: "/scratch", desc: "Toggle scratchpad ephemeral workspace" },
+  { cmd: "/review", desc: "Trigger automated git changes code review" },
+];
 
 export const ChatView: React.FC = () => {
   const activeChatId = useChatStore((s) => s.activeChatId);
@@ -29,8 +44,14 @@ export const ChatView: React.FC = () => {
   const activeTurnId = useChatStore((s) =>
     activeChatId && s.activeTurnId[activeChatId] ? s.activeTurnId[activeChatId] : null
   );
+  const pendingApprovals = useApprovalStore((s) => s.pendingApprovals);
+
+  const models = useModelStore((s) => s.models);
+  const selectedModel = useModelStore((s) => s.selectedModel);
+  const setSelectedModel = useModelStore((s) => s.setSelectedModel);
 
   const [input, setInput] = useState("");
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -38,11 +59,42 @@ export const ChatView: React.FC = () => {
   const activeWorkspace = workspaces.find((w) => w.id === activeChat?.workspaceId);
   const isRunning = activeChat?.status === "running";
 
+  // Filter approvals for this active chat
+  const chatApprovals = pendingApprovals.filter(
+    (a) => a.chatId === activeChatId && a.status === "pending"
+  );
+
+  // Auto-scroll on new message
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, chatApprovals]);
+
+  // Auto-resize textarea height
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setInput(val);
+
+    if (val.startsWith("/")) {
+      setShowSlashMenu(true);
+    } else {
+      setShowSlashMenu(false);
+    }
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 180)}px`;
+    }
+  };
+
+  const handleSelectSlash = (cmd: string) => {
+    setInput(cmd + " ");
+    setShowSlashMenu(false);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
 
   if (!activeChat) {
     return (
@@ -63,10 +115,28 @@ export const ChatView: React.FC = () => {
 
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!input.trim() || isRunning) return;
-    const prompt = input.trim();
+    if (!input.trim()) return;
+
+    const text = input.trim();
     setInput("");
-    await client.sendTurn(activeChat.id, prompt);
+    setShowSlashMenu(false);
+
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+
+    // Handle slash commands client-side if applicable
+    if (text === "/reset") {
+      await client.createChat(activeChat.workspaceId ?? undefined, "New Conversation");
+      return;
+    }
+
+    // Mid-turn Steering or Regular Turn
+    if (isRunning && activeTurnId) {
+      await client.steerTurn(activeChat.id, activeTurnId, text);
+    } else {
+      await client.sendTurn(activeChat.id, text, selectedModel);
+    }
   };
 
   const handleInterrupt = async () => {
@@ -78,7 +148,7 @@ export const ChatView: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col h-screen bg-[var(--background)] text-[var(--foreground)] select-text">
       {/* Top Header / Breadcrumbs Bar */}
-      <header className="h-10 border-b border-[var(--border)] px-4 flex items-center justify-between shrink-0 bg-[var(--card)]/50 backdrop-blur-md text-xs select-none">
+      <header className="h-11 border-b border-[var(--border)] px-4 flex items-center justify-between shrink-0 bg-[var(--card)]/50 backdrop-blur-md text-xs select-none">
         <div className="flex items-center gap-2 text-[var(--muted-foreground)] truncate">
           {activeWorkspace ? (
             <>
@@ -93,21 +163,46 @@ export const ChatView: React.FC = () => {
               <span>›</span>
             </>
           )}
-          <span className="truncate text-[var(--foreground)]">{activeChat.title}</span>
+          <span className="truncate text-[var(--foreground)] font-medium">{activeChat.title}</span>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[var(--secondary)] border border-[var(--border)] font-mono text-[11px] text-[var(--muted-foreground)]">
-            <Cpu className="w-3 h-3 text-[var(--muted-foreground)]" />
-            <span>codex (app-server)</span>
-          </div>
+        <div className="flex items-center gap-2.5 shrink-0">
+          {/* Model Selector Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--secondary)] border border-[var(--border)] font-mono text-[11px] text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors cursor-pointer select-none">
+              <Cpu className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
+              <span>{selectedModel}</span>
+              <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {(models.length > 0 ? models : [
+                { id: "gpt-5-codex", model: "gpt-5-codex", displayName: "gpt-5-codex", description: "Frontier autonomous coding", isDefault: true, supportedReasoningEfforts: [], defaultReasoningEffort: null },
+                { id: "o3-mini", model: "o3-mini", displayName: "o3-mini", description: "Fast reasoning", isDefault: false, supportedReasoningEfforts: [], defaultReasoningEffort: null },
+                { id: "gpt-4o", model: "gpt-4o", displayName: "gpt-4o", description: "General purpose", isDefault: false, supportedReasoningEfforts: [], defaultReasoningEffort: null },
+              ]).map((m) => (
+                <DropdownMenuItem
+                  key={m.id}
+                  onClick={() => setSelectedModel(m.model)}
+                  className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                >
+                  <div className="flex flex-col truncate pr-2">
+                    <span className="font-medium text-[var(--foreground)]">{m.displayName || m.model}</span>
+                    {m.description && (
+                      <span className="text-[10px] text-[var(--muted-foreground)] truncate">{m.description}</span>
+                    )}
+                  </div>
+                  {selectedModel === m.model && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {isRunning && (
             <Button
               variant="destructive"
               size="xs"
               onClick={handleInterrupt}
-              className="flex items-center gap-1 font-mono"
+              className="flex items-center gap-1 font-mono cursor-pointer"
             >
               <Square className="w-3 h-3 fill-current" />
               <span>INTERRUPT</span>
@@ -125,7 +220,7 @@ export const ChatView: React.FC = () => {
               {/* Message Header */}
               <div className="flex items-center justify-between text-[11px] text-[var(--muted-foreground)] font-mono select-none">
                 <span className={`font-semibold ${isUser ? "text-[var(--foreground)]" : "text-emerald-500"}`}>
-                  {isUser ? "You" : "Codex"}
+                  {isUser ? "You" : `Codex (${selectedModel})`}
                 </span>
                 <span>
                   {new Date(Number(msg.createdAt)).toLocaleTimeString([], {
@@ -158,48 +253,80 @@ export const ChatView: React.FC = () => {
             </div>
           );
         })}
+
+        {/* Inline Pending Approvals Banner */}
+        {chatApprovals.map((approval) => (
+          <div key={approval.id} className="max-w-3xl mx-auto">
+            <InlineApprovalCard approval={approval} />
+          </div>
+        ))}
       </div>
 
       {/* Information Dense Composer Input Area */}
-      <div className="p-4 border-t border-[var(--border)] bg-[var(--card)]/40 backdrop-blur-md shrink-0">
+      <div className="p-4 border-t border-[var(--border)] bg-[var(--card)]/40 backdrop-blur-md shrink-0 relative">
+        {/* Slash Command Suggestions Popover */}
+        {showSlashMenu && (
+          <div className="max-w-3xl mx-auto mb-2 rounded-lg border border-[var(--border)] bg-[var(--popover)] shadow-lg overflow-hidden font-mono text-xs select-none">
+            <div className="px-3 py-1.5 bg-[var(--secondary)]/70 text-[10px] uppercase font-semibold text-[var(--muted-foreground)] border-b border-[var(--border)]">
+              Slash Commands
+            </div>
+            {SLASH_COMMANDS.map((s) => (
+              <button
+                key={s.cmd}
+                onClick={() => handleSelectSlash(s.cmd)}
+                className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-[var(--accent)] transition-colors cursor-pointer"
+              >
+                <span className="font-semibold text-emerald-400">{s.cmd}</span>
+                <span className="text-[11px] text-[var(--muted-foreground)]">{s.desc}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="max-w-3xl mx-auto rounded-xl border border-[var(--border)] bg-[var(--background)] focus-within:border-[var(--ring)] focus-within:ring-1 focus-within:ring-[var(--ring)] transition-all shadow-xs overflow-hidden">
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
+              } else if (e.key === "Escape") {
+                setShowSlashMenu(false);
               }
             }}
             placeholder={
               isRunning
-                ? "Agent is responding... Click Interrupt above to cancel."
-                : "Ask Codex to code, run tests, or refactor... (Enter to send, Shift+Enter for newline)"
+                ? "Type mid-turn guidance to steer Codex, or click Interrupt above..."
+                : "Ask Codex to code, run tests, or refactor... (Type / for commands, Enter to send)"
             }
-            disabled={isRunning}
-            rows={3}
-            className="w-full bg-transparent p-3 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none resize-none disabled:opacity-50 font-mono"
+            rows={2}
+            className="w-full bg-transparent p-3 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none resize-none font-mono min-h-[52px]"
           />
 
           {/* Composer Utility Toolbar */}
           <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--secondary)]/30 text-[11px] text-[var(--muted-foreground)] select-none">
-            <div className="flex items-center gap-2">
-              <span className="font-mono">
+            <div className="flex items-center gap-3">
+              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[var(--secondary)] border border-[var(--border)]">
                 {activeWorkspace ? `Root: ${activeWorkspace.name}` : "Scratchpad mode"}
+              </span>
+              <span className="font-mono text-[10px] text-[var(--muted-foreground)] opacity-75">
+                ⚡ Context: ~32k tokens
               </span>
             </div>
 
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-mono opacity-60">Press ↵ to send</span>
+              <span className="text-[10px] font-mono opacity-60">
+                {isRunning ? "Steer turn ↵" : "Press ↵ to send"}
+              </span>
               <Button
                 size="xs"
-                disabled={!input.trim() || isRunning}
+                disabled={!input.trim()}
                 onClick={() => handleSend()}
                 className="gap-1 font-mono"
               >
-                <span>Send</span>
+                <span>{isRunning ? "Steer" : "Send"}</span>
                 <CornerDownLeft className="w-3 h-3" />
               </Button>
             </div>

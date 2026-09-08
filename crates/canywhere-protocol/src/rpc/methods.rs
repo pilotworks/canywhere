@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use crate::models::{
-    ApprovalRequest, Chat, ChatStatus, Device, FileTreeNode, Message, MessageBlock, Workspace,
+    ApprovalRequest, Chat, ChatStatus, Device, FileTreeNode, Message, MessageBlock, ModelInfo,
+    Provider, Workspace,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
@@ -58,6 +59,7 @@ pub struct TurnSendParams {
     pub chat_id: String,
     pub content: String,
     pub client_message_id: Option<String>,
+    pub model: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
@@ -69,8 +71,35 @@ pub struct TurnSendResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct TurnSteerParams {
+    pub chat_id: String,
+    pub turn_id: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct TurnSteerResult {
+    pub turn_id: String,
+    pub status: ChatStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct DeviceListResult {
     pub devices: Vec<Device>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelListResult {
+    pub models: Vec<ModelInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderListResult {
+    pub providers: Vec<Provider>,
 }
 
 // Notifications

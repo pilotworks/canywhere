@@ -6,7 +6,8 @@ import {
   MessageBlock,
   ApprovalRequest,
   Device,
-  PairingQrPayload
+  PairingQrPayload,
+  ModelInfo,
 } from "../types/index.js";
 
 export interface ConnectionState {
@@ -180,4 +181,24 @@ export const useDeviceStore = create<DeviceState>((set) => ({
   qrPayload: null,
   setDevices: (devices) => set({ devices }),
   setQrPayload: (qrPayload) => set({ qrPayload })
+}));
+
+export interface ModelState {
+  models: ModelInfo[];
+  selectedModel: string;
+  setModels: (models: ModelInfo[]) => void;
+  setSelectedModel: (model: string) => void;
+}
+
+export const useModelStore = create<ModelState>((set) => ({
+  models: [],
+  selectedModel: "gpt-5-codex",
+  setModels: (models) => {
+    const defaultModel = models.find((m) => m.isDefault)?.model || (models[0]?.model ?? "gpt-5-codex");
+    set((s) => ({
+      models,
+      selectedModel: s.selectedModel || defaultModel,
+    }));
+  },
+  setSelectedModel: (selectedModel) => set({ selectedModel }),
 }));

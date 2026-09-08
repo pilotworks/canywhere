@@ -107,15 +107,132 @@ impl CodexAdapter {
         Ok(thread_id)
     }
 
-    pub async fn submit_turn(&self, chat_id: &str, thread_id: &str, message_id: &str, prompt: &str) -> Result<String> {
-        let res = self.send_request("turn/start", serde_json::json!({
+    pub async fn list_models(&self) -> Result<Vec<ModelInfo>> {
+        let res = self.send_request("model/list", serde_json::json!({
+            "limit": 50,
+            "includeHidden": false
+        })).await;
+
+        match res {
+            Ok(val) => {
+                let mut list = Vec::new();
+                if let Some(items) = val["data"].as_array() {
+                    for item in items {
+                        let id = item["id"].as_str().unwrap_or("").to_string();
+                        let model = item["model"].as_str().unwrap_or(&id).to_string();
+                        let display_name = item["displayName"].as_str().unwrap_or(&model).to_string();
+                        let description = item["description"].as_str().map(|s| s.to_string());
+                        let is_default = item["isDefault"].as_bool().unwrap_or(false);
+
+                        let mut efforts = Vec::new();
+                        if let Some(eff_arr) = item["supportedReasoningEfforts"].as_array() {
+                            for eff in eff_arr {
+                                if let Some(e) = eff["reasoningEffort"].as_str() {
+                                    efforts.push(e.to_string());
+                                }
+                            }
+                        }
+
+                        let default_effort = item["defaultReasoningEffort"].as_str().map(|s| s.to_string());
+
+                        list.push(ModelInfo {
+                            id,
+                            model,
+                            display_name,
+                            description,
+                            is_default,
+                            supported_reasoning_efforts: efforts,
+                            default_reasoning_effort: default_effort,
+                        });
+                    }
+                }
+                if !list.is_empty() {
+                    return Ok(list);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("[CodexAdapter] model/list RPC failed or unsupported: {}, using fallback presets", e);
+            }
+        }
+
+        // Fallback models if app-server call is unavailable
+        Ok(vec![
+            ModelInfo {
+                id: "gpt-5-codex".to_string(),
+                model: "gpt-5-codex".to_string(),
+                display_name: "gpt-5-codex".to_string(),
+                description: Some("Default frontier autonomous coding model".to_string()),
+                is_default: true,
+                supported_reasoning_efforts: vec!["low".to_string(), "medium".to_string(), "high".to_string()],
+                default_reasoning_effort: Some("medium".to_string()),
+            },
+            ModelInfo {
+                id: "o3-mini".to_string(),
+                model: "o3-mini".to_string(),
+                display_name: "o3-mini".to_string(),
+                description: Some("High-speed reasoning model".to_string()),
+                is_default: false,
+                supported_reasoning_efforts: vec!["low".to_string(), "medium".to_string(), "high".to_string()],
+                default_reasoning_effort: Some("medium".to_string()),
+            },
+            ModelInfo {
+                id: "gpt-4o".to_string(),
+                model: "gpt-4o".to_string(),
+                display_name: "gpt-4o".to_string(),
+                description: Some("General purpose multimodal model".to_string()),
+                is_default: false,
+                supported_reasoning_efforts: vec![],
+                default_reasoning_effort: None,
+            },
+        ])
+    }
+
+    pub async fn submit_turn(&self, chat_id: &str, thread_id: &str, message_id: &str, prompt: &str, model: Option<&str>) -> Result<String> {
+        let mut turn_params = serde_json::json!({
             "threadId": thread_id,
             "input": [{ "type": "text", "text": prompt }]
-        })).await?;
+        });
+
+        if let Some(m) = model {
+            turn_params["model"] = serde_json::Value::String(m.to_string());
+        }
+
+        let res = self.send_request("turn/start", turn_params).await?;
 
         let turn_id = res["turnId"].as_str().unwrap_or("").to_string();
         self.chat_active_turn.lock().await.insert(chat_id.to_string(), (turn_id.clone(), message_id.to_string()));
         Ok(turn_id)
+    }
+
+    pub async fn steer_turn(&self, thread_id: &str, turn_id: &str, prompt: &str) -> Result<String> {
+        let res = self.send_request("turn/steer", serde_json::json!({
+            "threadId": thread_id,
+            "expectedTurnId": turn_id,
+            "input": [{ "type": "text", "text": prompt }]
+        })).await?;
+
+        let res_turn_id = res["turnId"].as_str().unwrap_or(turn_id).to_string();
+        Ok(res_turn_id)
+    }
+
+    pub async fn respond_approval(&self, external_request_id: &str, decision: &str) -> Result<()> {
+        let codex_decision = match decision {
+            "accept" => "accept",
+            "accept_for_session" | "acceptForSession" => "acceptForSession",
+            "cancel" => "cancel",
+            _ => "decline",
+        };
+
+        if let Ok(id) = external_request_id.parse::<i64>() {
+            self.send_response(id, serde_json::json!({ "decision": codex_decision })).await?;
+        } else {
+            // Also notify if notification-based
+            let _ = self.send_notification("approval/resolve", serde_json::json!({
+                "requestId": external_request_id,
+                "decision": codex_decision
+            })).await;
+        }
+        Ok(())
     }
 
     pub async fn interrupt_turn(&self, thread_id: &str, turn_id: &str) -> Result<()> {
@@ -240,6 +357,15 @@ impl CodexAdapter {
 
         self.write_line(&payload).await?;
         Ok(rx.await?)
+    }
+
+    async fn send_response(&self, id: i64, result: serde_json::Value) -> Result<()> {
+        let payload = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": result
+        });
+        self.write_line(&payload).await
     }
 
     async fn send_notification(&self, method: &str, params: serde_json::Value) -> Result<()> {

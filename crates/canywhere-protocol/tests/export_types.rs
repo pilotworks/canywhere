@@ -16,6 +16,8 @@ fn export_typescript_and_json_schema() {
     Message::export_all_to(out_dir).unwrap();
     ApprovalRequest::export_all_to(out_dir).unwrap();
     Device::export_all_to(out_dir).unwrap();
+    ModelInfo::export_all_to(out_dir).unwrap();
+    Provider::export_all_to(out_dir).unwrap();
     RpcRequestEnvelope::export_all_to(out_dir).unwrap();
     RpcResponseEnvelope::export_all_to(out_dir).unwrap();
     RpcNotificationEnvelope::export_all_to(out_dir).unwrap();

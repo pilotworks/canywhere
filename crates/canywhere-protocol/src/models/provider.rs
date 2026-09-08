@@ -14,6 +14,18 @@ pub struct AdapterCapabilities {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct ModelInfo {
+    pub id: String,
+    pub model: String,
+    pub display_name: String,
+    pub description: Option<String>,
+    pub is_default: bool,
+    pub supported_reasoning_efforts: Vec<String>,
+    pub default_reasoning_effort: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct Provider {
     pub id: String,
     pub name: String,
