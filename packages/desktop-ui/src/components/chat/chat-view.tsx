@@ -11,8 +11,9 @@ import {
   Paperclip,
   Compass,
   Check,
+  PanelRight,
 } from "lucide-react";
-import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore } from "../../store/index.js";
+import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore, useUiStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { Message } from "../../types/index.js";
 import { Button } from "../ui/button.js";
@@ -108,6 +109,15 @@ export const ChatView: React.FC = () => {
             <Terminal className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
             <span className="text-[var(--muted-foreground)] font-medium">No Active Session</span>
           </div>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={useUiStore.getState().toggleRightSidebar}
+            title="Toggle Right Sidebar"
+            className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+          >
+            <PanelRight className="w-4 h-4" />
+          </Button>
         </header>
 
         <div className="flex-1 flex flex-col items-center justify-center text-[var(--muted-foreground)] p-8">
@@ -224,6 +234,16 @@ export const ChatView: React.FC = () => {
               <span>INTERRUPT</span>
             </Button>
           )}
+
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={useUiStore.getState().toggleRightSidebar}
+            title="Toggle Right Sidebar"
+            className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+          >
+            <PanelRight className="w-4 h-4" />
+          </Button>
         </div>
       </header>
 

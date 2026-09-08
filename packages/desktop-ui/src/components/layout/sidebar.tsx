@@ -13,7 +13,6 @@ import {
   Terminal,
   Settings,
   HelpCircle,
-  Files,
   FolderSearch,
 } from "lucide-react";
 import { useConnectionStore, useWorkspaceStore, useChatStore, useUiStore } from "../../store/index.js";
@@ -22,7 +21,6 @@ import { PairingModal } from "../pairing/pairing-modal.js";
 import { ThemeToggle } from "../ui/theme-toggle.js";
 import { Button } from "../ui/button.js";
 import { Input } from "../ui/input.js";
-import { FileTreeView } from "./file-tree-view.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -49,12 +47,6 @@ export const Sidebar: React.FC = () => {
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Record<string, boolean>>({
     all: true,
   });
-  const [fileTreeExpanded, setFileTreeExpanded] = useState<Record<string, boolean>>({});
-
-  const toggleFileTree = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setFileTreeExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  };
 
   const toggleWorkspaceExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -201,46 +193,17 @@ export const Sidebar: React.FC = () => {
                         <span className="truncate">{ws.name}</span>
                       </div>
 
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={(e) => toggleFileTree(ws.id, e)}
-                          className={`p-0.5 rounded transition-colors ${
-                            fileTreeExpanded[ws.id]
-                              ? "text-sky-400 bg-sky-950/30"
-                              : "opacity-0 group-hover:opacity-100 hover:text-[var(--foreground)] text-[var(--muted-foreground)]"
-                          }`}
-                          title="Browse Project Files"
-                        >
-                          <Files className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            client.createChat(ws.id);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--foreground)] text-[var(--muted-foreground)]"
-                          title="New Chat in Workspace"
-                        >
-                          <Plus className="w-3 h-3" />
-                        </button>
-                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          client.createChat(ws.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--foreground)] text-[var(--muted-foreground)]"
+                        title="New Chat in Workspace"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
                     </div>
-
-                    {/* File Explorer Tree View */}
-                    {fileTreeExpanded[ws.id] && (
-                      <div className="my-1 rounded-md border border-[var(--border)] bg-[var(--background)]/60 overflow-hidden">
-                        <div className="px-2 py-1 bg-[var(--secondary)]/50 text-[10px] uppercase font-semibold text-[var(--muted-foreground)] flex items-center justify-between border-b border-[var(--border)]">
-                          <span>Project Files</span>
-                          <button
-                            onClick={(e) => toggleFileTree(ws.id, e)}
-                            className="hover:text-[var(--foreground)]"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                        <FileTreeView workspaceId={ws.id} />
-                      </div>
-                    )}
 
                     {/* Nested Chats */}
                     {isExpanded && childChats.length > 0 && (

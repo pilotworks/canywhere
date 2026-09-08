@@ -213,9 +213,29 @@ export const useModelStore = create<ModelState>((set) => ({
   setSelectedModel: (selectedModel) => set({ selectedModel }),
 }));
 
+export type RightTabType = "fileTree" | "terminal" | "filePreview" | "diff";
+
+export interface RightTabItem {
+  id: string;
+  type: RightTabType;
+  title: string;
+  isPermanent: boolean; // default permanent tabs cannot be closed or reordered
+  data?: any; // e.g. active file info or diff patch
+}
+
 export interface UiState {
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
+  rightSidebarWidth: number;
+  setRightSidebarWidth: (width: number) => void;
+  rightSidebarOpen: boolean;
+  setRightSidebarOpen: (open: boolean) => void;
+  toggleRightSidebar: () => void;
+  rightSidebarTabs: RightTabItem[];
+  activeRightTabId: string;
+  setActiveRightTabId: (id: string) => void;
+  openOrFocusTab: (tab: Omit<RightTabItem, "isPermanent"> & { isPermanent?: boolean }) => void;
+  closeTab: (id: string) => void;
 }
 
 const getInitialSidebarWidth = (): number => {
@@ -231,6 +251,26 @@ const getInitialSidebarWidth = (): number => {
   return 256;
 };
 
+const getInitialRightSidebarWidth = (): number => {
+  try {
+    const saved = localStorage.getItem("canywhere_right_sidebar_width");
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!isNaN(parsed) && parsed >= 220 && parsed <= 700) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return 320;
+};
+
+const DEFAULT_RIGHT_TABS: RightTabItem[] = [
+  { id: "fileTree", type: "fileTree", title: "Files", isPermanent: true },
+  { id: "terminal", type: "terminal", title: "Terminal", isPermanent: true },
+  { id: "filePreview", type: "filePreview", title: "Preview", isPermanent: true },
+  { id: "diff", type: "diff", title: "Diffs", isPermanent: true },
+];
+
 export const useUiStore = create<UiState>((set) => ({
   sidebarWidth: getInitialSidebarWidth(),
   setSidebarWidth: (width) => {
@@ -240,5 +280,52 @@ export const useUiStore = create<UiState>((set) => ({
     } catch {}
     set({ sidebarWidth: clamped });
   },
+  rightSidebarWidth: getInitialRightSidebarWidth(),
+  setRightSidebarWidth: (width) => {
+    const clamped = Math.max(220, Math.min(700, width));
+    try {
+      localStorage.setItem("canywhere_right_sidebar_width", String(clamped));
+    } catch {}
+    set({ rightSidebarWidth: clamped });
+  },
+  rightSidebarOpen: true,
+  setRightSidebarOpen: (rightSidebarOpen) => set({ rightSidebarOpen }),
+  toggleRightSidebar: () => set((s) => ({ rightSidebarOpen: !s.rightSidebarOpen })),
+  rightSidebarTabs: DEFAULT_RIGHT_TABS,
+  activeRightTabId: "fileTree",
+  setActiveRightTabId: (activeRightTabId) => set({ activeRightTabId, rightSidebarOpen: true }),
+  openOrFocusTab: (tab) =>
+    set((s) => {
+      const existing = s.rightSidebarTabs.find((t) => t.id === tab.id);
+      if (existing) {
+        return {
+          activeRightTabId: tab.id,
+          rightSidebarOpen: true,
+          rightSidebarTabs: s.rightSidebarTabs.map((t) =>
+            t.id === tab.id ? { ...t, data: tab.data || t.data } : t
+          ),
+        };
+      }
+      return {
+        rightSidebarTabs: [...s.rightSidebarTabs, { ...tab, isPermanent: false }],
+        activeRightTabId: tab.id,
+        rightSidebarOpen: true,
+      };
+    }),
+  closeTab: (id) =>
+    set((s) => {
+      const tab = s.rightSidebarTabs.find((t) => t.id === id);
+      if (tab?.isPermanent) return s; // Cannot close permanent tabs
+      const filtered = s.rightSidebarTabs.filter((t) => t.id !== id);
+      let nextActive = s.activeRightTabId;
+      if (s.activeRightTabId === id) {
+        nextActive = filtered[0]?.id || "fileTree";
+      }
+      return {
+        rightSidebarTabs: filtered,
+        activeRightTabId: nextActive,
+      };
+    }),
 }));
+
 

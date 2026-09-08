@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Folder, FolderOpen, FileCode, ChevronRight, ChevronDown, Loader2 } from "lucide-react";
 import { FileTreeNode } from "../../types/index.js";
 import { client } from "../../network/client.js";
-import { useWorkspaceStore } from "../../store/index.js";
+import { useWorkspaceStore, useUiStore } from "../../store/index.js";
 
 interface FileTreeNodeItemProps {
   node: FileTreeNode;
@@ -14,6 +14,7 @@ export const FileTreeNodeItem: React.FC<FileTreeNodeItemProps> = ({ node, worksp
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const setActiveFile = useWorkspaceStore((s) => s.setActiveFile);
+  const openOrFocusTab = useUiStore((s) => s.openOrFocusTab);
 
   const handleClick = async () => {
     if (node.isDirectory) {
@@ -26,6 +27,16 @@ export const FileTreeNodeItem: React.FC<FileTreeNodeItemProps> = ({ node, worksp
           workspaceId,
           path: fileData.path,
           content: fileData.content,
+        });
+        openOrFocusTab({
+          id: `file:${fileData.path}`,
+          type: "filePreview",
+          title: node.name,
+          data: {
+            workspaceId,
+            path: fileData.path,
+            content: fileData.content,
+          },
         });
       } catch (err) {
         console.error("Failed to read file", err);
@@ -140,7 +151,7 @@ export const FileTreeView: React.FC<{ workspaceId: string }> = ({ workspaceId })
   }
 
   return (
-    <div className="py-1 space-y-0.5 max-h-64 overflow-y-auto pr-1">
+    <div className="py-1 space-y-0.5 flex-1 overflow-y-auto pr-1">
       {fileTree.children.map((child) => (
         <FileTreeNodeItem key={child.path} node={child} workspaceId={workspaceId} depth={0} />
       ))}
