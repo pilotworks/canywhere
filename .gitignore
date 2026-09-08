@@ -71,3 +71,8 @@ mobile/ios/**/fastlane/test_output
 tmp/
 temp/
 *.tmp
+
+# Rust & Cargo
+target/
+Cargo.lock
+**/*.rs.bk

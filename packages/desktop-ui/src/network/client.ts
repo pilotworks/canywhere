@@ -3,7 +3,7 @@ import {
   RpcResponseEnvelope,
   RpcNotificationEnvelope,
   ApprovalDecision
-} from "@canywhere/protocol-schema";
+} from "../types/index.js";
 import { TokenStreamBuffer } from "./buffer.js";
 import {
   useConnectionStore,
@@ -24,7 +24,6 @@ export class CanywhereClient {
   constructor(url: string = "ws://127.0.0.1:7890/rpc") {
     this.url = url;
 
-    // Buffer flushes aggregated tokens into Zustand store every 24ms
     this.tokenBuffer = new TokenStreamBuffer((flushed) => {
       const append = useChatStore.getState().appendTokenDelta;
       for (const item of flushed) {
@@ -66,7 +65,7 @@ export class CanywhereClient {
         this.scheduleReconnect();
       };
 
-      this.ws.onerror = (err) => {
+      this.ws.onerror = (_err) => {
         useConnectionStore.getState().setStatus("error", "Connection failed");
       };
     } catch (err: any) {
@@ -85,20 +84,16 @@ export class CanywhereClient {
 
   private async bootstrap(): Promise<void> {
     try {
-      // 1. Fetch workspaces
       const wsRes = await this.call("workspace.list", {});
       useWorkspaceStore.getState().setWorkspaces(wsRes.workspaces);
 
-      // 2. Fetch all chats
       const chatsRes = await this.call("chat.list", {});
       useChatStore.getState().setChats(chatsRes.chats);
 
-      // Select first chat if none active
       if (chatsRes.chats.length > 0 && !useChatStore.getState().activeChatId) {
         this.selectChat(chatsRes.chats[0].id);
       }
 
-      // 3. Fetch paired devices
       const devRes = await this.call("device.list", {});
       useDeviceStore.getState().setDevices(devRes.devices);
     } catch (err) {
@@ -142,24 +137,25 @@ export class CanywhereClient {
   }
 
   async sendTurn(chatId: string, content: string): Promise<void> {
-    // Optimistically add user message to chat
+    const now = BigInt(Date.now());
     useChatStore.getState().addMessage(chatId, {
       id: "optimistic-" + Date.now(),
       chatId,
+      turnId: null,
       role: "user",
       blocks: [{ type: "text", content }],
-      createdAt: Date.now(),
+      createdAt: now,
       streaming: false
     });
 
-    // Create placeholder agent message for incoming stream
     const agentMsgId = "stream-" + Date.now();
     useChatStore.getState().addMessage(chatId, {
       id: agentMsgId,
       chatId,
+      turnId: null,
       role: "agent",
       blocks: [],
-      createdAt: Date.now(),
+      createdAt: now,
       streaming: true
     });
 
@@ -195,7 +191,7 @@ export class CanywhereClient {
         return reject(new Error("WebSocket not connected"));
       }
 
-      const id = this.nextId++;
+      const id = String(this.nextId++);
       this.pendingRequests.set(id, { resolve, reject });
 
       const envelope: RpcRequestEnvelope = {
@@ -209,11 +205,10 @@ export class CanywhereClient {
   }
 
   private handleIncoming(raw: any): void {
-    // 1. RPC Response
     if (raw.id !== undefined && (raw.result !== undefined || raw.error !== undefined)) {
-      const pending = this.pendingRequests.get(raw.id);
+      const pending = this.pendingRequests.get(String(raw.id));
       if (pending) {
-        this.pendingRequests.delete(raw.id);
+        this.pendingRequests.delete(String(raw.id));
         if (raw.error) {
           pending.reject(new Error(raw.error.message || "RPC Error"));
         } else {
@@ -223,7 +218,6 @@ export class CanywhereClient {
       return;
     }
 
-    // 2. RPC Notification
     if (raw.method && raw.params) {
       this.handleNotification(raw.method, raw.params);
     }
@@ -232,7 +226,6 @@ export class CanywhereClient {
   private handleNotification(method: string, params: any): void {
     switch (method) {
       case "message.delta": {
-        // High-frequency token streaming buffered here
         this.tokenBuffer.append({
           chatId: params.chatId,
           messageId: params.messageId,
@@ -244,7 +237,6 @@ export class CanywhereClient {
 
       case "tool.started": {
         this.tokenBuffer.flush();
-        // Append tool block to latest agent message
         const messages = useChatStore.getState().messages[params.chatId] || [];
         const lastMsg = messages[messages.length - 1];
         if (lastMsg) {
@@ -265,7 +257,7 @@ export class CanywhereClient {
 
       case "approval.requested": {
         useApprovalStore.getState().addApproval(params.approval);
-        useChatStore.getState().setChatStatus(params.chatId, "awaiting_approval");
+        useChatStore.getState().setChatStatus(params.chatId, "awaitingApproval");
         break;
       }
 

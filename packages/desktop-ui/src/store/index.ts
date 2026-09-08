@@ -7,7 +7,7 @@ import {
   ApprovalRequest,
   Device,
   PairingQrPayload
-} from "@canywhere/protocol-schema";
+} from "../types/index.js";
 
 export interface ConnectionState {
   status: "disconnected" | "connecting" | "connected" | "error";

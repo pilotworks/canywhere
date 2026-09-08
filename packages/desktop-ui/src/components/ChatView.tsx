@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { useChatStore } from "../store/index.js";
 import { client } from "../network/client.js";
-import { MessageBlock } from "@canywhere/protocol-schema";
+import { MessageBlock } from "../types/index.js";
 
 export const ChatView: React.FC = () => {
   const activeChatId = useChatStore((s) => s.activeChatId);

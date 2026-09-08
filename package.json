@@ -1,16 +1,20 @@
 {
-  "name": "canywhere-monorepo",
+  "name": "canywhere",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm -r --filter \"./packages/*\" run build",
-    "typecheck": "pnpm -r --filter \"./packages/*\" run typecheck",
-    "test": "pnpm -r --filter \"./packages/*\" run test",
-    "codegen": "pnpm --filter @canywhere/protocol-schema run codegen"
+    "build": "pnpm -r run build && cargo build --workspace",
+    "test": "pnpm -r run test && cargo test --workspace",
+    "typecheck": "pnpm -r run typecheck && cargo check --workspace",
+    "codegen": "cargo test -p canywhere-protocol && pnpm exec tsx scripts/codegen-swift.ts",
+    "dev:server": "cargo run -p canywhere-server",
+    "dev:ui": "pnpm --filter @canywhere/desktop-ui run dev",
+    "dev:desktop": "cargo run -p canywhere-desktop"
   },
   "devDependencies": {
-    "@types/node": "^22.13.9",
-    "typescript": "^5.8.2"
-  },
-  "packageManager": "pnpm@11.13.0"
+    "quicktype-core": "^23.3.25",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.3"
+  }
 }
