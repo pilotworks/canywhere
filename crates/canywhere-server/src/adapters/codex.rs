@@ -3,9 +3,9 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, Command};
+use tokio::process::{ChildStdin, Command};
 use tokio::sync::{broadcast, oneshot, Mutex};
-use tracing::{error, info, warn};
+use tracing::info;
 
 use canywhere_protocol::models::*;
 
@@ -53,10 +53,11 @@ impl CodexAdapter {
 
         let stdin = child.stdin.take().expect("Child stdin not found");
         let stdout = child.stdout.take().expect("Child stdout not found");
+        let stderr = child.stderr.take();
 
         *self.stdin.lock().await = Some(stdin);
 
-        // Spawn background NDJSON reader
+        // Spawn background NDJSON reader for stdout
         let pending = Arc::clone(&self.pending_rpcs);
         let thread_to_chat = Arc::clone(&self.thread_to_chat);
         let chat_turn = Arc::clone(&self.chat_active_turn);
@@ -71,6 +72,18 @@ impl CodexAdapter {
                 }
             }
         });
+
+        // Spawn background stderr logger
+        if let Some(stderr) = stderr {
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if !line.trim().is_empty() {
+                        tracing::debug!("[CodexStderr] {}", line);
+                    }
+                }
+            });
+        }
 
         // Initialize handshake
         self.send_request("initialize", serde_json::json!({
@@ -144,6 +157,61 @@ impl CodexAdapter {
                     let delta = params["delta"].as_str().unwrap_or("").to_string();
                     let _ = tx.send(AgentEvent::TokenDelta { chat_id, message_id, delta });
                 }
+            } else if method == "item/commandExecution/requestApproval" {
+                let call_id = params["itemId"].as_str().unwrap_or(&nanoid::nanoid!(12)).to_string();
+                let command = params["command"].as_str().unwrap_or("").to_string();
+                let cwd = params["cwd"].as_str().unwrap_or("").to_string();
+                let is_high_risk = command.contains("rm -rf") || command.contains("sudo") || command.contains("git reset --hard") || command.contains("mkfs");
+
+                let approval = ApprovalRequest {
+                    id: nanoid::nanoid!(16),
+                    chat_id: chat_id.clone(),
+                    turn_id: active_turn.as_ref().map(|t| t.0.clone()).unwrap_or_default(),
+                    external_request_id: call_id,
+                    kind: ApprovalKind::Command,
+                    payload: ApprovalPayload {
+                        command: Some(command),
+                        cwd: Some(cwd),
+                        reason: params["reason"].as_str().map(|s| s.to_string()),
+                        diff: None,
+                        path: None,
+                        prompt: None,
+                        is_high_risk: Some(is_high_risk),
+                    },
+                    status: ApprovalStatus::Pending,
+                    requested_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64,
+                    resolved_at: None,
+                    resolved_by_device_id: None,
+                    resolved_by_device_name: None,
+                };
+                let _ = tx.send(AgentEvent::ApprovalRequested { chat_id, request: approval });
+            } else if method == "item/fileChange/requestApproval" {
+                let call_id = params["itemId"].as_str().unwrap_or(&nanoid::nanoid!(12)).to_string();
+                let path = params["path"].as_str().unwrap_or("").to_string();
+                let diff = params["diff"].as_str().unwrap_or("").to_string();
+
+                let approval = ApprovalRequest {
+                    id: nanoid::nanoid!(16),
+                    chat_id: chat_id.clone(),
+                    turn_id: active_turn.as_ref().map(|t| t.0.clone()).unwrap_or_default(),
+                    external_request_id: call_id,
+                    kind: ApprovalKind::FileChange,
+                    payload: ApprovalPayload {
+                        command: None,
+                        cwd: None,
+                        reason: None,
+                        diff: Some(diff),
+                        path: Some(path),
+                        prompt: None,
+                        is_high_risk: Some(false),
+                    },
+                    status: ApprovalStatus::Pending,
+                    requested_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64,
+                    resolved_at: None,
+                    resolved_by_device_id: None,
+                    resolved_by_device_name: None,
+                };
+                let _ = tx.send(AgentEvent::ApprovalRequested { chat_id, request: approval });
             } else if method == "turn/completed" {
                 chat_turn.lock().await.remove(&chat_id);
                 let turn_id = params["turnId"].as_str().unwrap_or("").to_string();

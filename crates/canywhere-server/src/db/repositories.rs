@@ -1,6 +1,5 @@
 use anyhow::Result;
 use rusqlite::params;
-use serde_json::json;
 use uuid::Uuid;
 
 use canywhere_protocol::models::*;
@@ -241,6 +240,94 @@ impl RepositoryManager {
         let mut list = Vec::new();
         for r in rows { list.push(r?); }
         Ok(list)
+    }
+
+    // Messages & Blocks
+    pub fn record_message(&self, msg: &Message) -> Result<()> {
+        let conn = self.db.conn();
+        let role_str = match msg.role {
+            MessageRole::User => "user",
+            MessageRole::Agent => "agent",
+            MessageRole::System => "system",
+        };
+        conn.execute(
+            "INSERT INTO messages (id, chat_id, role, turn_id, sequence, created_at)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5)
+             ON CONFLICT(id) DO NOTHING",
+            params![msg.id, msg.chat_id, role_str, msg.turn_id, msg.created_at],
+        )?;
+
+        for (idx, block) in msg.blocks.iter().enumerate() {
+            self.record_message_block(&msg.id, idx as i32, block)?;
+        }
+        Ok(())
+    }
+
+    pub fn record_message_block(&self, message_id: &str, sequence: i32, block: &MessageBlock) -> Result<()> {
+        let conn = self.db.conn();
+        let id = Uuid::new_v4().to_string();
+        let now = chrono_now();
+        let block_type = match block {
+            MessageBlock::Text { .. } => "text",
+            MessageBlock::Reasoning { .. } => "reasoning",
+            MessageBlock::Plan { .. } => "plan",
+            MessageBlock::ToolCall { .. } => "tool_call",
+            MessageBlock::FileDiff { .. } => "file_diff",
+            MessageBlock::CommandExec { .. } => "command_exec",
+        };
+        let payload_json = serde_json::to_string(block)?;
+
+        conn.execute(
+            "INSERT INTO message_blocks (id, message_id, sequence, block_type, payload_json, status, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'done', ?6, ?7)",
+            params![id, message_id, sequence, block_type, payload_json, now, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_chat_history(&self, chat_id: &str) -> Result<Vec<Message>> {
+        let conn = self.db.conn();
+        let mut msg_stmt = conn.prepare("SELECT id, chat_id, role, turn_id, created_at FROM messages WHERE chat_id = ?1 ORDER BY created_at ASC")?;
+        let msg_rows = msg_stmt.query_map(params![chat_id], |r| {
+            let role_str: String = r.get(2)?;
+            let role = match role_str.as_str() {
+                "user" => MessageRole::User,
+                "agent" => MessageRole::Agent,
+                _ => MessageRole::System,
+            };
+            Ok(Message {
+                id: r.get(0)?,
+                chat_id: r.get(1)?,
+                role,
+                turn_id: r.get(3)?,
+                blocks: Vec::new(),
+                created_at: r.get(4)?,
+                streaming: false,
+            })
+        })?;
+
+        let mut messages = Vec::new();
+        for m in msg_rows {
+            messages.push(m?);
+        }
+
+        // Attach blocks for each message
+        for msg in &mut messages {
+            let mut block_stmt = conn.prepare("SELECT payload_json FROM message_blocks WHERE message_id = ?1 ORDER BY sequence ASC")?;
+            let block_rows = block_stmt.query_map(params![msg.id], |r| {
+                let json_str: String = r.get(0)?;
+                Ok(json_str)
+            })?;
+
+            for br in block_rows {
+                let json_str = br?;
+                if let Ok(block) = serde_json::from_str::<MessageBlock>(&json_str) {
+                    msg.blocks.push(block);
+                }
+            }
+        }
+
+        Ok(messages)
     }
 }
 

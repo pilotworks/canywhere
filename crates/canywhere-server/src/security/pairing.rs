@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use std::sync::Arc;
 
@@ -8,7 +8,7 @@ use crate::db::repositories::RepositoryManager;
 
 pub struct PairingSecurityManager {
     repo: Arc<RepositoryManager>,
-    signing_key: SigningKey,
+    _signing_key: SigningKey,
     verifying_key_hex: String,
     port: u16,
 }
@@ -21,7 +21,7 @@ impl PairingSecurityManager {
 
         Self {
             repo,
-            signing_key,
+            _signing_key: signing_key,
             verifying_key_hex,
             port,
         }
@@ -36,11 +36,25 @@ impl PairingSecurityManager {
         let secret = nanoid::nanoid!(32);
         let expires_at = self.repo.create_pairing_session(&token, &secret, 300_000)?;
 
+        let mut endpoints = vec![format!("ws://127.0.0.1:{}/rpc", self.port)];
+
+        // Probe local network IP if available
+        if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
+            if socket.connect("8.8.8.8:80").is_ok() {
+                if let Ok(local_addr) = socket.local_addr() {
+                    let ip = local_addr.ip();
+                    if !ip.is_loopback() {
+                        endpoints.insert(0, format!("ws://{}:{}/rpc", ip, self.port));
+                    }
+                }
+            }
+        }
+
         Ok(PairingQrPayload {
             host_id: nanoid::nanoid!(16),
             host_name: host_name.to_string(),
             token,
-            endpoints: vec![format!("ws://127.0.0.1:{}/rpc", self.port)],
+            endpoints,
             host_public_key: self.verifying_key_hex.clone(),
             expires_at,
         })

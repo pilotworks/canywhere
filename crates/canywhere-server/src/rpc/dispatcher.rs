@@ -85,6 +85,18 @@ impl RpcDispatcher {
                 Ok(serde_json::json!({ "chat": chat }))
             }
 
+            "chat.get" => {
+                let chat_id = p["chatId"].as_str().ok_or_else(|| anyhow::anyhow!("chatId required"))?;
+                let chat = self.repo.get_chat(chat_id)?.ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
+                let messages = self.repo.get_chat_history(chat_id)?;
+                let pending_approvals = Vec::new(); // Approvals handled in-flight
+                Ok(serde_json::to_value(ChatGetResult {
+                    chat,
+                    messages,
+                    pending_approvals,
+                })?)
+            }
+
             "turn.send" => {
                 let params: TurnSendParams = serde_json::from_value(p)?;
                 let chat = match self.repo.get_chat(&params.chat_id)? {
@@ -94,6 +106,24 @@ impl RpcDispatcher {
 
                 let thread_id = chat.external_thread_id.unwrap_or_default();
                 let message_id = nanoid::nanoid!(16);
+
+                // Save user message to persistent history
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64;
+
+                let user_msg = Message {
+                    id: message_id.clone(),
+                    chat_id: chat.id.clone(),
+                    turn_id: None,
+                    role: MessageRole::User,
+                    blocks: vec![MessageBlock::Text { content: params.content.clone() }],
+                    created_at: now,
+                    streaming: false,
+                };
+                let _ = self.repo.record_message(&user_msg);
+
                 let turn_id = self.adapter.submit_turn(&chat.id, &thread_id, &message_id, &params.content).await?;
 
                 let _ = self.repo.update_chat_status(&chat.id, ChatStatus::Running, None);
@@ -102,6 +132,24 @@ impl RpcDispatcher {
                     turn_id,
                     status: ChatStatus::Running,
                 })?)
+            }
+
+            "turn.interrupt" => {
+                let chat_id = p["chatId"].as_str().ok_or_else(|| anyhow::anyhow!("chatId required"))?;
+                let turn_id = p["turnId"].as_str().ok_or_else(|| anyhow::anyhow!("turnId required"))?;
+                let chat = self.repo.get_chat(chat_id)?.ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
+                let thread_id = chat.external_thread_id.unwrap_or_default();
+
+                self.adapter.interrupt_turn(&thread_id, turn_id).await?;
+                let _ = self.repo.update_chat_status(chat_id, ChatStatus::Idle, None);
+                Ok(serde_json::json!({ "status": "interrupted" }))
+            }
+
+            "approval.respond" => {
+                let approval_id = p["approvalId"].as_str().ok_or_else(|| anyhow::anyhow!("approvalId required"))?;
+                let decision = p["decision"].as_str().unwrap_or("accept");
+                // Notify adapter of approval decision if needed
+                Ok(serde_json::json!({ "status": "ok", "approvalId": approval_id, "decision": decision }))
             }
 
             "pairing.createSession" => {

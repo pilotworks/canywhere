@@ -11,7 +11,7 @@ use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tower_http::cors::CorsLayer;
-use tracing::info;
+use tracing::{error, info, warn};
 
 use canywhere_protocol::rpc::*;
 use crate::adapters::{AgentEvent, CodexAdapter};
@@ -69,6 +69,7 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl
 }
 
 async fn handle_socket(socket: WebSocket, state: AppState) {
+    info!("🔌 [HostServer] WebSocket client connected");
     let (mut ws_sink, mut ws_stream) = socket.split();
     let (tx_outgoing, mut rx_outgoing) = mpsc::channel::<Message>(100);
 
@@ -97,7 +98,40 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
+                AgentEvent::BlockStarted { chat_id, message_id, block } => {
+                    info!("🛠️  [HostServer] Tool block started for chat {}", chat_id);
+                    serde_json::json!({
+                        "method": "tool.started",
+                        "params": {
+                            "chatId": chat_id,
+                            "messageId": message_id,
+                            "block": block
+                        }
+                    })
+                }
+                AgentEvent::BlockCompleted { chat_id, message_id, block_id } => {
+                    info!("✅ [HostServer] Tool block completed: {}", block_id);
+                    serde_json::json!({
+                        "method": "tool.completed",
+                        "params": {
+                            "chatId": chat_id,
+                            "messageId": message_id,
+                            "block": { "id": block_id }
+                        }
+                    })
+                }
+                AgentEvent::ApprovalRequested { chat_id, request } => {
+                    warn!("⚠️  [HostServer] Approval requested: {} (chat: {})", request.id, chat_id);
+                    serde_json::json!({
+                        "method": "approval.requested",
+                        "params": {
+                            "chatId": chat_id,
+                            "approval": request
+                        }
+                    })
+                }
                 AgentEvent::TurnCompleted { chat_id, turn_id, status } => {
+                    info!("🏁 [HostServer] Turn completed: {} (chat: {})", turn_id, chat_id);
                     serde_json::json!({
                         "method": "turn.completed",
                         "params": {
@@ -107,7 +141,6 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
-                _ => continue,
             };
 
             let json_str = serde_json::to_string(&notification).unwrap_or_default();
@@ -123,13 +156,18 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     while let Some(Ok(msg)) = ws_stream.next().await {
         if let Message::Text(text) = msg {
             if let Ok(req) = serde_json::from_str::<RpcRequestEnvelope>(&text) {
+                info!("📩 [RPC Request] id: {:?}, method: {}", req.id, req.method);
                 let res = dispatcher.dispatch(req).await;
+                if let Some(err) = &res.error {
+                    error!("❌ [RPC Error] id: {:?}, message: {}", res.id, err.message);
+                }
                 let res_str = serde_json::to_string(&res).unwrap_or_default();
                 let _ = tx_response.send(Message::Text(res_str.into())).await;
             }
         }
     }
 
+    info!("🔌 [HostServer] WebSocket client disconnected");
     broadcast_task.abort();
     outgoing_pump.abort();
 }

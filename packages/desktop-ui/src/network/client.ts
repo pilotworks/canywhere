@@ -276,8 +276,21 @@ export class CanywhereClient {
       this.reconnectTimer = null;
     }
     this.tokenBuffer.destroy();
-    this.ws?.close();
-    this.ws = null;
+    if (this.ws) {
+      // Avoid browser warning if closed during CONNECTING
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
+      this.ws.onerror = null;
+      this.ws.onclose = null;
+      if (this.ws.readyState === WebSocket.OPEN) {
+        this.ws.close();
+      } else if (this.ws.readyState === WebSocket.CONNECTING) {
+        // Delay close until open to prevent abrupt abortion warning
+        const socketToClose = this.ws;
+        socketToClose.onopen = () => socketToClose.close();
+      }
+      this.ws = null;
+    }
   }
 }
 
