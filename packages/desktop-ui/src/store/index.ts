@@ -212,3 +212,33 @@ export const useModelStore = create<ModelState>((set) => ({
   },
   setSelectedModel: (selectedModel) => set({ selectedModel }),
 }));
+
+export interface UiState {
+  sidebarWidth: number;
+  setSidebarWidth: (width: number) => void;
+}
+
+const getInitialSidebarWidth = (): number => {
+  try {
+    const saved = localStorage.getItem("canywhere_sidebar_width");
+    if (saved) {
+      const parsed = parseInt(saved, 10);
+      if (!isNaN(parsed) && parsed >= 180 && parsed <= 500) {
+        return parsed;
+      }
+    }
+  } catch {}
+  return 256;
+};
+
+export const useUiStore = create<UiState>((set) => ({
+  sidebarWidth: getInitialSidebarWidth(),
+  setSidebarWidth: (width) => {
+    const clamped = Math.max(180, Math.min(500, width));
+    try {
+      localStorage.setItem("canywhere_sidebar_width", String(clamped));
+    } catch {}
+    set({ sidebarWidth: clamped });
+  },
+}));
+

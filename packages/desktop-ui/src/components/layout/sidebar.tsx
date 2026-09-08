@@ -16,7 +16,7 @@ import {
   Files,
   FolderSearch,
 } from "lucide-react";
-import { useConnectionStore, useWorkspaceStore, useChatStore } from "../../store/index.js";
+import { useConnectionStore, useWorkspaceStore, useChatStore, useUiStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { PairingModal } from "../pairing/pairing-modal.js";
 import { ThemeToggle } from "../ui/theme-toggle.js";
@@ -37,7 +37,10 @@ export const Sidebar: React.FC = () => {
   const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const chats = useChatStore((s) => s.chats);
   const activeChatId = useChatStore((s) => s.activeChatId);
+  const sidebarWidth = useUiStore((s) => s.sidebarWidth);
+  const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
 
+  const [isResizing, setIsResizing] = useState(false);
   const [pairingOpen, setPairingOpen] = useState(false);
   const [newWsOpen, setNewWsOpen] = useState(false);
   const [wsName, setWsName] = useState("");
@@ -56,6 +59,28 @@ export const Sidebar: React.FC = () => {
   const toggleWorkspaceExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setExpandedWorkspaces((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleMouseDownResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const delta = moveEvent.clientX - startX;
+      setSidebarWidth(startWidth + delta);
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
   };
 
   const handleBrowseFolder = async () => {
@@ -93,7 +118,19 @@ export const Sidebar: React.FC = () => {
   const standaloneChats = chats.filter((c) => !c.workspaceId);
 
   return (
-    <aside className="w-64 bg-[var(--sidebar-bg)] border-r border-[var(--sidebar-border)] flex flex-col h-screen select-none text-[13px]">
+    <aside
+      style={{ width: `${sidebarWidth}px` }}
+      className="relative bg-[var(--sidebar-bg)] border-r border-[var(--sidebar-border)] flex flex-col h-screen select-none text-[13px] shrink-0"
+    >
+      {/* Resizer Handle */}
+      <div
+        onMouseDown={handleMouseDownResize}
+        className={`absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-sky-500/40 transition-colors z-20 ${
+          isResizing ? "bg-sky-500/60" : ""
+        }`}
+        title="Drag to resize sidebar"
+      />
+
       {/* Window Drag Title Bar Header for macOS */}
       <div
         data-tauri-drag-region
