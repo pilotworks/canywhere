@@ -96,6 +96,7 @@ impl CodexAdapter {
                 if line.trim().is_empty() {
                     continue;
                 }
+                tracing::info!("[CodexStdout] {}", line);
                 if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
                     Self::handle_incoming(
                         msg,
@@ -504,12 +505,36 @@ impl CodexAdapter {
                 message_id: msg_id,
                 delta,
             });
+        } else if method == "item/reasoning/textDelta" || method == "item/reasoning/summaryTextDelta" {
+            let delta = params["delta"].as_str().unwrap_or("").to_string();
+            let msg_id = active_turn
+                .as_ref()
+                .map(|t| t.1.clone())
+                .unwrap_or_else(|| nanoid::nanoid!(16));
+            let _ = tx.send(AgentEvent::TokenDelta {
+                chat_id,
+                message_id: msg_id,
+                delta,
+            });
         } else if method == "item/completed" {
             let item = &params["item"];
             let item_type = item["type"].as_str().unwrap_or("");
+            let msg_id = active_turn
+                .as_ref()
+                .map(|t| t.1.clone())
+                .unwrap_or_else(|| nanoid::nanoid!(16));
+
             if item_type == "agentMessage" {
                 if let Some(text) = item["text"].as_str() {
                     let mut text_lock = chat_text.lock().await;
+                    let existing = text_lock.get(&chat_id).cloned().unwrap_or_default();
+                    if existing.is_empty() {
+                        let _ = tx.send(AgentEvent::TokenDelta {
+                            chat_id: chat_id.clone(),
+                            message_id: msg_id,
+                            delta: text.to_string(),
+                        });
+                    }
                     text_lock.insert(chat_id.clone(), text.to_string());
                 }
             }
