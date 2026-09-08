@@ -2,8 +2,8 @@ use anyhow::Result;
 use rusqlite::params;
 use uuid::Uuid;
 
-use canywhere_protocol::models::*;
 use super::Database;
+use canywhere_protocol::models::*;
 
 pub struct RepositoryManager {
     db: Database,
@@ -95,11 +95,15 @@ impl RepositoryManager {
         if let Some(ws_id) = workspace_id {
             let mut stmt = conn.prepare("SELECT id, workspace_id, title, provider_id, kind, status, thread_id, created_at, updated_at FROM chats WHERE workspace_id = ?1 ORDER BY updated_at DESC")?;
             let rows = stmt.query_map(params![ws_id], map_chat_row)?;
-            for r in rows { list.push(r?); }
+            for r in rows {
+                list.push(r?);
+            }
         } else {
             let mut stmt = conn.prepare("SELECT id, workspace_id, title, provider_id, kind, status, thread_id, created_at, updated_at FROM chats ORDER BY updated_at DESC")?;
             let rows = stmt.query_map([], map_chat_row)?;
-            for r in rows { list.push(r?); }
+            for r in rows {
+                list.push(r?);
+            }
         }
 
         Ok(list)
@@ -145,7 +149,12 @@ impl RepositoryManager {
         })
     }
 
-    pub fn update_chat_status(&self, id: &str, status: ChatStatus, thread_id: Option<&str>) -> Result<()> {
+    pub fn update_chat_status(
+        &self,
+        id: &str,
+        status: ChatStatus,
+        thread_id: Option<&str>,
+    ) -> Result<()> {
         let conn = self.db.conn();
         let now = chrono_now();
         let status_str = match status {
@@ -229,16 +238,26 @@ impl RepositoryManager {
                 id: r.get(0)?,
                 public_key: r.get(1)?,
                 name: r.get(2)?,
-                platform: if platform_str == "ios" { DevicePlatform::Ios } else { DevicePlatform::Desktop },
+                platform: if platform_str == "ios" {
+                    DevicePlatform::Ios
+                } else {
+                    DevicePlatform::Desktop
+                },
                 paired_at: r.get(4)?,
                 last_seen_at: r.get(5)?,
-                last_transport: if transport_str == "tailscale" { DeviceTransport::Tailscale } else { DeviceTransport::Lan },
+                last_transport: if transport_str == "tailscale" {
+                    DeviceTransport::Tailscale
+                } else {
+                    DeviceTransport::Lan
+                },
                 revoked: revoked_int != 0,
             })
         })?;
 
         let mut list = Vec::new();
-        for r in rows { list.push(r?); }
+        for r in rows {
+            list.push(r?);
+        }
         Ok(list)
     }
 
@@ -263,7 +282,12 @@ impl RepositoryManager {
         Ok(())
     }
 
-    pub fn record_message_block(&self, message_id: &str, sequence: i32, block: &MessageBlock) -> Result<()> {
+    pub fn record_message_block(
+        &self,
+        message_id: &str,
+        sequence: i32,
+        block: &MessageBlock,
+    ) -> Result<()> {
         let conn = self.db.conn();
         let id = Uuid::new_v4().to_string();
         let now = chrono_now();

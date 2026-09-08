@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 export type ThemeMode = "light" | "dark" | "system";
 
@@ -25,13 +27,40 @@ function resolveTheme(theme: ThemeMode): "light" | "dark" {
   return theme;
 }
 
+let nativeBackgroundRequest = 0;
+
+async function syncTauriNativeBackground(isDark: boolean) {
+  const request = ++nativeBackgroundRequest;
+  const color: [number, number, number, number] = isDark
+    ? [9, 9, 11, 255]
+    : [255, 255, 255, 255];
+
+  try {
+    if (request === nativeBackgroundRequest) {
+      await getCurrentWindow().setBackgroundColor(color);
+    }
+  } catch {}
+  try {
+    if (request === nativeBackgroundRequest) {
+      await getCurrentWebview().setBackgroundColor(color);
+    }
+  } catch {}
+}
+
 function applyThemeToDocument(resolved: "light" | "dark") {
   const root = document.documentElement;
-  if (resolved === "dark") {
+  const isDark = resolved === "dark";
+  if (isDark) {
     root.classList.add("dark");
+    root.style.colorScheme = "dark";
+    root.style.backgroundColor = "#09090b";
   } else {
     root.classList.remove("dark");
+    root.style.colorScheme = "light";
+    root.style.backgroundColor = "#ffffff";
   }
+
+  syncTauriNativeBackground(isDark);
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => {

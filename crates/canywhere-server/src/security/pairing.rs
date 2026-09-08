@@ -3,8 +3,8 @@ use ed25519_dalek::{Signature, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use std::sync::Arc;
 
-use canywhere_protocol::models::{Device, DevicePlatform, DeviceTransport, PairingQrPayload};
 use crate::db::repositories::RepositoryManager;
+use canywhere_protocol::models::{Device, DevicePlatform, DeviceTransport, PairingQrPayload};
 
 pub struct PairingSecurityManager {
     repo: Arc<RepositoryManager>,
@@ -76,12 +76,18 @@ impl PairingSecurityManager {
         // Verify ed25519 signature
         let pubkey_bytes = hex::decode(client_pubkey_hex)?;
         let verifying_key = VerifyingKey::from_bytes(
-            pubkey_bytes.as_slice().try_into().map_err(|_| anyhow::anyhow!("Invalid pubkey length"))?,
+            pubkey_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid pubkey length"))?,
         )?;
 
         let sig_bytes = hex::decode(signature_hex)?;
         let signature = Signature::from_bytes(
-            sig_bytes.as_slice().try_into().map_err(|_| anyhow::anyhow!("Invalid signature length"))?,
+            sig_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| anyhow::anyhow!("Invalid signature length"))?,
         );
 
         verifying_key.verify(token.as_bytes(), &signature)?;
@@ -91,8 +97,12 @@ impl PairingSecurityManager {
             name: device_name.to_string(),
             platform,
             public_key: client_pubkey_hex.to_string(),
-            paired_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64,
-            last_seen_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64,
+            paired_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_millis() as i64,
+            last_seen_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_millis() as i64,
             last_transport: DeviceTransport::Lan,
             revoked: false,
         };

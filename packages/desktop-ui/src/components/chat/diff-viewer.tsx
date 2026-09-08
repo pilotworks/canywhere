@@ -38,7 +38,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ patch }) => {
         </button>
       </div>
 
-      <div className="overflow-x-auto p-2 leading-snug">
+      <div className="overflow-x-auto p-2 leading-snug no-scrollbar">
         {lines.map((line, idx) => {
           let lineStyle = "text-[var(--foreground)]/80";
           let bgStyle = "bg-transparent";

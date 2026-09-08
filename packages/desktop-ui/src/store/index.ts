@@ -69,6 +69,8 @@ export interface ChatState {
   setActiveTurn: (chatId: string, turnId: string | null) => void;
 }
 
+export const EMPTY_MESSAGES: Message[] = [];
+
 export const useChatStore = create<ChatState>((set) => ({
   chats: [],
   activeChatId: null,
@@ -79,9 +81,17 @@ export const useChatStore = create<ChatState>((set) => ({
   addChat: (chat) => set((s) => ({ chats: [chat, ...s.chats] })),
   setActiveChatId: (activeChatId) => set({ activeChatId }),
   setChatStatus: (chatId, status) =>
-    set((s) => ({
-      chats: s.chats.map((c) => (c.id === chatId ? { ...c, status } : c))
-    })),
+    set((s) => {
+      const isCompleted = status === "idle" || status === "error";
+      const list = s.messages[chatId];
+      const updatedMessages = isCompleted && list
+        ? { ...s.messages, [chatId]: list.map((m) => m.streaming ? { ...m, streaming: false } : m) }
+        : s.messages;
+      return {
+        chats: s.chats.map((c) => (c.id === chatId ? { ...c, status } : c)),
+        messages: updatedMessages
+      };
+    }),
 
   setMessages: (chatId, messages) =>
     set((s) => ({
@@ -99,8 +109,10 @@ export const useChatStore = create<ChatState>((set) => ({
   appendTokenDelta: (chatId, messageId, _blockId, text) =>
     set((s) => {
       const list = s.messages[chatId] || [];
+      const hasExactMatch = list.some((m) => m.id === messageId);
       const updated = list.map((m) => {
-        if (m.id !== messageId) return m;
+        const matches = hasExactMatch ? m.id === messageId : (m.streaming && m.role === "agent");
+        if (!matches) return m;
         // Find existing text block or append to last
         const blocks = [...m.blocks];
         const lastBlock = blocks[blocks.length - 1];
@@ -267,8 +279,6 @@ const getInitialRightSidebarWidth = (): number => {
 const DEFAULT_RIGHT_TABS: RightTabItem[] = [
   { id: "fileTree", type: "fileTree", title: "Files", isPermanent: true },
   { id: "terminal", type: "terminal", title: "Terminal", isPermanent: true },
-  { id: "filePreview", type: "filePreview", title: "Preview", isPermanent: true },
-  { id: "diff", type: "diff", title: "Diffs", isPermanent: true },
 ];
 
 export const useUiStore = create<UiState>((set) => ({

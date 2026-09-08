@@ -13,11 +13,11 @@ use tokio::sync::{broadcast, mpsc};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 
-use canywhere_protocol::rpc::*;
 use crate::adapters::{AgentEvent, CodexAdapter};
 use crate::db::repositories::RepositoryManager;
 use crate::rpc::dispatcher::RpcDispatcher;
 use crate::security::PairingSecurityManager;
+use canywhere_protocol::rpc::*;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -33,8 +33,54 @@ pub async fn run_server(
     pairing: Arc<PairingSecurityManager>,
     event_tx: broadcast::Sender<AgentEvent>,
 ) -> anyhow::Result<()> {
-    let dispatcher = Arc::new(RpcDispatcher::new(repo, adapter, Arc::clone(&pairing)));
+    let dispatcher = Arc::new(RpcDispatcher::new(
+        Arc::clone(&repo),
+        adapter,
+        Arc::clone(&pairing),
+    ));
     let host_public_key = pairing.host_public_key().to_string();
+
+    // Spawn background task to persist agent messages and chat status on turn completion
+    let repo_persist = Arc::clone(&repo);
+    let mut persist_rx = event_tx.subscribe();
+    tokio::spawn(async move {
+        while let Ok(event) = persist_rx.recv().await {
+            if let AgentEvent::TurnCompleted {
+                chat_id,
+                turn_id,
+                status,
+                text_content,
+            } = event
+            {
+                let _ = repo_persist.update_chat_status(&chat_id, status, None);
+                if let Some(text) = text_content {
+                    if !text.trim().is_empty() {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as i64;
+                        let agent_msg = canywhere_protocol::models::Message {
+                            id: nanoid::nanoid!(16),
+                            chat_id: chat_id.clone(),
+                            turn_id: Some(turn_id),
+                            role: canywhere_protocol::models::MessageRole::Agent,
+                            blocks: vec![canywhere_protocol::models::MessageBlock::Text {
+                                content: text,
+                            }],
+                            created_at: now,
+                            streaming: false,
+                        };
+                        if let Err(e) = repo_persist.record_message(&agent_msg) {
+                            tracing::error!(
+                                "[HostServer] Failed to record completed agent message: {}",
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    });
 
     let state = AppState {
         dispatcher,
@@ -88,7 +134,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let broadcast_task = tokio::spawn(async move {
         while let Ok(event) = event_rx.recv().await {
             let notification = match event {
-                AgentEvent::TokenDelta { chat_id, message_id, delta } => {
+                AgentEvent::TokenDelta {
+                    chat_id,
+                    message_id,
+                    delta,
+                } => {
                     serde_json::json!({
                         "method": "message.delta",
                         "params": {
@@ -98,7 +148,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
-                AgentEvent::BlockStarted { chat_id, message_id, block } => {
+                AgentEvent::BlockStarted {
+                    chat_id,
+                    message_id,
+                    block,
+                } => {
                     info!("🛠️  [HostServer] Tool block started for chat {}", chat_id);
                     serde_json::json!({
                         "method": "tool.started",
@@ -109,7 +163,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
-                AgentEvent::BlockCompleted { chat_id, message_id, block_id } => {
+                AgentEvent::BlockCompleted {
+                    chat_id,
+                    message_id,
+                    block_id,
+                } => {
                     info!("✅ [HostServer] Tool block completed: {}", block_id);
                     serde_json::json!({
                         "method": "tool.completed",
@@ -121,7 +179,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     })
                 }
                 AgentEvent::ApprovalRequested { chat_id, request } => {
-                    warn!("⚠️  [HostServer] Approval requested: {} (chat: {})", request.id, chat_id);
+                    warn!(
+                        "⚠️  [HostServer] Approval requested: {} (chat: {})",
+                        request.id, chat_id
+                    );
                     serde_json::json!({
                         "method": "approval.requested",
                         "params": {
@@ -130,8 +191,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
-                AgentEvent::TurnCompleted { chat_id, turn_id, status } => {
-                    info!("🏁 [HostServer] Turn completed: {} (chat: {})", turn_id, chat_id);
+                AgentEvent::TurnCompleted {
+                    chat_id,
+                    turn_id,
+                    status,
+                    ..
+                } => {
+                    info!(
+                        "🏁 [HostServer] Turn completed: {} (chat: {})",
+                        turn_id, chat_id
+                    );
                     serde_json::json!({
                         "method": "turn.completed",
                         "params": {
@@ -144,7 +213,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
             };
 
             let json_str = serde_json::to_string(&notification).unwrap_or_default();
-            if tx_broadcast.send(Message::Text(json_str.into())).await.is_err() {
+            if tx_broadcast
+                .send(Message::Text(json_str.into()))
+                .await
+                .is_err()
+            {
                 break;
             }
         }

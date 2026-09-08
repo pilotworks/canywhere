@@ -13,7 +13,6 @@ interface FileTreeNodeItemProps {
 export const FileTreeNodeItem: React.FC<FileTreeNodeItemProps> = ({ node, workspaceId, depth = 0 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  const setActiveFile = useWorkspaceStore((s) => s.setActiveFile);
   const openOrFocusTab = useUiStore((s) => s.openOrFocusTab);
 
   const handleClick = async () => {
@@ -23,11 +22,6 @@ export const FileTreeNodeItem: React.FC<FileTreeNodeItemProps> = ({ node, worksp
       setLoading(true);
       try {
         const fileData = await client.readWorkspaceFile(workspaceId, node.path);
-        setActiveFile({
-          workspaceId,
-          path: fileData.path,
-          content: fileData.content,
-        });
         openOrFocusTab({
           id: `file:${fileData.path}`,
           type: "filePreview",

@@ -4,7 +4,6 @@ import { Sidebar } from "./components/layout/sidebar.js";
 import { RightSidebar } from "./components/layout/right-sidebar.js";
 import { ChatView } from "./components/chat/chat-view.js";
 import { ApprovalModal } from "./components/approval/approval-modal.js";
-import { FileViewerModal } from "./components/layout/file-viewer-modal.js";
 
 export const App: React.FC = () => {
   useEffect(() => {
@@ -13,14 +12,13 @@ export const App: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)] text-[var(--foreground)] font-sans">
+    <div className="flex h-full w-full min-h-full min-w-full overflow-hidden bg-[var(--background)] text-[var(--foreground)] font-sans">
       <Sidebar />
       <main className="flex-1 flex flex-col h-full overflow-hidden">
         <ChatView />
       </main>
       <RightSidebar />
       <ApprovalModal />
-      <FileViewerModal />
     </div>
   );
 };

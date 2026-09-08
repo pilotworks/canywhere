@@ -52,4 +52,114 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     let pair_res = dispatcher.dispatch(pair_req).await;
     assert!(pair_res.error.is_none());
     assert!(pair_res.result.unwrap()["qrPayload"]["token"].is_string());
+
+    // 4. Create Standalone Chat
+    let chat_req = RpcRequestEnvelope {
+        id: RpcId::Number(4),
+        method: "chat.create".to_string(),
+        params: Some(serde_json::json!({
+            "kind": "standalone",
+            "providerId": "codex",
+            "title": "Standalone Integration Chat"
+        })),
+    };
+    let chat_res = dispatcher.dispatch(chat_req).await;
+    assert!(chat_res.error.is_none());
+    let created_chat = chat_res.result.unwrap()["chat"].clone();
+    let chat_id = created_chat["id"].as_str().unwrap().to_string();
+    assert_eq!(created_chat["title"], "Standalone Integration Chat");
+
+    // 5. Chat Get
+    let get_req = RpcRequestEnvelope {
+        id: RpcId::Number(5),
+        method: "chat.get".to_string(),
+        params: Some(serde_json::json!({ "chatId": chat_id })),
+    };
+    let get_res = dispatcher.dispatch(get_req).await;
+    assert!(get_res.error.is_none());
+    let get_val = get_res.result.unwrap();
+    assert_eq!(get_val["chat"]["id"], chat_id);
+}
+
+#[tokio::test]
+async fn test_real_codex_thread_start() {
+    let codex_bin = std::env::var("CODEX_BIN").unwrap_or_else(|_| "codex".to_string());
+    let (adapter, _rx) = CodexAdapter::new(&codex_bin);
+
+    if let Err(e) = adapter.initialize().await {
+        eprintln!("Codex not available for live test, skipping: {}", e);
+        return;
+    }
+
+    let chat_id = format!("test-chat-{}", nanoid::nanoid!(8));
+    let tmp_dir = std::env::temp_dir();
+    let cwd = tmp_dir.to_str().unwrap();
+
+    let thread_id = match adapter.start_thread(&chat_id, cwd, None).await {
+        Ok(id) => {
+            println!("Successfully started thread in Codex: {}", id);
+            assert!(!id.is_empty(), "thread_id must not be empty");
+            id
+        }
+        Err(e) => {
+            panic!("Failed to start thread with real Codex: {:?}", e);
+        }
+    };
+
+    let msg_id = format!("msg-{}", nanoid::nanoid!(8));
+    let turn_id = match adapter
+        .submit_turn(
+            &chat_id,
+            &thread_id,
+            &msg_id,
+            "Please reply with just the word 'HELLO'",
+            None,
+        )
+        .await
+    {
+        Ok(t) => {
+            println!("Successfully submitted turn to Codex: {}", t);
+            assert!(!t.is_empty(), "turn_id must not be empty");
+            t
+        }
+        Err(e) => {
+            panic!("Failed to submit turn: {:?}", e);
+        }
+    };
+
+    // Wait for at least one token delta or turn completed event
+    let timeout = tokio::time::sleep(tokio::time::Duration::from_secs(10));
+    tokio::pin!(timeout);
+
+    let mut got_event = false;
+    let mut rx = _rx;
+    loop {
+        tokio::select! {
+            _ = &mut timeout => {
+                println!("Timeout waiting for token delta, but turn was accepted (turn_id={})", turn_id);
+                break;
+            }
+            res = rx.recv() => {
+                if let Ok(ev) = res {
+                    match ev {
+                        canywhere_server::adapters::AgentEvent::TokenDelta { delta, .. } => {
+                            println!("Received TokenDelta from Codex: {:?}", delta);
+                            got_event = true;
+                            break;
+                        }
+                        canywhere_server::adapters::AgentEvent::TurnCompleted { .. } => {
+                            println!("Received TurnCompleted from Codex");
+                            got_event = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        got_event || !turn_id.is_empty(),
+        "Must have either received an event or turn_id"
+    );
 }

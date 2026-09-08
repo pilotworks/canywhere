@@ -2,6 +2,7 @@
 
 @layer base {
   :root {
+    color-scheme: light;
     --canvas: #f4f4f5;
     --background: #ffffff;
     --foreground: #09090b;
@@ -23,37 +24,38 @@
     --border-subtle: #f4f4f5;
     --input: #e4e4e7;
     --ring: #71717a;
-    --sidebar-bg: #fafafa;
+    --sidebar-bg: #f4f4f6;
     --sidebar-border: #e4e4e7;
     --code-bg: #f4f4f5;
     --code-border: #e4e4e7;
   }
 
   .dark {
+    color-scheme: dark;
     --canvas: #09090b;
     --background: #09090b;
     --foreground: #f4f4f5;
-    --card: #121214;
+    --card: #18181b;
     --card-foreground: #f4f4f5;
-    --popover: #121214;
+    --popover: #18181b;
     --popover-foreground: #f4f4f5;
     --primary: #f4f4f5;
     --primary-foreground: #09090b;
-    --secondary: #18181b;
+    --secondary: #27272a;
     --secondary-foreground: #f4f4f5;
-    --muted: #18181b;
-    --muted-foreground: #71717a;
-    --accent: #27272a;
+    --muted: #27272a;
+    --muted-foreground: #a1a1aa;
+    --accent: #2e2e33;
     --accent-foreground: #f4f4f5;
     --destructive: #f43f5e;
     --destructive-foreground: #ffffff;
     --border: #27272a;
-    --border-subtle: #18181b;
+    --border-subtle: #1f1f23;
     --input: #27272a;
-    --ring: #52525b;
-    --sidebar-bg: #0c0c0e;
+    --ring: #71717a;
+    --sidebar-bg: #18181b;
     --sidebar-border: #27272a;
-    --code-bg: #121214;
+    --code-bg: #141417;
     --code-border: #27272a;
   }
 
@@ -61,9 +63,21 @@
     border-color: var(--border);
   }
 
-  body {
+  html {
+    background-color: var(--background);
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+  }
+
+  body,
+  #root {
     background-color: var(--background);
     color: var(--foreground);
+    width: 100%;
+    height: 100%;
+    min-height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, Helvetica, Arial, sans-serif;
     letter-spacing: -0.01em;
     overflow: hidden;
@@ -87,4 +101,44 @@
   ::-webkit-scrollbar-thumb:hover {
     background: var(--muted-foreground);
   }
+
+  /* Utility to completely hide scrollbars while maintaining scroll/swipe ability */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
 }
+
+@utility no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Window Dragging Support for Desktop Frameless / Overlay Windows */
+[data-tauri-drag-region],
+.window-drag-region {
+  -webkit-app-region: drag;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Allow clicking buttons, inputs, menus, and interactive controls inside drag regions */
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] input,
+[data-tauri-drag-region] textarea,
+[data-tauri-drag-region] select,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] [role="button"],
+[data-tauri-drag-region] [role="menuitem"],
+[data-no-drag],
+.window-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+

@@ -28,6 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu.js";
+import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
 
 export const Sidebar: React.FC = () => {
   const connectionStatus = useConnectionStore((s) => s.status);
@@ -126,9 +127,11 @@ export const Sidebar: React.FC = () => {
       {/* Window Drag Title Bar Header for macOS */}
       <div
         data-tauri-drag-region
-        className="h-10 flex items-center justify-between px-3 border-b border-[var(--sidebar-border)] text-xs text-[var(--muted-foreground)] shrink-0"
+        onMouseDown={startWindowDrag}
+        onDoubleClick={handleTitleBarDoubleClick}
+        className="h-10 flex items-center justify-between px-3 text-xs text-[var(--muted-foreground)] shrink-0"
       >
-        <div data-tauri-drag-region className="flex-1 h-full" />
+        <div data-tauri-drag-region onMouseDown={startWindowDrag} className="flex-1 h-full" />
         <Button
           variant="ghost"
           size="icon-sm"
@@ -286,7 +289,7 @@ export const Sidebar: React.FC = () => {
       </div>
 
       {/* FOOTER CONTROLS & STATUS */}
-      <div className="p-2 border-t border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] space-y-1">
+      <div className="p-2 bg-[var(--sidebar-bg)] space-y-1">
         <div className="flex items-center justify-between px-1 py-1">
           <div className="flex items-center gap-2">
             <span
@@ -334,21 +337,23 @@ export const Sidebar: React.FC = () => {
               <h3 className="text-sm font-semibold text-[var(--foreground)]">Add Workspace</h3>
               <p className="text-xs text-[var(--muted-foreground)]">Register a local project directory for Codex to index.</p>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs text-[var(--muted-foreground)] block">Display Name</label>
               <Input
                 type="text"
+                size="sm"
                 value={wsName}
                 onChange={(e) => setWsName(e.target.value)}
                 placeholder="e.g. codex-anywhere"
                 required
               />
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <label className="text-xs text-[var(--muted-foreground)] block">Directory Path</label>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2">
                 <Input
                   type="text"
+                  size="sm"
                   value={wsPath}
                   onChange={(e) => setWsPath(e.target.value)}
                   placeholder="/path/to/project"

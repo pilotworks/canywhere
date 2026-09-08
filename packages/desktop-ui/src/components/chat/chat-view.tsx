@@ -13,7 +13,7 @@ import {
   Check,
   PanelRight,
 } from "lucide-react";
-import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore, useUiStore } from "../../store/index.js";
+import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore, useUiStore, EMPTY_MESSAGES } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { Message } from "../../types/index.js";
 import { Button } from "../ui/button.js";
@@ -26,8 +26,7 @@ import {
 } from "../ui/dropdown-menu.js";
 import { RenderBlock } from "./render-block.js";
 import { InlineApprovalCard } from "./inline-approval-card.js";
-
-const EMPTY_MESSAGES: Message[] = [];
+import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
 
 const SLASH_COMMANDS = [
   { cmd: "/reset", desc: "Clear conversational state & start fresh" },
@@ -103,6 +102,8 @@ export const ChatView: React.FC = () => {
         {/* Header bar in empty state matching sidebar height and draggable */}
         <header
           data-tauri-drag-region
+          onMouseDown={startWindowDrag}
+          onDoubleClick={handleTitleBarDoubleClick}
           className="h-10 border-b border-[var(--border)] px-4 flex items-center justify-between shrink-0 bg-[var(--card)]/50 backdrop-blur-md text-xs select-none"
         >
           <div data-tauri-drag-region className="flex items-center gap-2 text-[var(--muted-foreground)]">
@@ -173,9 +174,11 @@ export const ChatView: React.FC = () => {
       {/* Top Header / Breadcrumbs Bar */}
       <header
         data-tauri-drag-region
+        onMouseDown={startWindowDrag}
+        onDoubleClick={handleTitleBarDoubleClick}
         className="h-10 border-b border-[var(--border)] px-4 flex items-center justify-between shrink-0 bg-[var(--card)]/50 backdrop-blur-md text-xs select-none"
       >
-        <div data-tauri-drag-region className="flex items-center gap-2 text-[var(--muted-foreground)] truncate">
+        <div data-tauri-drag-region className="flex items-center gap-2 text-[var(--muted-foreground)] truncate flex-1 min-w-0 mr-4">
           {activeWorkspace ? (
             <>
               <FolderGit2 className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
@@ -299,7 +302,7 @@ export const ChatView: React.FC = () => {
       </div>
 
       {/* Information Dense Composer Input Area */}
-      <div className="p-4 border-t border-[var(--border)] bg-[var(--card)]/40 backdrop-blur-md shrink-0 relative">
+      <div className="p-4 shrink-0 relative">
         {/* Slash Command Suggestions Popover */}
         {showSlashMenu && (
           <div className="max-w-3xl mx-auto mb-2 rounded-lg border border-[var(--border)] bg-[var(--popover)] shadow-lg overflow-hidden font-mono text-xs select-none">
@@ -319,7 +322,7 @@ export const ChatView: React.FC = () => {
           </div>
         )}
 
-        <div className="max-w-3xl mx-auto rounded-xl border border-[var(--border)] bg-[var(--background)] focus-within:border-[var(--ring)] focus-within:ring-1 focus-within:ring-[var(--ring)] transition-all shadow-xs overflow-hidden">
+        <div className="max-w-3xl mx-auto rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] focus-within:border-[var(--ring)] focus-within:ring-1 focus-within:ring-[var(--ring)] transition-all shadow-xs overflow-hidden">
           <textarea
             ref={textareaRef}
             value={input}

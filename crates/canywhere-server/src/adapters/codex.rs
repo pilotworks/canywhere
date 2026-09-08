@@ -11,11 +11,31 @@ use canywhere_protocol::models::*;
 
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
-    TokenDelta { chat_id: String, message_id: String, delta: String },
-    BlockStarted { chat_id: String, message_id: String, block: MessageBlock },
-    BlockCompleted { chat_id: String, message_id: String, block_id: String },
-    ApprovalRequested { chat_id: String, request: ApprovalRequest },
-    TurnCompleted { chat_id: String, turn_id: String, status: ChatStatus },
+    TokenDelta {
+        chat_id: String,
+        message_id: String,
+        delta: String,
+    },
+    BlockStarted {
+        chat_id: String,
+        message_id: String,
+        block: MessageBlock,
+    },
+    BlockCompleted {
+        chat_id: String,
+        message_id: String,
+        block_id: String,
+    },
+    ApprovalRequested {
+        chat_id: String,
+        request: ApprovalRequest,
+    },
+    TurnCompleted {
+        chat_id: String,
+        turn_id: String,
+        status: ChatStatus,
+        text_content: Option<String>,
+    },
 }
 
 pub struct CodexAdapter {
@@ -25,6 +45,7 @@ pub struct CodexAdapter {
     pending_rpcs: Arc<Mutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>>,
     thread_to_chat: Arc<Mutex<HashMap<String, String>>>,
     chat_active_turn: Arc<Mutex<HashMap<String, (String, String)>>>,
+    chat_accumulated_text: Arc<Mutex<HashMap<String, String>>>,
     event_tx: broadcast::Sender<AgentEvent>,
 }
 
@@ -38,9 +59,14 @@ impl CodexAdapter {
             pending_rpcs: Arc::new(Mutex::new(HashMap::new())),
             thread_to_chat: Arc::new(Mutex::new(HashMap::new())),
             chat_active_turn: Arc::new(Mutex::new(HashMap::new())),
+            chat_accumulated_text: Arc::new(Mutex::new(HashMap::new())),
             event_tx,
         };
         (adapter, event_rx)
+    }
+
+    pub fn event_tx(&self) -> broadcast::Sender<AgentEvent> {
+        self.event_tx.clone()
     }
 
     pub async fn initialize(&self) -> Result<()> {
@@ -61,14 +87,25 @@ impl CodexAdapter {
         let pending = Arc::clone(&self.pending_rpcs);
         let thread_to_chat = Arc::clone(&self.thread_to_chat);
         let chat_turn = Arc::clone(&self.chat_active_turn);
+        let chat_text = Arc::clone(&self.chat_accumulated_text);
         let tx = self.event_tx.clone();
 
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout).lines();
             while let Ok(Some(line)) = reader.next_line().await {
-                if line.trim().is_empty() { continue; }
+                if line.trim().is_empty() {
+                    continue;
+                }
                 if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&line) {
-                    Self::handle_incoming(msg, &pending, &thread_to_chat, &chat_turn, &tx).await;
+                    Self::handle_incoming(
+                        msg,
+                        &pending,
+                        &thread_to_chat,
+                        &chat_turn,
+                        &chat_text,
+                        &tx,
+                    )
+                    .await;
                 }
             }
         });
@@ -86,32 +123,67 @@ impl CodexAdapter {
         }
 
         // Initialize handshake
-        self.send_request("initialize", serde_json::json!({
-            "clientInfo": { "name": "canywhere-server", "version": "0.1.0" },
-            "capabilities": { "experimentalApi": true }
-        })).await?;
+        self.send_request(
+            "initialize",
+            serde_json::json!({
+                "clientInfo": { "name": "canywhere-server", "version": "0.1.0" },
+                "capabilities": { "experimentalApi": true }
+            }),
+        )
+        .await?;
 
-        self.send_notification("initialized", serde_json::json!({})).await?;
+        self.send_notification("initialized", serde_json::json!({}))
+            .await?;
         info!("[CodexAdapter] Initialized successfully");
         Ok(())
     }
 
-    pub async fn start_thread(&self, chat_id: &str, cwd: &str, sub_paths: Option<&[String]>) -> Result<String> {
-        let res = self.send_request("thread/start", serde_json::json!({
-            "cwd": cwd,
-            "runtimeWorkspaceRoots": sub_paths
-        })).await?;
+    pub async fn start_thread(
+        &self,
+        chat_id: &str,
+        cwd: &str,
+        sub_paths: Option<&[String]>,
+    ) -> Result<String> {
+        let res = self
+            .send_request(
+                "thread/start",
+                serde_json::json!({
+                    "cwd": cwd,
+                    "runtimeWorkspaceRoots": sub_paths
+                }),
+            )
+            .await?;
 
-        let thread_id = res["threadId"].as_str().unwrap_or("").to_string();
-        self.thread_to_chat.lock().await.insert(thread_id.clone(), chat_id.to_string());
+        let thread_id = res
+            .get("thread")
+            .and_then(|t| t.get("id"))
+            .and_then(|id| id.as_str())
+            .or_else(|| res.get("threadId").and_then(|id| id.as_str()))
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Failed to retrieve thread ID from thread/start response: {:?}",
+                    res
+                )
+            })?
+            .to_string();
+
+        self.thread_to_chat
+            .lock()
+            .await
+            .insert(thread_id.clone(), chat_id.to_string());
         Ok(thread_id)
     }
 
     pub async fn list_models(&self) -> Result<Vec<ModelInfo>> {
-        let res = self.send_request("model/list", serde_json::json!({
-            "limit": 50,
-            "includeHidden": false
-        })).await;
+        let res = self
+            .send_request(
+                "model/list",
+                serde_json::json!({
+                    "limit": 50,
+                    "includeHidden": false
+                }),
+            )
+            .await;
 
         match res {
             Ok(val) => {
@@ -120,7 +192,8 @@ impl CodexAdapter {
                     for item in items {
                         let id = item["id"].as_str().unwrap_or("").to_string();
                         let model = item["model"].as_str().unwrap_or(&id).to_string();
-                        let display_name = item["displayName"].as_str().unwrap_or(&model).to_string();
+                        let display_name =
+                            item["displayName"].as_str().unwrap_or(&model).to_string();
                         let description = item["description"].as_str().map(|s| s.to_string());
                         let is_default = item["isDefault"].as_bool().unwrap_or(false);
 
@@ -133,7 +206,9 @@ impl CodexAdapter {
                             }
                         }
 
-                        let default_effort = item["defaultReasoningEffort"].as_str().map(|s| s.to_string());
+                        let default_effort = item["defaultReasoningEffort"]
+                            .as_str()
+                            .map(|s| s.to_string());
 
                         list.push(ModelInfo {
                             id,
@@ -163,7 +238,11 @@ impl CodexAdapter {
                 display_name: "gpt-5-codex".to_string(),
                 description: Some("Default frontier autonomous coding model".to_string()),
                 is_default: true,
-                supported_reasoning_efforts: vec!["low".to_string(), "medium".to_string(), "high".to_string()],
+                supported_reasoning_efforts: vec![
+                    "low".to_string(),
+                    "medium".to_string(),
+                    "high".to_string(),
+                ],
                 default_reasoning_effort: Some("medium".to_string()),
             },
             ModelInfo {
@@ -172,7 +251,11 @@ impl CodexAdapter {
                 display_name: "o3-mini".to_string(),
                 description: Some("High-speed reasoning model".to_string()),
                 is_default: false,
-                supported_reasoning_efforts: vec!["low".to_string(), "medium".to_string(), "high".to_string()],
+                supported_reasoning_efforts: vec![
+                    "low".to_string(),
+                    "medium".to_string(),
+                    "high".to_string(),
+                ],
                 default_reasoning_effort: Some("medium".to_string()),
             },
             ModelInfo {
@@ -187,7 +270,14 @@ impl CodexAdapter {
         ])
     }
 
-    pub async fn submit_turn(&self, chat_id: &str, thread_id: &str, message_id: &str, prompt: &str, model: Option<&str>) -> Result<String> {
+    pub async fn submit_turn(
+        &self,
+        chat_id: &str,
+        thread_id: &str,
+        message_id: &str,
+        prompt: &str,
+        model: Option<&str>,
+    ) -> Result<String> {
         let mut turn_params = serde_json::json!({
             "threadId": thread_id,
             "input": [{ "type": "text", "text": prompt }]
@@ -199,19 +289,44 @@ impl CodexAdapter {
 
         let res = self.send_request("turn/start", turn_params).await?;
 
-        let turn_id = res["turnId"].as_str().unwrap_or("").to_string();
-        self.chat_active_turn.lock().await.insert(chat_id.to_string(), (turn_id.clone(), message_id.to_string()));
+        let turn_id = res
+            .get("turn")
+            .and_then(|t| t.get("id"))
+            .and_then(|id| id.as_str())
+            .or_else(|| res.get("turnId").and_then(|id| id.as_str()))
+            .unwrap_or("")
+            .to_string();
+
+        self.chat_active_turn.lock().await.insert(
+            chat_id.to_string(),
+            (turn_id.clone(), message_id.to_string()),
+        );
+        self.chat_accumulated_text
+            .lock()
+            .await
+            .insert(chat_id.to_string(), String::new());
         Ok(turn_id)
     }
 
     pub async fn steer_turn(&self, thread_id: &str, turn_id: &str, prompt: &str) -> Result<String> {
-        let res = self.send_request("turn/steer", serde_json::json!({
-            "threadId": thread_id,
-            "expectedTurnId": turn_id,
-            "input": [{ "type": "text", "text": prompt }]
-        })).await?;
+        let res = self
+            .send_request(
+                "turn/steer",
+                serde_json::json!({
+                    "threadId": thread_id,
+                    "expectedTurnId": turn_id,
+                    "input": [{ "type": "text", "text": prompt }]
+                }),
+            )
+            .await?;
 
-        let res_turn_id = res["turnId"].as_str().unwrap_or(turn_id).to_string();
+        let res_turn_id = res
+            .get("turn")
+            .and_then(|t| t.get("id"))
+            .and_then(|id| id.as_str())
+            .or_else(|| res.get("turnId").and_then(|id| id.as_str()))
+            .unwrap_or(turn_id)
+            .to_string();
         Ok(res_turn_id)
     }
 
@@ -224,22 +339,28 @@ impl CodexAdapter {
         };
 
         if let Ok(id) = external_request_id.parse::<i64>() {
-            self.send_response(id, serde_json::json!({ "decision": codex_decision })).await?;
+            self.send_response(id, serde_json::json!({ "decision": codex_decision }))
+                .await?;
         } else {
-            // Also notify if notification-based
-            let _ = self.send_notification("approval/resolve", serde_json::json!({
-                "requestId": external_request_id,
-                "decision": codex_decision
-            })).await;
+            let payload = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": external_request_id,
+                "result": { "decision": codex_decision }
+            });
+            self.write_line(&payload).await?;
         }
         Ok(())
     }
 
     pub async fn interrupt_turn(&self, thread_id: &str, turn_id: &str) -> Result<()> {
-        self.send_request("turn/interrupt", serde_json::json!({
-            "threadId": thread_id,
-            "expectedTurnId": turn_id
-        })).await?;
+        self.send_request(
+            "turn/interrupt",
+            serde_json::json!({
+                "threadId": thread_id,
+                "expectedTurnId": turn_id
+            }),
+        )
+        .await?;
         Ok(())
     }
 
@@ -248,96 +369,181 @@ impl CodexAdapter {
         pending: &Arc<Mutex<HashMap<i64, oneshot::Sender<serde_json::Value>>>>,
         thread_to_chat: &Arc<Mutex<HashMap<String, String>>>,
         chat_turn: &Arc<Mutex<HashMap<String, (String, String)>>>,
+        chat_text: &Arc<Mutex<HashMap<String, String>>>,
         tx: &broadcast::Sender<AgentEvent>,
     ) {
-        // Response
-        if let Some(id) = msg["id"].as_i64() {
-            if let Some(chan) = pending.lock().await.remove(&id) {
-                let _ = chan.send(msg["result"].clone());
+        // 1. In JSON-RPC 2.0, a Response has an "id" and ("result" or "error"), but NO "method".
+        if msg.get("method").is_none() {
+            if let Some(id) = msg.get("id").and_then(|v| v.as_i64()) {
+                if let Some(chan) = pending.lock().await.remove(&id) {
+                    let res = if let Some(err) = msg.get("error") {
+                        tracing::error!("[CodexAdapter] RPC Error for id {}: {:?}", id, err);
+                        msg.clone()
+                    } else {
+                        msg.get("result")
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null)
+                    };
+                    let _ = chan.send(res);
+                }
             }
             return;
         }
 
-        // Notification
-        if let Some(method) = msg["method"].as_str() {
-            let params = &msg["params"];
-            let thread_id = params["threadId"].as_str().unwrap_or("");
-            let chat_id = match thread_to_chat.lock().await.get(thread_id).cloned() {
-                Some(c) => c,
-                None => return,
-            };
+        // 2. Incoming Request or Notification from Codex
+        let method = match msg["method"].as_str() {
+            Some(m) => m,
+            None => return,
+        };
+        let params = &msg["params"];
+        let req_id = msg.get("id"); // If Some, it's a ServerRequest expecting a response
 
-            let active_turn = chat_turn.lock().await.get(&chat_id).cloned();
+        let thread_id = params
+            .get("threadId")
+            .and_then(|t| t.as_str())
+            .or_else(|| {
+                params
+                    .get("thread")
+                    .and_then(|t| t.get("id"))
+                    .and_then(|id| id.as_str())
+            })
+            .unwrap_or("");
 
-            if method == "item/agentMessage/delta" {
-                if let Some((_, message_id)) = active_turn {
-                    let delta = params["delta"].as_str().unwrap_or("").to_string();
-                    let _ = tx.send(AgentEvent::TokenDelta { chat_id, message_id, delta });
+        let chat_id = match thread_to_chat.lock().await.get(thread_id).cloned() {
+            Some(c) => c,
+            None => return,
+        };
+
+        let active_turn = chat_turn.lock().await.get(&chat_id).cloned();
+
+        if method == "item/agentMessage/delta" {
+            if let Some((_, message_id)) = active_turn {
+                let delta = params["delta"].as_str().unwrap_or("").to_string();
+                {
+                    let mut text_lock = chat_text.lock().await;
+                    text_lock
+                        .entry(chat_id.clone())
+                        .or_default()
+                        .push_str(&delta);
                 }
-            } else if method == "item/commandExecution/requestApproval" {
-                let call_id = params["itemId"].as_str().unwrap_or(&nanoid::nanoid!(12)).to_string();
-                let command = params["command"].as_str().unwrap_or("").to_string();
-                let cwd = params["cwd"].as_str().unwrap_or("").to_string();
-                let is_high_risk = command.contains("rm -rf") || command.contains("sudo") || command.contains("git reset --hard") || command.contains("mkfs");
-
-                let approval = ApprovalRequest {
-                    id: nanoid::nanoid!(16),
-                    chat_id: chat_id.clone(),
-                    turn_id: active_turn.as_ref().map(|t| t.0.clone()).unwrap_or_default(),
-                    external_request_id: call_id,
-                    kind: ApprovalKind::Command,
-                    payload: ApprovalPayload {
-                        command: Some(command),
-                        cwd: Some(cwd),
-                        reason: params["reason"].as_str().map(|s| s.to_string()),
-                        diff: None,
-                        path: None,
-                        prompt: None,
-                        is_high_risk: Some(is_high_risk),
-                    },
-                    status: ApprovalStatus::Pending,
-                    requested_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64,
-                    resolved_at: None,
-                    resolved_by_device_id: None,
-                    resolved_by_device_name: None,
-                };
-                let _ = tx.send(AgentEvent::ApprovalRequested { chat_id, request: approval });
-            } else if method == "item/fileChange/requestApproval" {
-                let call_id = params["itemId"].as_str().unwrap_or(&nanoid::nanoid!(12)).to_string();
-                let path = params["path"].as_str().unwrap_or("").to_string();
-                let diff = params["diff"].as_str().unwrap_or("").to_string();
-
-                let approval = ApprovalRequest {
-                    id: nanoid::nanoid!(16),
-                    chat_id: chat_id.clone(),
-                    turn_id: active_turn.as_ref().map(|t| t.0.clone()).unwrap_or_default(),
-                    external_request_id: call_id,
-                    kind: ApprovalKind::FileChange,
-                    payload: ApprovalPayload {
-                        command: None,
-                        cwd: None,
-                        reason: None,
-                        diff: Some(diff),
-                        path: Some(path),
-                        prompt: None,
-                        is_high_risk: Some(false),
-                    },
-                    status: ApprovalStatus::Pending,
-                    requested_at: std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as i64,
-                    resolved_at: None,
-                    resolved_by_device_id: None,
-                    resolved_by_device_name: None,
-                };
-                let _ = tx.send(AgentEvent::ApprovalRequested { chat_id, request: approval });
-            } else if method == "turn/completed" {
-                chat_turn.lock().await.remove(&chat_id);
-                let turn_id = params["turnId"].as_str().unwrap_or("").to_string();
-                let _ = tx.send(AgentEvent::TurnCompleted { chat_id, turn_id, status: ChatStatus::Idle });
+                let _ = tx.send(AgentEvent::TokenDelta {
+                    chat_id,
+                    message_id,
+                    delta,
+                });
             }
+        } else if method == "item/commandExecution/requestApproval" {
+            let external_req_id = req_id
+                .and_then(|v| {
+                    v.as_i64()
+                        .map(|n| n.to_string())
+                        .or_else(|| v.as_str().map(|s| s.to_string()))
+                })
+                .unwrap_or_else(|| params["itemId"].as_str().unwrap_or("").to_string());
+            let command = params["command"].as_str().unwrap_or("").to_string();
+            let cwd = params["cwd"].as_str().unwrap_or("").to_string();
+            let is_high_risk = command.contains("rm -rf")
+                || command.contains("sudo")
+                || command.contains("git reset --hard")
+                || command.contains("mkfs");
+
+            let approval = ApprovalRequest {
+                id: nanoid::nanoid!(16),
+                chat_id: chat_id.clone(),
+                turn_id: active_turn
+                    .as_ref()
+                    .map(|t| t.0.clone())
+                    .unwrap_or_default(),
+                external_request_id: external_req_id,
+                kind: ApprovalKind::Command,
+                payload: ApprovalPayload {
+                    command: Some(command),
+                    cwd: Some(cwd),
+                    reason: params["reason"].as_str().map(|s| s.to_string()),
+                    diff: None,
+                    path: None,
+                    prompt: None,
+                    is_high_risk: Some(is_high_risk),
+                },
+                status: ApprovalStatus::Pending,
+                requested_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64,
+                resolved_at: None,
+                resolved_by_device_id: None,
+                resolved_by_device_name: None,
+            };
+            let _ = tx.send(AgentEvent::ApprovalRequested {
+                chat_id,
+                request: approval,
+            });
+        } else if method == "item/fileChange/requestApproval" {
+            let external_req_id = req_id
+                .and_then(|v| {
+                    v.as_i64()
+                        .map(|n| n.to_string())
+                        .or_else(|| v.as_str().map(|s| s.to_string()))
+                })
+                .unwrap_or_else(|| params["itemId"].as_str().unwrap_or("").to_string());
+            let path = params["path"].as_str().unwrap_or("").to_string();
+            let diff = params["diff"].as_str().unwrap_or("").to_string();
+
+            let approval = ApprovalRequest {
+                id: nanoid::nanoid!(16),
+                chat_id: chat_id.clone(),
+                turn_id: active_turn
+                    .as_ref()
+                    .map(|t| t.0.clone())
+                    .unwrap_or_default(),
+                external_request_id: external_req_id,
+                kind: ApprovalKind::FileChange,
+                payload: ApprovalPayload {
+                    command: None,
+                    cwd: None,
+                    reason: None,
+                    diff: Some(diff),
+                    path: Some(path),
+                    prompt: None,
+                    is_high_risk: Some(false),
+                },
+                status: ApprovalStatus::Pending,
+                requested_at: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as i64,
+                resolved_at: None,
+                resolved_by_device_id: None,
+                resolved_by_device_name: None,
+            };
+            let _ = tx.send(AgentEvent::ApprovalRequested {
+                chat_id,
+                request: approval,
+            });
+        } else if method == "turn/completed" {
+            chat_turn.lock().await.remove(&chat_id);
+            let text_content = chat_text.lock().await.remove(&chat_id);
+            let turn_id = params
+                .get("turn")
+                .and_then(|t| t.get("id"))
+                .and_then(|id| id.as_str())
+                .or_else(|| params.get("turnId").and_then(|id| id.as_str()))
+                .unwrap_or("")
+                .to_string();
+            let _ = tx.send(AgentEvent::TurnCompleted {
+                chat_id,
+                turn_id,
+                status: ChatStatus::Idle,
+                text_content,
+            });
         }
     }
 
-    async fn send_request(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
+    async fn send_request(
+        &self,
+        method: &str,
+        params: serde_json::Value,
+    ) -> Result<serde_json::Value> {
         let id = {
             let mut id_lock = self.next_rpc_id.lock().await;
             let current = *id_lock;

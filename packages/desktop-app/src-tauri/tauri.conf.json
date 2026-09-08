@@ -7,15 +7,19 @@
     "frontendDist": "../../desktop-ui/dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
+        "label": "main",
         "title": "Canywhere",
-        "width": 1200,
-        "height": 800,
+        "width": 1440,
+        "height": 900,
         "minWidth": 800,
         "minHeight": 600,
         "titleBarStyle": "Overlay",
-        "hiddenTitle": true
+        "hiddenTitle": true,
+        "theme": "Light",
+        "backgroundColor": [255, 255, 255, 255]
       }
     ],
     "security": {

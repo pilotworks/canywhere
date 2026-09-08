@@ -1,11 +1,11 @@
 use anyhow::Result;
 use std::sync::Arc;
 
-use canywhere_protocol::models::*;
-use canywhere_protocol::rpc::*;
 use crate::adapters::CodexAdapter;
 use crate::db::repositories::RepositoryManager;
 use crate::security::PairingSecurityManager;
+use canywhere_protocol::models::*;
+use canywhere_protocol::rpc::*;
 
 pub struct RpcDispatcher {
     repo: Arc<RepositoryManager>,
@@ -19,7 +19,11 @@ impl RpcDispatcher {
         adapter: Arc<CodexAdapter>,
         pairing: Arc<PairingSecurityManager>,
     ) -> Self {
-        Self { repo, adapter, pairing }
+        Self {
+            repo,
+            adapter,
+            pairing,
+        }
     }
 
     pub async fn dispatch(&self, req: RpcRequestEnvelope) -> RpcResponseEnvelope {
@@ -42,7 +46,11 @@ impl RpcDispatcher {
         }
     }
 
-    async fn handle_method(&self, method: &str, params: Option<serde_json::Value>) -> Result<serde_json::Value> {
+    async fn handle_method(
+        &self,
+        method: &str,
+        params: Option<serde_json::Value>,
+    ) -> Result<serde_json::Value> {
         let p = params.unwrap_or(serde_json::Value::Null);
 
         match method {
@@ -59,7 +67,9 @@ impl RpcDispatcher {
 
             "workspace.tree" => {
                 let params: WorkspaceTreeParams = serde_json::from_value(p)?;
-                let ws = self.repo.get_workspace(&params.workspace_id)?
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
                     .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
 
                 let base_path = std::path::Path::new(&ws.root_path);
@@ -71,12 +81,16 @@ impl RpcDispatcher {
 
                 let max_depth = params.max_depth.unwrap_or(3);
                 let root_node = build_file_tree(&target_dir, base_path, 0, max_depth)?;
-                Ok(serde_json::to_value(WorkspaceTreeResult { root: root_node })?)
+                Ok(serde_json::to_value(WorkspaceTreeResult {
+                    root: root_node,
+                })?)
             }
 
             "workspace.readFile" => {
                 let params: WorkspaceReadFileParams = serde_json::from_value(p)?;
-                let ws = self.repo.get_workspace(&params.workspace_id)?
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
                     .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
 
                 let base_path = std::path::Path::new(&ws.root_path);
@@ -123,7 +137,8 @@ end try"#;
                         }
                     }
                     None
-                }).await?;
+                })
+                .await?;
 
                 Ok(serde_json::to_value(WorkspacePickFolderResult {
                     path: chosen_path,
@@ -138,7 +153,7 @@ end try"#;
 
             "chat.create" => {
                 let input: ChatCreateInput = serde_json::from_value(p.clone())?;
-                let mut cwd = ".".to_string();
+                let mut cwd = String::new();
                 let mut sub_paths = None;
 
                 if let Some(ws_id) = &input.workspace_id {
@@ -148,19 +163,52 @@ end try"#;
                     }
                 }
 
-                let chat = self.repo.create_chat(input, None)?;
+                let mut chat = self.repo.create_chat(input, None)?;
+
+                if cwd.is_empty() {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                    let scratch_dir = std::path::PathBuf::from(home)
+                        .join(".canywhere")
+                        .join("scratch")
+                        .join("codex")
+                        .join(&chat.id);
+                    let _ = std::fs::create_dir_all(&scratch_dir);
+                    cwd = scratch_dir.to_string_lossy().to_string();
+                }
 
                 // Initialize underlying thread in Codex
-                if let Ok(thread_id) = self.adapter.start_thread(&chat.id, &cwd, sub_paths.as_deref()).await {
-                    let _ = self.repo.update_chat_status(&chat.id, ChatStatus::Idle, Some(&thread_id));
+                match self
+                    .adapter
+                    .start_thread(&chat.id, &cwd, sub_paths.as_deref())
+                    .await
+                {
+                    Ok(thread_id) => {
+                        let _ = self.repo.update_chat_status(
+                            &chat.id,
+                            ChatStatus::Idle,
+                            Some(&thread_id),
+                        );
+                        chat.external_thread_id = Some(thread_id);
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[RpcDispatcher] Failed to initialize Codex thread on chat.create: {}",
+                            e
+                        );
+                    }
                 }
 
                 Ok(serde_json::json!({ "chat": chat }))
             }
 
             "chat.get" => {
-                let chat_id = p["chatId"].as_str().ok_or_else(|| anyhow::anyhow!("chatId required"))?;
-                let chat = self.repo.get_chat(chat_id)?.ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
+                let chat_id = p["chatId"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("chatId required"))?;
+                let chat = self
+                    .repo
+                    .get_chat(chat_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
                 let messages = self.repo.get_chat_history(chat_id)?;
                 let pending_approvals = Vec::new(); // Approvals handled in-flight
                 Ok(serde_json::to_value(ChatGetResult {
@@ -172,13 +220,52 @@ end try"#;
 
             "turn.send" => {
                 let params: TurnSendParams = serde_json::from_value(p)?;
-                let chat = match self.repo.get_chat(&params.chat_id)? {
+                let mut chat = match self.repo.get_chat(&params.chat_id)? {
                     Some(c) => c,
                     None => anyhow::bail!("Chat not found"),
                 };
 
-                let thread_id = chat.external_thread_id.unwrap_or_default();
-                let message_id = nanoid::nanoid!(16);
+                // Self-healing: if thread_id is missing or empty, initialize thread now
+                let thread_id = match chat
+                    .external_thread_id
+                    .as_ref()
+                    .filter(|s| !s.trim().is_empty())
+                {
+                    Some(th) => th.clone(),
+                    None => {
+                        let mut cwd = String::new();
+                        let mut sub_paths = None;
+                        if let Some(ws_id) = &chat.workspace_id {
+                            if let Some(ws) = self.repo.get_workspace(ws_id)? {
+                                cwd = ws.root_path;
+                                sub_paths = Some(ws.sub_paths);
+                            }
+                        }
+                        if cwd.is_empty() {
+                            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                            let scratch_dir = std::path::PathBuf::from(home)
+                                .join(".canywhere")
+                                .join("scratch")
+                                .join("codex")
+                                .join(&chat.id);
+                            let _ = std::fs::create_dir_all(&scratch_dir);
+                            cwd = scratch_dir.to_string_lossy().to_string();
+                        }
+                        let th = self
+                            .adapter
+                            .start_thread(&chat.id, &cwd, sub_paths.as_deref())
+                            .await?;
+                        let _ = self
+                            .repo
+                            .update_chat_status(&chat.id, ChatStatus::Idle, Some(&th));
+                        chat.external_thread_id = Some(th.clone());
+                        th
+                    }
+                };
+
+                let message_id = params
+                    .client_message_id
+                    .unwrap_or_else(|| nanoid::nanoid!(16));
 
                 // Save user message to persistent history
                 let now = std::time::SystemTime::now()
@@ -191,21 +278,30 @@ end try"#;
                     chat_id: chat.id.clone(),
                     turn_id: None,
                     role: MessageRole::User,
-                    blocks: vec![MessageBlock::Text { content: params.content.clone() }],
+                    blocks: vec![MessageBlock::Text {
+                        content: params.content.clone(),
+                    }],
                     created_at: now,
                     streaming: false,
                 };
-                let _ = self.repo.record_message(&user_msg);
+                if let Err(e) = self.repo.record_message(&user_msg) {
+                    tracing::error!("[RpcDispatcher] Failed to record user message: {}", e);
+                }
 
-                let turn_id = self.adapter.submit_turn(
-                    &chat.id,
-                    &thread_id,
-                    &message_id,
-                    &params.content,
-                    params.model.as_deref(),
-                ).await?;
+                let turn_id = self
+                    .adapter
+                    .submit_turn(
+                        &chat.id,
+                        &thread_id,
+                        &message_id,
+                        &params.content,
+                        params.model.as_deref(),
+                    )
+                    .await?;
 
-                let _ = self.repo.update_chat_status(&chat.id, ChatStatus::Running, None);
+                let _ = self
+                    .repo
+                    .update_chat_status(&chat.id, ChatStatus::Running, None);
 
                 Ok(serde_json::to_value(TurnSendResult {
                     turn_id,
@@ -231,13 +327,18 @@ end try"#;
                     chat_id: chat.id.clone(),
                     turn_id: Some(params.turn_id.clone()),
                     role: MessageRole::User,
-                    blocks: vec![MessageBlock::Text { content: format!("[Steer] {}", params.content) }],
+                    blocks: vec![MessageBlock::Text {
+                        content: format!("[Steer] {}", params.content),
+                    }],
                     created_at: now,
                     streaming: false,
                 };
                 let _ = self.repo.record_message(&user_msg);
 
-                let steered_turn_id = self.adapter.steer_turn(&thread_id, &params.turn_id, &params.content).await?;
+                let steered_turn_id = self
+                    .adapter
+                    .steer_turn(&thread_id, &params.turn_id, &params.content)
+                    .await?;
                 Ok(serde_json::to_value(TurnSteerResult {
                     turn_id: steered_turn_id,
                     status: ChatStatus::Running,
@@ -245,22 +346,35 @@ end try"#;
             }
 
             "turn.interrupt" => {
-                let chat_id = p["chatId"].as_str().ok_or_else(|| anyhow::anyhow!("chatId required"))?;
-                let turn_id = p["turnId"].as_str().ok_or_else(|| anyhow::anyhow!("turnId required"))?;
-                let chat = self.repo.get_chat(chat_id)?.ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
+                let chat_id = p["chatId"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("chatId required"))?;
+                let turn_id = p["turnId"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("turnId required"))?;
+                let chat = self
+                    .repo
+                    .get_chat(chat_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
                 let thread_id = chat.external_thread_id.unwrap_or_default();
 
                 self.adapter.interrupt_turn(&thread_id, turn_id).await?;
-                let _ = self.repo.update_chat_status(chat_id, ChatStatus::Idle, None);
+                let _ = self
+                    .repo
+                    .update_chat_status(chat_id, ChatStatus::Idle, None);
                 Ok(serde_json::json!({ "status": "interrupted" }))
             }
 
             "approval.respond" => {
-                let approval_id = p["approvalId"].as_str().ok_or_else(|| anyhow::anyhow!("approvalId required"))?;
+                let approval_id = p["approvalId"]
+                    .as_str()
+                    .ok_or_else(|| anyhow::anyhow!("approvalId required"))?;
                 let decision = p["decision"].as_str().unwrap_or("accept");
                 // Notify adapter of approval decision
                 let _ = self.adapter.respond_approval(approval_id, decision).await;
-                Ok(serde_json::json!({ "status": "ok", "approvalId": approval_id, "decision": decision }))
+                Ok(
+                    serde_json::json!({ "status": "ok", "approvalId": approval_id, "decision": decision }),
+                )
             }
 
             "pairing.createSession" => {
@@ -335,11 +449,17 @@ fn build_file_tree(
                 for entry in sorted_entries {
                     let entry_name = entry.file_name().to_string_lossy().to_string();
                     // Skip hidden git/node_modules/target to prevent huge trees
-                    if entry_name.starts_with('.') || entry_name == "node_modules" || entry_name == "target" || entry_name == "dist" {
+                    if entry_name.starts_with('.')
+                        || entry_name == "node_modules"
+                        || entry_name == "target"
+                        || entry_name == "dist"
+                    {
                         continue;
                     }
 
-                    if let Ok(child_node) = build_file_tree(&entry.path(), base_root, current_depth + 1, max_depth) {
+                    if let Ok(child_node) =
+                        build_file_tree(&entry.path(), base_root, current_depth + 1, max_depth)
+                    {
                         node_children.push(child_node);
                     }
                 }
