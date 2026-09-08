@@ -43,6 +43,43 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     let list: WorkspaceListResult = serde_json::from_value(list_res.result.unwrap()).unwrap();
     assert_eq!(list.workspaces.len(), 1);
     assert_eq!(list.workspaces[0].name, "Rust Monorepo");
+    let ws_id = list.workspaces[0].id.clone();
+
+    // 2b. Update Workspace
+    let update_req = RpcRequestEnvelope {
+        id: RpcId::Number(21),
+        method: "workspace.update".to_string(),
+        params: Some(serde_json::json!({
+            "workspaceId": ws_id,
+            "name": "Updated Rust Monorepo"
+        })),
+    };
+    let update_res = dispatcher.dispatch(update_req).await;
+    assert!(update_res.error.is_none());
+    let updated: WorkspaceUpdateResult = serde_json::from_value(update_res.result.unwrap()).unwrap();
+    assert_eq!(updated.workspace.name, "Updated Rust Monorepo");
+
+    // 2c. Delete Workspace
+    let delete_req = RpcRequestEnvelope {
+        id: RpcId::Number(22),
+        method: "workspace.delete".to_string(),
+        params: Some(serde_json::json!({
+            "workspaceId": ws_id
+        })),
+    };
+    let delete_res = dispatcher.dispatch(delete_req).await;
+    assert!(delete_res.error.is_none());
+    let deleted: WorkspaceDeleteResult = serde_json::from_value(delete_res.result.unwrap()).unwrap();
+    assert!(deleted.success);
+
+    // Verify empty list
+    let list_res2 = dispatcher.dispatch(RpcRequestEnvelope {
+        id: RpcId::Number(23),
+        method: "workspace.list".to_string(),
+        params: None,
+    }).await;
+    let list2: WorkspaceListResult = serde_json::from_value(list_res2.result.unwrap()).unwrap();
+    assert_eq!(list2.workspaces.len(), 0);
 
     // 3. Pairing session creation
     let pair_req = RpcRequestEnvelope {

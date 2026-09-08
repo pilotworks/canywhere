@@ -99,6 +99,45 @@ impl RepositoryManager {
         })
     }
 
+    pub fn update_workspace(
+        &self,
+        id: &str,
+        name: Option<String>,
+        root_path: Option<String>,
+        sub_paths: Option<Vec<String>>,
+    ) -> Result<Option<Workspace>> {
+        let existing = self.get_workspace(id)?;
+        let Some(mut ws) = existing else {
+            return Ok(None);
+        };
+
+        if let Some(n) = name {
+            ws.name = n;
+        }
+        if let Some(rp) = root_path {
+            ws.root_path = rp;
+        }
+        if let Some(sp) = sub_paths {
+            ws.sub_paths = sp;
+        }
+        ws.last_opened_at = chrono_now();
+
+        let sub_paths_json = serde_json::to_string(&ws.sub_paths)?;
+        let conn = self.db.conn();
+        conn.execute(
+            "UPDATE workspaces SET name = ?1, root_path = ?2, sub_paths_json = ?3, updated_at = ?4 WHERE id = ?5",
+            params![ws.name, ws.root_path, sub_paths_json, ws.last_opened_at, id],
+        )?;
+
+        Ok(Some(ws))
+    }
+
+    pub fn delete_workspace(&self, id: &str) -> Result<bool> {
+        let conn = self.db.conn();
+        let rows = conn.execute("DELETE FROM workspaces WHERE id = ?1", params![id])?;
+        Ok(rows > 0)
+    }
+
     // Chats
     pub fn list_chats(&self, workspace_id: Option<&str>) -> Result<Vec<Chat>> {
         let conn = self.db.conn();
@@ -413,6 +452,27 @@ impl RepositoryManager {
         }
 
         Ok(messages)
+    }
+
+    // Settings
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.db.conn();
+        let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let mut rows = stmt.query(params![key])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.db.conn();
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
+            params![key, value],
+        )?;
+        Ok(())
     }
 }
 

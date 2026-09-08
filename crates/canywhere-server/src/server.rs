@@ -139,6 +139,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     let broadcast_task = tokio::spawn(async move {
         while let Ok(event) = event_rx.recv().await {
             let notification = match event {
+                AgentEvent::MessageCreated { message } => {
+                    info!("💬 [HostServer] Message created: {} in chat {}", message.id, message.chat_id);
+                    serde_json::json!({
+                        "method": "message.created",
+                        "params": {
+                            "chatId": message.chat_id,
+                            "message": message
+                        }
+                    })
+                }
                 AgentEvent::TokenDelta {
                     chat_id,
                     message_id,
@@ -234,6 +244,43 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         "method": "chat.deleted",
                         "params": {
                             "chatId": chat_id
+                        }
+                    })
+                }
+                AgentEvent::ChatCreated { chat } => {
+                    info!("✨ [HostServer] Chat created: {}", chat.id);
+                    serde_json::json!({
+                        "method": "chat.created",
+                        "params": {
+                            "chat": chat
+                        }
+                    })
+                }
+                AgentEvent::ModelUpdated { model, reasoning_effort } => {
+                    info!("🤖 [HostServer] Model updated: {} (effort: {:?})", model, reasoning_effort);
+                    serde_json::json!({
+                        "method": "model.updated",
+                        "params": {
+                            "model": model,
+                            "reasoningEffort": reasoning_effort
+                        }
+                    })
+                }
+                AgentEvent::WorkspaceUpdated { workspace } => {
+                    info!("📁 [HostServer] Workspace updated: {}", workspace.id);
+                    serde_json::json!({
+                        "method": "workspace.updated",
+                        "params": {
+                            "workspace": workspace
+                        }
+                    })
+                }
+                AgentEvent::WorkspaceDeleted { workspace_id } => {
+                    info!("🗑️  [HostServer] Workspace deleted: {}", workspace_id);
+                    serde_json::json!({
+                        "method": "workspace.deleted",
+                        "params": {
+                            "workspaceId": workspace_id
                         }
                     })
                 }

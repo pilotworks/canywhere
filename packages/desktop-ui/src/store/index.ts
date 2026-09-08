@@ -34,6 +34,8 @@ export interface WorkspaceState {
   activeFile: { workspaceId: string; path: string; content: string } | null;
   setWorkspaces: (workspaces: Workspace[]) => void;
   addWorkspace: (workspace: Workspace) => void;
+  updateWorkspace: (id: string, patch: Partial<Workspace>) => void;
+  removeWorkspace: (id: string) => void;
   setActiveWorkspaceId: (id: string | null) => void;
   setFileTree: (workspaceId: string, tree: FileTreeNode | null) => void;
   setActiveFile: (file: { workspaceId: string; path: string; content: string } | null) => void;
@@ -46,6 +48,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   activeFile: null,
   setWorkspaces: (workspaces) => set({ workspaces }),
   addWorkspace: (workspace) => set((s) => ({ workspaces: [workspace, ...s.workspaces] })),
+  updateWorkspace: (id, patch) =>
+    set((s) => ({
+      workspaces: s.workspaces.map((w) => (w.id === id ? { ...w, ...patch } : w)),
+    })),
+  removeWorkspace: (id) =>
+    set((s) => ({
+      workspaces: s.workspaces.filter((w) => w.id !== id),
+      activeWorkspaceId: s.activeWorkspaceId === id ? null : s.activeWorkspaceId,
+    })),
   setActiveWorkspaceId: (activeWorkspaceId) => set({ activeWorkspaceId }),
   setFileTree: (workspaceId, tree) =>
     set((s) => ({ fileTrees: { ...s.fileTrees, [workspaceId]: tree } })),
@@ -231,9 +242,11 @@ export interface ModelState {
   models: ModelInfo[];
   selectedModel: string;
   selectedEffort: string;
-  setModels: (models: ModelInfo[]) => void;
+  setModels: (models: ModelInfo[], currentModel?: string, currentEffort?: string) => void;
   setSelectedModel: (model: string) => void;
   setSelectedEffort: (effort: string) => void;
+  syncRemoteModel: (model: string, effort?: string) => void;
+  setOnModelChanged: (cb: (model: string, effort?: string) => void) => void;
 }
 
 const STORAGE_KEY_MODEL = "canywhere:last_selected_model";
@@ -255,25 +268,30 @@ const getSavedEffort = () => {
   }
 };
 
-export const useModelStore = create<ModelState>((set) => ({
+let onModelChangedCallback: ((model: string, effort?: string) => void) | null = null;
+
+export const useModelStore = create<ModelState>((set, get) => ({
   models: [],
   selectedModel: getSavedModel(),
   selectedEffort: getSavedEffort(),
-  setModels: (models) => {
+  setOnModelChanged: (cb) => {
+    onModelChangedCallback = cb;
+  },
+  setModels: (models, currentModel, currentEffort) => {
     if (!models || models.length === 0) return;
     const defaultModelInfo = models.find((m) => m.isDefault) || models[0];
     const defaultModel = defaultModelInfo?.model || "";
     set((s) => {
-      const savedModel = s.selectedModel || getSavedModel();
-      const matchedModel = models.find((m) => m.model === savedModel);
+      const preferredModel = currentModel || s.selectedModel || getSavedModel();
+      const matchedModel = models.find((m) => m.model === preferredModel);
       const activeModel = matchedModel ? matchedModel.model : defaultModel;
       const activeModelInfo = matchedModel || defaultModelInfo;
 
       const supportedEfforts = activeModelInfo?.supportedReasoningEfforts || [];
       const defaultEffort = activeModelInfo?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
 
-      const savedEffort = s.selectedEffort || getSavedEffort();
-      const activeEffort = supportedEfforts.includes(savedEffort) ? savedEffort : defaultEffort;
+      const preferredEffort = currentEffort || s.selectedEffort || getSavedEffort();
+      const activeEffort = supportedEfforts.includes(preferredEffort) ? preferredEffort : defaultEffort;
 
       try {
         localStorage.setItem(STORAGE_KEY_MODEL, activeModel);
@@ -289,15 +307,37 @@ export const useModelStore = create<ModelState>((set) => ({
       };
     });
   },
+  syncRemoteModel: (model, effort) => {
+    set((s) => {
+      const matchedModel = s.models.find((m) => m.model === model);
+      const supportedEfforts = matchedModel?.supportedReasoningEfforts || [];
+      const defaultEffort = matchedModel?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
+      const activeEffort = effort && supportedEfforts.includes(effort) ? effort : (effort || defaultEffort || s.selectedEffort);
+
+      try {
+        localStorage.setItem(STORAGE_KEY_MODEL, model);
+        if (activeEffort) {
+          localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
+        }
+      } catch {}
+
+      return {
+        selectedModel: model,
+        selectedEffort: activeEffort,
+      };
+    });
+  },
   setSelectedModel: (selectedModel) => {
     try {
       localStorage.setItem(STORAGE_KEY_MODEL, selectedModel);
     } catch {}
+    let finalEffort = "";
     set((s) => {
       const modelInfo = s.models.find((m) => m.model === selectedModel);
       const supportedEfforts = modelInfo?.supportedReasoningEfforts || [];
       const defaultEffort = modelInfo?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
       const activeEffort = supportedEfforts.includes(s.selectedEffort) ? s.selectedEffort : defaultEffort;
+      finalEffort = activeEffort;
       if (activeEffort) {
         try {
           localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
@@ -305,12 +345,18 @@ export const useModelStore = create<ModelState>((set) => ({
       }
       return { selectedModel, selectedEffort: activeEffort };
     });
+    if (onModelChangedCallback) {
+      onModelChangedCallback(selectedModel, finalEffort || undefined);
+    }
   },
   setSelectedEffort: (selectedEffort) => {
     try {
       localStorage.setItem(STORAGE_KEY_EFFORT, selectedEffort);
     } catch {}
     set({ selectedEffort });
+    if (onModelChangedCallback) {
+      onModelChangedCallback(get().selectedModel, selectedEffort);
+    }
   },
 }));
 

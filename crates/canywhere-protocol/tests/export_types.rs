@@ -27,7 +27,19 @@ fn export_typescript_and_json_schema() {
     let schema_dir = Path::new("../../schemas");
     fs::create_dir_all(schema_dir).unwrap();
 
-    let root_schema = schemars::schema_for!(Chat);
-    let schema_json = serde_json::to_string_pretty(&root_schema).unwrap();
-    fs::write(schema_dir.join("chat.schema.json"), schema_json).unwrap();
+    let schemas: Vec<(&str, serde_json::Value)> = vec![
+        ("chat.schema.json", serde_json::to_value(schemars::schema_for!(Chat)).unwrap()),
+        ("message.schema.json", serde_json::to_value(schemars::schema_for!(Message)).unwrap()),
+        ("workspace.schema.json", serde_json::to_value(schemars::schema_for!(Workspace)).unwrap()),
+        ("approval.schema.json", serde_json::to_value(schemars::schema_for!(ApprovalRequest)).unwrap()),
+        ("device.schema.json", serde_json::to_value(schemars::schema_for!(Device)).unwrap()),
+        ("pairing_qr.schema.json", serde_json::to_value(schemars::schema_for!(PairingQrPayload)).unwrap()),
+        ("pairing_response.schema.json", serde_json::to_value(schemars::schema_for!(PairingResponse)).unwrap()),
+        ("provider.schema.json", serde_json::to_value(schemars::schema_for!(Provider)).unwrap()),
+    ];
+
+    for (filename, schema) in schemas {
+        let schema_json = serde_json::to_string_pretty(&schema).unwrap();
+        fs::write(schema_dir.join(filename), schema_json).unwrap();
+    }
 }

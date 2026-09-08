@@ -1,20 +1,27 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Chat",
-  "type": "object",
-  "required": [
-    "createdAt",
-    "id",
-    "kind",
-    "providerId",
-    "status",
-    "title",
-    "updatedAt"
-  ],
+  "definitions": {
+    "ChatKind": {
+      "enum": [
+        "workspace",
+        "standalone"
+      ],
+      "type": "string"
+    },
+    "ChatStatus": {
+      "enum": [
+        "idle",
+        "running",
+        "awaitingApproval",
+        "error"
+      ],
+      "type": "string"
+    }
+  },
   "properties": {
     "createdAt": {
-      "type": "integer",
-      "format": "int64"
+      "format": "int64",
+      "type": "integer"
     },
     "externalThreadId": {
       "type": [
@@ -38,8 +45,8 @@
       "type": "string"
     },
     "updatedAt": {
-      "type": "integer",
-      "format": "int64"
+      "format": "int64",
+      "type": "integer"
     },
     "workspaceId": {
       "type": [
@@ -48,22 +55,15 @@
       ]
     }
   },
-  "definitions": {
-    "ChatKind": {
-      "type": "string",
-      "enum": [
-        "workspace",
-        "standalone"
-      ]
-    },
-    "ChatStatus": {
-      "type": "string",
-      "enum": [
-        "idle",
-        "running",
-        "awaitingApproval",
-        "error"
-      ]
-    }
-  }
+  "required": [
+    "createdAt",
+    "id",
+    "kind",
+    "providerId",
+    "status",
+    "title",
+    "updatedAt"
+  ],
+  "title": "Chat",
+  "type": "object"
 }

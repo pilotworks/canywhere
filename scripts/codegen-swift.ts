@@ -45,8 +45,23 @@ async function main() {
     },
   });
 
+  let swiftCode = result.lines
+    .join("\n")
+    .replace(
+      /class JSONAny: Codable \{/g,
+      "final class JSONAny: Codable, @unchecked Sendable {"
+    )
+    .replace(
+      /class JSONCodingKey: CodingKey \{/g,
+      "final class JSONCodingKey: CodingKey, @unchecked Sendable {"
+    )
+    .replace(
+      /class JSONNull: Codable, Hashable \{/g,
+      "final class JSONNull: Codable, Hashable, @unchecked Sendable {"
+    );
+
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  fs.writeFileSync(outputPath, result.lines.join("\n"), "utf-8");
+  fs.writeFileSync(outputPath, swiftCode, "utf-8");
 
   console.log(`✓ Successfully updated Swift models: ${outputPath} (${result.lines.length} lines)`);
 }

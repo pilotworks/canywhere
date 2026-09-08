@@ -31,6 +31,12 @@ export class CanywhereClient {
         append(item.chatId, item.messageId, item.blockId, item.text);
       }
     }, 24);
+
+    useModelStore.getState().setOnModelChanged((model, effort) => {
+      this.call("model.set", { model, reasoningEffort: effort }).catch((err) => {
+        console.error("[CanywhereClient] Failed to set model", err);
+      });
+    });
   }
 
   connect(): void {
@@ -100,7 +106,13 @@ export class CanywhereClient {
 
       const modelRes = await this.call("model.list", {});
       if (modelRes.models) {
-        useModelStore.getState().setModels(modelRes.models);
+        useModelStore
+          .getState()
+          .setModels(
+            modelRes.models,
+            modelRes.currentModel,
+            modelRes.currentReasoningEffort
+          );
       }
     } catch (err) {
       console.error("[CanywhereClient] Bootstrap failed", err);
@@ -140,6 +152,34 @@ export class CanywhereClient {
     return res.workspace;
   }
 
+  async updateWorkspace(workspaceId: string, name?: string, rootPath?: string, subPaths?: string[]): Promise<any> {
+    const res = await this.call("workspace.update", {
+      workspaceId,
+      name,
+      rootPath,
+      subPaths,
+    });
+    useWorkspaceStore.getState().updateWorkspace(workspaceId, res.workspace);
+    return res.workspace;
+  }
+
+  async deleteWorkspace(workspaceId: string): Promise<boolean> {
+    const res = await this.call("workspace.delete", { workspaceId });
+    if (res.success) {
+      useWorkspaceStore.getState().removeWorkspace(workspaceId);
+      // Remove chats belonging to this workspace
+      const chats = useChatStore.getState().chats.filter((c) => c.workspaceId !== workspaceId);
+      useChatStore.getState().setChats(chats);
+      if (useChatStore.getState().activeChatId) {
+        const activeExists = chats.some((c) => c.id === useChatStore.getState().activeChatId);
+        if (!activeExists) {
+          useChatStore.getState().setActiveChatId(chats[0]?.id || null);
+        }
+      }
+    }
+    return res.success;
+  }
+
   async getWorkspaceTree(workspaceId: string, subPath?: string, maxDepth: number = 3): Promise<any> {
     const res = await this.call("workspace.tree", {
       workspaceId,
@@ -175,30 +215,6 @@ export class CanywhereClient {
   }
 
   async sendTurn(chatId: string, content: string, model?: string): Promise<void> {
-    const now = BigInt(Date.now());
-    useChatStore.getState().addMessage(chatId, {
-      id: "optimistic-" + Date.now(),
-      chatId,
-      turnId: null,
-      role: "user",
-      blocks: [{ type: "text", content }],
-      createdAt: now,
-      streaming: false
-    });
-
-    const agentMsgId = "stream-" + Date.now();
-    useChatStore.getState().addMessage(chatId, {
-      id: agentMsgId,
-      chatId,
-      turnId: null,
-      role: "agent",
-      blocks: [],
-      createdAt: now,
-      streaming: true
-    });
-
-    useChatStore.getState().setChatStatus(chatId, "running");
-
     try {
       const activeModel = model || useModelStore.getState().selectedModel || null;
       const activeEffort = useModelStore.getState().selectedEffort || null;
@@ -213,25 +229,10 @@ export class CanywhereClient {
     } catch (err: any) {
       console.error("[CanywhereClient] turn.send failed", err);
       useChatStore.getState().setChatStatus(chatId, "idle");
-      useChatStore.getState().addBlock(chatId, agentMsgId, {
-        type: "text",
-        content: `Error: ${err?.message || String(err)}`,
-      });
     }
   }
 
   async steerTurn(chatId: string, turnId: string, content: string): Promise<void> {
-    const now = BigInt(Date.now());
-    useChatStore.getState().addMessage(chatId, {
-      id: "steer-" + Date.now(),
-      chatId,
-      turnId,
-      role: "user",
-      blocks: [{ type: "text", content: `[Steer] ${content}` }],
-      createdAt: now,
-      streaming: false
-    });
-
     await this.call("turn.steer", {
       chatId,
       turnId,
@@ -326,6 +327,18 @@ export class CanywhereClient {
 
   private handleNotification(method: string, params: any): void {
     switch (method) {
+      case "message.created": {
+        const { chatId, message } = params;
+        const list = useChatStore.getState().messages[chatId] || [];
+        if (!list.some((m) => m.id === message.id)) {
+          useChatStore.getState().addMessage(chatId, message);
+        }
+        if (message.role === "agent" && message.streaming) {
+          useChatStore.getState().setChatStatus(chatId, "running");
+        }
+        break;
+      }
+
       case "message.delta": {
         this.tokenBuffer.append({
           chatId: params.chatId,
@@ -369,6 +382,15 @@ export class CanywhereClient {
         break;
       }
 
+      case "chat.created": {
+        const { chat } = params;
+        const list = useChatStore.getState().chats;
+        if (!list.some((c) => c.id === chat.id)) {
+          useChatStore.getState().addChat(chat);
+        }
+        break;
+      }
+
       case "chat.updated": {
         useChatStore.getState().updateChat(params.chatId, { title: params.title });
         break;
@@ -376,6 +398,30 @@ export class CanywhereClient {
 
       case "chat.deleted": {
         useChatStore.getState().removeChat(params.chatId);
+        break;
+      }
+
+      case "model.updated": {
+        useModelStore.getState().syncRemoteModel(params.model, params.reasoningEffort);
+        break;
+      }
+
+      case "workspace.updated": {
+        useWorkspaceStore.getState().updateWorkspace(params.workspace.id, params.workspace);
+        break;
+      }
+
+      case "workspace.deleted": {
+        const wsId = params.workspaceId;
+        useWorkspaceStore.getState().removeWorkspace(wsId);
+        const chats = useChatStore.getState().chats.filter((c) => c.workspaceId !== wsId);
+        useChatStore.getState().setChats(chats);
+        if (useChatStore.getState().activeChatId) {
+          const activeExists = chats.some((c) => c.id === useChatStore.getState().activeChatId);
+          if (!activeExists) {
+            useChatStore.getState().setActiveChatId(chats[0]?.id || null);
+          }
+        }
         break;
       }
     }

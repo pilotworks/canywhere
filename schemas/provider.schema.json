@@ -1,0 +1,58 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "AdapterCapabilities": {
+      "properties": {
+        "supportsFileDiffs": {
+          "type": "boolean"
+        },
+        "supportsInterrupt": {
+          "type": "boolean"
+        },
+        "supportsReasoningStream": {
+          "type": "boolean"
+        },
+        "supportsSessionResumption": {
+          "type": "boolean"
+        },
+        "supportsSteering": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "supportsFileDiffs",
+        "supportsInterrupt",
+        "supportsReasoningStream",
+        "supportsSessionResumption",
+        "supportsSteering"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "capabilities": {
+      "$ref": "#/definitions/AdapterCapabilities"
+    },
+    "description": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "isConfigured": {
+      "type": "boolean"
+    },
+    "name": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "capabilities",
+    "description",
+    "id",
+    "isConfigured",
+    "name"
+  ],
+  "title": "Provider",
+  "type": "object"
+}

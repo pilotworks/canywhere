@@ -11,6 +11,9 @@ use canywhere_protocol::models::*;
 
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
+    MessageCreated {
+        message: Message,
+    },
     TokenDelta {
         chat_id: String,
         message_id: String,
@@ -42,6 +45,19 @@ pub enum AgentEvent {
     },
     ChatDeleted {
         chat_id: String,
+    },
+    ChatCreated {
+        chat: canywhere_protocol::models::Chat,
+    },
+    ModelUpdated {
+        model: String,
+        reasoning_effort: Option<String>,
+    },
+    WorkspaceUpdated {
+        workspace: canywhere_protocol::models::Workspace,
+    },
+    WorkspaceDeleted {
+        workspace_id: String,
     },
 }
 

@@ -12,7 +12,13 @@ codegen: ## Generate TypeScript types and Swift models from Rust protocol
 ui-build: ## Build Desktop UI with Bun + Vite
 	cd packages/desktop-ui && bun install && bun run build
 
-build: codegen ui-build ## Build full workspace (Rust + UI)
+ios-project: codegen ## Generate iOS Xcode project via xcodegen
+	cd mobile/ios && xcodegen generate
+
+ios-build: ios-project ## Build iOS Simulator App
+	xcodebuild -project mobile/ios/Canywhere.xcodeproj -scheme Canywhere -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+
+build: codegen ui-build ios-build ## Build full workspace (Rust + UI + iOS)
 	cargo build --workspace
 
 # --- TESTING ---

@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "createdAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "id": {
+      "type": "string"
+    },
+    "lastOpenedAt": {
+      "format": "int64",
+      "type": "integer"
+    },
+    "name": {
+      "type": "string"
+    },
+    "providerId": {
+      "type": "string"
+    },
+    "rootPath": {
+      "type": "string"
+    },
+    "subPaths": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "createdAt",
+    "id",
+    "lastOpenedAt",
+    "name",
+    "providerId",
+    "rootPath",
+    "subPaths"
+  ],
+  "title": "Workspace",
+  "type": "object"
+}

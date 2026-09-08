@@ -65,6 +65,36 @@ impl RpcDispatcher {
                 Ok(serde_json::json!({ "workspace": workspace }))
             }
 
+            "workspace.update" => {
+                let params: WorkspaceUpdateParams = serde_json::from_value(p)?;
+                let updated = self.repo.update_workspace(
+                    &params.workspace_id,
+                    params.name,
+                    params.root_path,
+                    params.sub_paths,
+                )?;
+                let ws = updated.ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let _ = self.adapter.event_tx().send(AgentEvent::WorkspaceUpdated {
+                    workspace: ws.clone(),
+                });
+                Ok(serde_json::to_value(WorkspaceUpdateResult {
+                    workspace: ws,
+                })?)
+            }
+
+            "workspace.delete" => {
+                let params: WorkspaceDeleteParams = serde_json::from_value(p)?;
+                let deleted = self.repo.delete_workspace(&params.workspace_id)?;
+                if deleted {
+                    let _ = self.adapter.event_tx().send(AgentEvent::WorkspaceDeleted {
+                        workspace_id: params.workspace_id,
+                    });
+                }
+                Ok(serde_json::to_value(WorkspaceDeleteResult {
+                    success: deleted,
+                })?)
+            }
+
             "workspace.tree" => {
                 let params: WorkspaceTreeParams = serde_json::from_value(p)?;
                 let ws = self
@@ -152,7 +182,10 @@ end try"#;
             }
 
             "chat.create" => {
-                let input: ChatCreateInput = serde_json::from_value(p.clone())?;
+                let mut input: ChatCreateInput = serde_json::from_value(p.clone())?;
+                if input.workspace_id.is_some() {
+                    input.kind = ChatKind::Workspace;
+                }
                 let mut cwd = String::new();
                 let mut sub_paths = None;
 
@@ -197,6 +230,10 @@ end try"#;
                         );
                     }
                 }
+
+                let _ = self.adapter.event_tx().send(AgentEvent::ChatCreated {
+                    chat: chat.clone(),
+                });
 
                 Ok(serde_json::json!({ "chat": chat }))
             }
@@ -305,6 +342,23 @@ end try"#;
                 if let Err(e) = self.repo.record_message(&user_msg) {
                     tracing::error!("[RpcDispatcher] Failed to record user message: {}", e);
                 }
+                let _ = self.adapter.event_tx().send(AgentEvent::MessageCreated {
+                    message: user_msg.clone(),
+                });
+
+                // Broadcast agent placeholder so all clients know the streaming agent message ID
+                let agent_placeholder = Message {
+                    id: agent_msg_id.clone(),
+                    chat_id: chat.id.clone(),
+                    turn_id: None,
+                    role: MessageRole::Agent,
+                    blocks: vec![],
+                    created_at: now + 1,
+                    streaming: true,
+                };
+                let _ = self.adapter.event_tx().send(AgentEvent::MessageCreated {
+                    message: agent_placeholder,
+                });
 
                 tracing::info!(
                     "[RpcDispatcher] Submitting turn for chat={}, thread={}, model={:?}",
@@ -312,6 +366,20 @@ end try"#;
                     thread_id,
                     params.model
                 );
+
+                if let Some(m) = &params.model {
+                    let prev = self.repo.get_setting("current_model")?.unwrap_or_default();
+                    if prev != *m {
+                        let _ = self.repo.set_setting("current_model", m);
+                        if let Some(eff) = &params.reasoning_effort {
+                            let _ = self.repo.set_setting("current_reasoning_effort", eff);
+                        }
+                        let _ = self.adapter.event_tx().send(AgentEvent::ModelUpdated {
+                            model: m.clone(),
+                            reasoning_effort: params.reasoning_effort.clone(),
+                        });
+                    }
+                }
 
                 let turn_id = self
                     .adapter
@@ -383,6 +451,9 @@ end try"#;
                     streaming: false,
                 };
                 let _ = self.repo.record_message(&user_msg);
+                let _ = self.adapter.event_tx().send(AgentEvent::MessageCreated {
+                    message: user_msg.clone(),
+                });
 
                 let steered_turn_id = self
                     .adapter
@@ -452,6 +523,51 @@ end try"#;
                 Ok(serde_json::json!({ "qrPayload": qr_payload }))
             }
 
+            "pairing.exchange" => {
+                let token = p
+                    .get("token")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing token parameter"))?;
+                let client_pubkey = p
+                    .get("clientPublicKey")
+                    .or_else(|| p.get("client_public_key"))
+                    .or_else(|| p.get("publicKey"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing clientPublicKey parameter"))?;
+                let signature = p
+                    .get("signature")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing signature parameter"))?;
+                let device_name = p
+                    .get("deviceName")
+                    .or_else(|| p.get("device_name"))
+                    .or_else(|| p.get("name"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("iOS Client");
+                let platform_str = p
+                    .get("platform")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("ios");
+                let platform = match platform_str.to_lowercase().as_str() {
+                    "desktop" => DevicePlatform::Desktop,
+                    _ => DevicePlatform::Ios,
+                };
+
+                let device = self.pairing.verify_and_register(
+                    token,
+                    client_pubkey,
+                    signature,
+                    device_name,
+                    platform,
+                )?;
+
+                Ok(serde_json::json!({
+                    "status": "paired",
+                    "device": device,
+                    "hostPublicKey": self.pairing.host_public_key(),
+                }))
+            }
+
             "device.list" => {
                 let devices = self.repo.list_devices()?;
                 Ok(serde_json::to_value(DeviceListResult { devices })?)
@@ -474,7 +590,42 @@ end try"#;
 
             "model.list" => {
                 let models = self.adapter.list_models().await?;
-                Ok(serde_json::to_value(ModelListResult { models })?)
+                let current_model = self.repo.get_setting("current_model")?.or_else(|| {
+                    models.iter().find(|m| m.is_default).map(|m| m.model.clone())
+                });
+                let current_reasoning_effort = self.repo.get_setting("current_reasoning_effort")?;
+                Ok(serde_json::to_value(ModelListResult {
+                    models,
+                    current_model,
+                    current_reasoning_effort,
+                })?)
+            }
+
+            "model.get" => {
+                let model = self.repo.get_setting("current_model")?.unwrap_or_else(|| "gpt-5-codex".to_string());
+                let reasoning_effort = self.repo.get_setting("current_reasoning_effort")?.or_else(|| Some("medium".to_string()));
+                Ok(serde_json::to_value(ModelGetResult {
+                    model,
+                    reasoning_effort,
+                })?)
+            }
+
+            "model.set" => {
+                let params: ModelSetParams = serde_json::from_value(p)?;
+                self.repo.set_setting("current_model", &params.model)?;
+                if let Some(effort) = &params.reasoning_effort {
+                    self.repo.set_setting("current_reasoning_effort", effort)?;
+                }
+                let effort = self.repo.get_setting("current_reasoning_effort")?;
+                let _ = self.adapter.event_tx().send(AgentEvent::ModelUpdated {
+                    model: params.model.clone(),
+                    reasoning_effort: effort.clone(),
+                });
+                Ok(serde_json::json!({
+                    "success": true,
+                    "model": params.model,
+                    "reasoningEffort": effort,
+                }))
             }
 
             "provider.list" => {

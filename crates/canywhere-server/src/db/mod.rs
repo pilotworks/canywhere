@@ -120,6 +120,11 @@ impl Database {
                 created_at INTEGER NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_chats_ws ON chats(workspace_id);
             CREATE INDEX IF NOT EXISTS idx_msgs_chat ON messages(chat_id);
             CREATE INDEX IF NOT EXISTS idx_blocks_msg ON message_blocks(message_id);

@@ -17,8 +17,10 @@ import {
   Loader2,
   Pause,
   Trash2,
+  MoreHorizontal,
+  Pencil,
 } from "lucide-react";
-import type { Chat } from "../../types/index.js";
+import type { Chat, Workspace } from "../../types/index.js";
 import { useConnectionStore, useWorkspaceStore, useChatStore, useUiStore, useDeviceStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { PairingModal } from "../pairing/pairing-modal.js";
@@ -118,10 +120,48 @@ export const Sidebar: React.FC = () => {
   const [newWsOpen, setNewWsOpen] = useState(false);
   const [wsName, setWsName] = useState("");
   const [wsPath, setWsPath] = useState("");
+  const [editingWs, setEditingWs] = useState<Workspace | null>(null);
+  const [editWsName, setEditWsName] = useState("");
+  const [editWsPath, setEditWsPath] = useState("");
+  const [deletingWs, setDeletingWs] = useState<Workspace | null>(null);
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Record<string, boolean>>({
     all: true,
   });
+
+  const handleOpenEdit = (ws: Workspace, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingWs(ws);
+    setEditWsName(ws.name);
+    setEditWsPath(ws.rootPath);
+  };
+
+  const handleBrowseFolderEdit = async () => {
+    try {
+      setIsPickingFolder(true);
+      const chosen = await client.pickWorkspaceFolder();
+      if (chosen) {
+        setEditWsPath(chosen);
+      }
+    } catch (err) {
+      console.error("[Sidebar] Failed to browse folder", err);
+    } finally {
+      setIsPickingFolder(false);
+    }
+  };
+
+  const handleSaveEditWorkspace = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingWs || !editWsName.trim() || !editWsPath.trim()) return;
+    await client.updateWorkspace(editingWs.id, editWsName.trim(), editWsPath.trim());
+    setEditingWs(null);
+  };
+
+  const handleConfirmDeleteWorkspace = async () => {
+    if (!deletingWs) return;
+    await client.deleteWorkspace(deletingWs.id);
+    setDeletingWs(null);
+  };
 
   const toggleWorkspaceExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -270,16 +310,50 @@ export const Sidebar: React.FC = () => {
                         <span className="truncate">{ws.name}</span>
                       </div>
 
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          client.createChat(ws.id);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--foreground)] text-[var(--muted-foreground)]"
-                        title="New Chat in Workspace"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            client.createChat(ws.id);
+                          }}
+                          className="p-1 rounded hover:bg-[var(--accent)] hover:text-[var(--foreground)] text-[var(--muted-foreground)] cursor-pointer"
+                          title="New Chat in Workspace"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              onClick={(e) => e.stopPropagation()}
+                              className="p-1 rounded hover:bg-[var(--accent)] hover:text-[var(--foreground)] text-[var(--muted-foreground)] cursor-pointer"
+                              title="Workspace options"
+                            >
+                              <MoreHorizontal className="w-3.5 h-3.5" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuItem
+                              onClick={(e) => handleOpenEdit(ws, e as any)}
+                              className="cursor-pointer"
+                            >
+                              <Pencil className="w-3.5 h-3.5 mr-2 text-[var(--muted-foreground)]" />
+                              <span>Edit Workspace</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeletingWs(ws);
+                              }}
+                              className="text-red-500 focus:text-red-500 cursor-pointer"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 mr-2" />
+                              <span>Delete Workspace</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
 
                     {/* Nested Chats */}
@@ -431,6 +505,99 @@ export const Sidebar: React.FC = () => {
               </Button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Edit Workspace Modal */}
+      {editingWs && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <form
+            onSubmit={handleSaveEditWorkspace}
+            className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 w-full max-w-sm space-y-4 shadow-2xl text-[var(--card-foreground)]"
+          >
+            <div className="space-y-1">
+              <h3 className="text-sm font-semibold text-[var(--foreground)]">Edit Workspace</h3>
+              <p className="text-xs text-[var(--muted-foreground)]">Modify workspace name or local directory path.</p>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-[var(--muted-foreground)] block">Display Name</label>
+              <Input
+                type="text"
+                size="sm"
+                value={editWsName}
+                onChange={(e) => setEditWsName(e.target.value)}
+                placeholder="e.g. codex-anywhere"
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs text-[var(--muted-foreground)] block">Directory Path</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="text"
+                  size="sm"
+                  value={editWsPath}
+                  onChange={(e) => setEditWsPath(e.target.value)}
+                  placeholder="/path/to/project"
+                  className="font-mono text-xs flex-1"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleBrowseFolderEdit}
+                  disabled={isPickingFolder}
+                  className="shrink-0 flex items-center gap-1.5 text-xs cursor-pointer"
+                  title="Browse local project folder"
+                >
+                  <FolderSearch className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
+                  <span>{isPickingFolder ? "Opening..." : "Browse"}</span>
+                </Button>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" size="sm" onClick={() => setEditingWs(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" size="sm">
+                Save Changes
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Delete Workspace Confirmation Dialog */}
+      {deletingWs && (
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-[var(--card)] border border-[var(--border)] rounded-xl p-5 w-full max-w-sm space-y-4 shadow-2xl text-[var(--card-foreground)]">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-red-500">
+                <AlertCircle className="w-5 h-5 shrink-0" />
+                <h3 className="text-sm font-semibold text-[var(--foreground)]">Delete Workspace?</h3>
+              </div>
+              <p className="text-xs text-[var(--muted-foreground)] leading-relaxed">
+                Are you sure you want to delete workspace <strong className="text-[var(--foreground)]">{deletingWs.name}</strong>?
+              </p>
+              <p className="text-xs text-red-400/90 leading-relaxed bg-red-500/10 border border-red-500/20 rounded-md p-2.5">
+                Warning: All conversation threads and message history in this workspace will be deleted from Canywhere. Your local files on disk will not be affected.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button type="button" variant="outline" size="sm" onClick={() => setDeletingWs(null)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleConfirmDeleteWorkspace}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </aside>

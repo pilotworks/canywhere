@@ -2,10 +2,11 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, TS, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum ChatKind {
     Workspace,
+    #[default]
     Standalone,
 }
 
@@ -35,6 +36,7 @@ pub struct Chat {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatCreateInput {
+    #[serde(default)]
     pub kind: ChatKind,
     pub workspace_id: Option<String>,
     pub provider_id: String,

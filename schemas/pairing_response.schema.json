@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "authToken": {
+      "type": "string"
+    },
+    "hostId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "authToken",
+    "hostId",
+    "status"
+  ],
+  "title": "PairingResponse",
+  "type": "object"
+}
