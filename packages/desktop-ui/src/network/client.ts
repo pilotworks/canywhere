@@ -1,0 +1,292 @@
+import {
+  RpcRequestEnvelope,
+  RpcResponseEnvelope,
+  RpcNotificationEnvelope,
+  ApprovalDecision
+} from "@canywhere/protocol-schema";
+import { TokenStreamBuffer } from "./buffer.js";
+import {
+  useConnectionStore,
+  useWorkspaceStore,
+  useChatStore,
+  useApprovalStore,
+  useDeviceStore
+} from "../store/index.js";
+
+export class CanywhereClient {
+  private ws: WebSocket | null = null;
+  private nextId = 1;
+  private pendingRequests = new Map<number | string, { resolve: (res: any) => void; reject: (err: any) => void }>();
+  private reconnectTimer: any = null;
+  private tokenBuffer: TokenStreamBuffer;
+  private url: string;
+
+  constructor(url: string = "ws://127.0.0.1:7890/rpc") {
+    this.url = url;
+
+    // Buffer flushes aggregated tokens into Zustand store every 24ms
+    this.tokenBuffer = new TokenStreamBuffer((flushed) => {
+      const append = useChatStore.getState().appendTokenDelta;
+      for (const item of flushed) {
+        append(item.chatId, item.messageId, item.blockId, item.text);
+      }
+    }, 24);
+  }
+
+  connect(): void {
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    useConnectionStore.getState().setStatus("connecting");
+
+    try {
+      this.ws = new WebSocket(this.url);
+
+      this.ws.onopen = () => {
+        useConnectionStore.getState().setStatus("connected");
+        if (this.reconnectTimer) {
+          clearTimeout(this.reconnectTimer);
+          this.reconnectTimer = null;
+        }
+        this.bootstrap();
+      };
+
+      this.ws.onmessage = (event) => {
+        try {
+          const raw = JSON.parse(event.data);
+          this.handleIncoming(raw);
+        } catch (err) {
+          console.error("[CanywhereClient] JSON parse error", err);
+        }
+      };
+
+      this.ws.onclose = () => {
+        useConnectionStore.getState().setStatus("disconnected");
+        this.scheduleReconnect();
+      };
+
+      this.ws.onerror = (err) => {
+        useConnectionStore.getState().setStatus("error", "Connection failed");
+      };
+    } catch (err: any) {
+      useConnectionStore.getState().setStatus("error", err.message);
+      this.scheduleReconnect();
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, 2000);
+  }
+
+  private async bootstrap(): Promise<void> {
+    try {
+      // 1. Fetch workspaces
+      const wsRes = await this.call("workspace.list", {});
+      useWorkspaceStore.getState().setWorkspaces(wsRes.workspaces);
+
+      // 2. Fetch all chats
+      const chatsRes = await this.call("chat.list", {});
+      useChatStore.getState().setChats(chatsRes.chats);
+
+      // Select first chat if none active
+      if (chatsRes.chats.length > 0 && !useChatStore.getState().activeChatId) {
+        this.selectChat(chatsRes.chats[0].id);
+      }
+
+      // 3. Fetch paired devices
+      const devRes = await this.call("device.list", {});
+      useDeviceStore.getState().setDevices(devRes.devices);
+    } catch (err) {
+      console.error("[CanywhereClient] Bootstrap failed", err);
+    }
+  }
+
+  async selectChat(chatId: string): Promise<void> {
+    useChatStore.getState().setActiveChatId(chatId);
+    try {
+      const res = await this.call("chat.get", { chatId });
+      useChatStore.getState().setMessages(chatId, res.messages);
+      useApprovalStore.getState().setPendingApprovals(res.pendingApprovals);
+    } catch (err) {
+      console.error("[CanywhereClient] Failed to load chat history", err);
+    }
+  }
+
+  async createWorkspace(name: string, rootPath: string, subPaths?: string[]): Promise<any> {
+    const res = await this.call("workspace.create", {
+      name,
+      rootPath,
+      subPaths,
+      providerId: "codex"
+    });
+    useWorkspaceStore.getState().addWorkspace(res.workspace);
+    return res.workspace;
+  }
+
+  async createChat(workspaceId?: string, title?: string, prompt?: string): Promise<any> {
+    const res = await this.call("chat.create", {
+      kind: workspaceId ? "workspace" : "standalone",
+      workspaceId,
+      providerId: "codex",
+      title: title || "New Chat",
+      initialPrompt: prompt
+    });
+    useChatStore.getState().addChat(res.chat);
+    await this.selectChat(res.chat.id);
+    return res.chat;
+  }
+
+  async sendTurn(chatId: string, content: string): Promise<void> {
+    // Optimistically add user message to chat
+    useChatStore.getState().addMessage(chatId, {
+      id: "optimistic-" + Date.now(),
+      chatId,
+      role: "user",
+      blocks: [{ type: "text", content }],
+      createdAt: Date.now(),
+      streaming: false
+    });
+
+    // Create placeholder agent message for incoming stream
+    const agentMsgId = "stream-" + Date.now();
+    useChatStore.getState().addMessage(chatId, {
+      id: agentMsgId,
+      chatId,
+      role: "agent",
+      blocks: [],
+      createdAt: Date.now(),
+      streaming: true
+    });
+
+    useChatStore.getState().setChatStatus(chatId, "running");
+
+    const res = await this.call("turn.send", {
+      chatId,
+      content
+    });
+
+    useChatStore.getState().setActiveTurn(chatId, res.turnId);
+  }
+
+  async interruptTurn(chatId: string, turnId: string): Promise<void> {
+    await this.call("turn.interrupt", { chatId, turnId });
+    useChatStore.getState().setChatStatus(chatId, "idle");
+  }
+
+  async respondApproval(approvalId: string, decision: ApprovalDecision): Promise<void> {
+    await this.call("approval.respond", { approvalId, decision });
+    useApprovalStore.getState().removeApproval(approvalId);
+  }
+
+  async createPairingSession(): Promise<any> {
+    const res = await this.call("pairing.createSession", {});
+    useDeviceStore.getState().setQrPayload(res.qrPayload);
+    return res.qrPayload;
+  }
+
+  call(method: string, params: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        return reject(new Error("WebSocket not connected"));
+      }
+
+      const id = this.nextId++;
+      this.pendingRequests.set(id, { resolve, reject });
+
+      const envelope: RpcRequestEnvelope = {
+        id,
+        method,
+        params
+      };
+
+      this.ws.send(JSON.stringify(envelope));
+    });
+  }
+
+  private handleIncoming(raw: any): void {
+    // 1. RPC Response
+    if (raw.id !== undefined && (raw.result !== undefined || raw.error !== undefined)) {
+      const pending = this.pendingRequests.get(raw.id);
+      if (pending) {
+        this.pendingRequests.delete(raw.id);
+        if (raw.error) {
+          pending.reject(new Error(raw.error.message || "RPC Error"));
+        } else {
+          pending.resolve(raw.result);
+        }
+      }
+      return;
+    }
+
+    // 2. RPC Notification
+    if (raw.method && raw.params) {
+      this.handleNotification(raw.method, raw.params);
+    }
+  }
+
+  private handleNotification(method: string, params: any): void {
+    switch (method) {
+      case "message.delta": {
+        // High-frequency token streaming buffered here
+        this.tokenBuffer.append({
+          chatId: params.chatId,
+          messageId: params.messageId,
+          blockId: "active",
+          delta: params.delta.text
+        });
+        break;
+      }
+
+      case "tool.started": {
+        this.tokenBuffer.flush();
+        // Append tool block to latest agent message
+        const messages = useChatStore.getState().messages[params.chatId] || [];
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg) {
+          useChatStore.getState().addBlock(params.chatId, lastMsg.id, params.block);
+        }
+        break;
+      }
+
+      case "tool.completed": {
+        this.tokenBuffer.flush();
+        const messages = useChatStore.getState().messages[params.chatId] || [];
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg) {
+          useChatStore.getState().updateBlock(params.chatId, lastMsg.id, params.block.id, params.block);
+        }
+        break;
+      }
+
+      case "approval.requested": {
+        useApprovalStore.getState().addApproval(params.approval);
+        useChatStore.getState().setChatStatus(params.chatId, "awaiting_approval");
+        break;
+      }
+
+      case "turn.completed": {
+        this.tokenBuffer.flush();
+        useChatStore.getState().setChatStatus(params.chatId, params.status);
+        useChatStore.getState().setActiveTurn(params.chatId, null);
+        break;
+      }
+    }
+  }
+
+  disconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    this.tokenBuffer.destroy();
+    this.ws?.close();
+    this.ws = null;
+  }
+}
+
+export const client = new CanywhereClient();
