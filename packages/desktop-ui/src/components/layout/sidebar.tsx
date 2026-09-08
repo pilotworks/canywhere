@@ -99,10 +99,7 @@ export const Sidebar: React.FC = () => {
         data-tauri-drag-region
         className="h-10 flex items-center justify-between px-3 border-b border-[var(--sidebar-border)] text-xs text-[var(--muted-foreground)] shrink-0"
       >
-        <div data-tauri-drag-region className="flex items-center gap-2 pl-20">
-          <span data-tauri-drag-region className="font-semibold tracking-tight text-[var(--foreground)]">Canywhere</span>
-          <span data-tauri-drag-region className="text-[10px] font-mono px-1 py-0.2 rounded bg-[var(--secondary)] border border-[var(--border)]">v0.1</span>
-        </div>
+        <div data-tauri-drag-region className="flex-1 h-full" />
         <Button
           variant="ghost"
           size="icon-sm"
