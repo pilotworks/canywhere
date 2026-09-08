@@ -1,0 +1,30 @@
+{
+  "name": "@canywhere/protocol-schema",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "codegen": "tsx scripts/codegen-swift.ts"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.28"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "quicktype-core": "^23.0.170",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

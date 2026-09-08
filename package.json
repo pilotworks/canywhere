@@ -1,0 +1,16 @@
+{
+  "name": "canywhere-monorepo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/*\" run build",
+    "typecheck": "pnpm -r --filter \"./packages/*\" run typecheck",
+    "test": "pnpm -r --filter \"./packages/*\" run test",
+    "codegen": "pnpm --filter @canywhere/protocol-schema run codegen"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "typescript": "^5.8.2"
+  },
+  "packageManager": "pnpm@11.13.0"
+}
