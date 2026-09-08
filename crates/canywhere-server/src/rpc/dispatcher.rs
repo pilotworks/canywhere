@@ -98,6 +98,38 @@ impl RpcDispatcher {
                 })?)
             }
 
+            "workspace.pickFolder" => {
+                let chosen_path = tokio::task::spawn_blocking(|| {
+                    #[cfg(target_os = "macos")]
+                    {
+                        // Use AppleScript to prompt for folder on macOS
+                        let script = r#"try
+POSIX path of (choose folder with prompt "Select Project Folder for Canywhere")
+on error
+return ""
+end try"#;
+                        let output = std::process::Command::new("osascript")
+                            .arg("-e")
+                            .arg(script)
+                            .output();
+
+                        if let Ok(out) = output {
+                            let text = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                            if !text.is_empty() {
+                                // Remove trailing slash if present
+                                let clean = text.strip_suffix('/').unwrap_or(&text).to_string();
+                                return Some(clean);
+                            }
+                        }
+                    }
+                    None
+                }).await?;
+
+                Ok(serde_json::to_value(WorkspacePickFolderResult {
+                    path: chosen_path,
+                })?)
+            }
+
             "chat.list" => {
                 let ws_id = p["workspaceId"].as_str();
                 let chats = self.repo.list_chats(ws_id)?;

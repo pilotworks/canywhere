@@ -145,6 +145,11 @@ export class CanywhereClient {
     });
   }
 
+  async pickWorkspaceFolder(): Promise<string | null> {
+    const res = await this.call("workspace.pickFolder", {});
+    return res?.path || null;
+  }
+
   async createChat(workspaceId?: string, title?: string, prompt?: string): Promise<any> {
     const res = await this.call("chat.create", {
       kind: workspaceId ? "workspace" : "standalone",

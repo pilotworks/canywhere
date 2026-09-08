@@ -14,6 +14,7 @@ import {
   Settings,
   HelpCircle,
   Files,
+  FolderSearch,
 } from "lucide-react";
 import { useConnectionStore, useWorkspaceStore, useChatStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
@@ -41,6 +42,7 @@ export const Sidebar: React.FC = () => {
   const [newWsOpen, setNewWsOpen] = useState(false);
   const [wsName, setWsName] = useState("");
   const [wsPath, setWsPath] = useState("");
+  const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Record<string, boolean>>({
     all: true,
   });
@@ -54,6 +56,27 @@ export const Sidebar: React.FC = () => {
   const toggleWorkspaceExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setExpandedWorkspaces((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleBrowseFolder = async () => {
+    try {
+      setIsPickingFolder(true);
+      const chosen = await client.pickWorkspaceFolder();
+      if (chosen) {
+        setWsPath(chosen);
+        if (!wsName) {
+          // Auto-fill name with folder basename
+          const parts = chosen.split("/").filter(Boolean);
+          if (parts.length > 0) {
+            setWsName(parts[parts.length - 1]);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("[Sidebar] Failed to browse folder", err);
+    } finally {
+      setIsPickingFolder(false);
+    }
   };
 
   const handleCreateWorkspace = async (e: React.FormEvent) => {
@@ -326,14 +349,28 @@ export const Sidebar: React.FC = () => {
             </div>
             <div className="space-y-1">
               <label className="text-xs text-[var(--muted-foreground)] block">Directory Path</label>
-              <Input
-                type="text"
-                value={wsPath}
-                onChange={(e) => setWsPath(e.target.value)}
-                placeholder="/path/to/project"
-                className="font-mono text-xs"
-                required
-              />
+              <div className="flex items-center gap-1.5">
+                <Input
+                  type="text"
+                  value={wsPath}
+                  onChange={(e) => setWsPath(e.target.value)}
+                  placeholder="/path/to/project"
+                  className="font-mono text-xs flex-1"
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleBrowseFolder}
+                  disabled={isPickingFolder}
+                  className="shrink-0 flex items-center gap-1.5 text-xs cursor-pointer"
+                  title="Browse local project folder"
+                >
+                  <FolderSearch className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
+                  <span>{isPickingFolder ? "Opening..." : "Browse"}</span>
+                </Button>
+              </div>
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <Button type="button" variant="outline" size="sm" onClick={() => setNewWsOpen(false)}>

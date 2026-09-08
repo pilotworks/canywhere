@@ -44,6 +44,12 @@ pub struct WorkspaceReadFileResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkspacePickFolderResult {
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatListParams {
     pub workspace_id: Option<String>,
 }
