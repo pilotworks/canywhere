@@ -28,6 +28,16 @@ out/
 .next/
 *.tsbuildinfo
 
+# Rust & Cargo
+target/
+Cargo.lock
+**/*.rs.bk
+
+# Tauri Build Artifacts & Generated Schemas
+**/src-tauri/target/
+**/src-tauri/gen/
+**/.tauri/
+
 # SQLite & Host Daemons
 *.db
 *.db-journal
@@ -71,8 +81,3 @@ mobile/ios/**/fastlane/test_output
 tmp/
 temp/
 *.tmp
-
-# Rust & Cargo
-target/
-Cargo.lock
-**/*.rs.bk
