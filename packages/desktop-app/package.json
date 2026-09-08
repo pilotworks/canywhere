@@ -1,0 +1,21 @@
+{
+  "name": "@canywhere/desktop-app",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc && electron .",
+    "start": "electron .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@canywhere/host-server": "workspace:*",
+    "@canywhere/desktop-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "electron": "^34.3.0",
+    "typescript": "^5.7.3"
+  }
+}
