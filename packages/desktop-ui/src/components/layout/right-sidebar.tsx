@@ -137,20 +137,20 @@ export const RightSidebar: React.FC = () => {
       </div>
 
       {/* Main Tab Content Panel */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-[var(--background)]/40">
+      <div className="flex-1 flex flex-col overflow-hidden bg-[var(--background)]">
         {/* 1. FILE TREE TAB */}
         {activeTab.type === "fileTree" && (
-          <div className="flex-1 flex flex-col overflow-hidden p-3 space-y-2">
-            <div className="flex items-center justify-between text-xs text-[var(--muted-foreground)] border-b border-[var(--border)] pb-2 font-mono">
-              <span className="flex items-center gap-1.5 font-semibold text-[var(--foreground)]">
-                <FolderGit2 className="w-3.5 h-3.5" />
-                <span>{activeWorkspace ? activeWorkspace.name : "No Workspace Selected"}</span>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <div className="h-9 px-3 flex items-center justify-between text-xs text-[var(--muted-foreground)] border-b border-[var(--border)] bg-[var(--secondary)]/30 font-mono shrink-0">
+              <span className="flex items-center gap-1.5 font-semibold text-[var(--foreground)] truncate">
+                <FolderGit2 className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">{activeWorkspace ? activeWorkspace.name : "No Workspace Selected"}</span>
               </span>
-              <span className="text-[10px]">Tree</span>
+              <span className="text-[10px] text-[var(--muted-foreground)] shrink-0">Tree</span>
             </div>
 
             {activeWorkspaceId ? (
-              <div className="flex-1 overflow-y-auto">
+              <div className="flex-1 overflow-y-auto p-2">
                 <FileTreeView workspaceId={activeWorkspaceId} />
               </div>
             ) : (
@@ -165,7 +165,7 @@ export const RightSidebar: React.FC = () => {
         {/* 2. TERMINAL TAB */}
         {activeTab.type === "terminal" && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-3 py-2 text-xs font-mono text-[var(--muted-foreground)] border-b border-[var(--border)] flex items-center justify-between bg-[var(--secondary)]/30">
+            <div className="h-9 px-3 text-xs font-mono text-[var(--muted-foreground)] border-b border-[var(--border)] flex items-center justify-between bg-[var(--secondary)]/30 shrink-0">
               <span className="flex items-center gap-1.5 font-semibold text-[var(--foreground)]">
                 <Terminal className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Command Execution Feed</span>
@@ -210,7 +210,7 @@ export const RightSidebar: React.FC = () => {
           <div className="flex-1 flex flex-col overflow-hidden">
             {activeTab.data?.path ? (
               <>
-                <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] bg-[var(--secondary)]/40 font-mono text-xs">
+                <div className="h-9 px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--secondary)]/30 font-mono text-xs shrink-0">
                   <div className="flex items-center gap-1.5 truncate">
                     <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     <span className="truncate font-semibold text-[var(--foreground)]">
@@ -261,7 +261,7 @@ export const RightSidebar: React.FC = () => {
         {/* 4. DIFF TAB */}
         {activeTab.type === "diff" && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="px-3 py-2 text-xs font-mono text-[var(--muted-foreground)] border-b border-[var(--border)] flex items-center justify-between bg-[var(--secondary)]/30">
+            <div className="h-9 px-3 text-xs font-mono text-[var(--muted-foreground)] border-b border-[var(--border)] flex items-center justify-between bg-[var(--secondary)]/30 shrink-0">
               <span className="flex items-center gap-1.5 font-semibold text-[var(--foreground)]">
                 <GitCompare className="w-3.5 h-3.5 text-rose-400" />
                 <span>Workspace File Diffs</span>

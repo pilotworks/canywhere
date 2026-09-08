@@ -17,11 +17,11 @@ export const ThemeToggle: React.FC = () => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-8 w-8 text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
+        <Button variant="ghost" size="icon-sm" className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]">
           {resolvedTheme === "dark" ? (
-            <Moon className="h-4 w-4 text-[var(--foreground)]" />
+            <Moon className="h-3.5 w-3.5 text-[var(--foreground)]" />
           ) : (
-            <Sun className="h-4 w-4 text-amber-500" />
+            <Sun className="h-3.5 w-3.5 text-amber-500" />
           )}
           <span className="sr-only">Toggle theme</span>
         </Button>

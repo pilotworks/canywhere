@@ -21,7 +21,7 @@
     --destructive-foreground: #ffffff;
     --border: #e4e4e7;
     --border-subtle: #f4f4f5;
-    --input: #d4d4d8;
+    --input: #e4e4e7;
     --ring: #71717a;
     --sidebar-bg: #fafafa;
     --sidebar-border: #e4e4e7;
@@ -52,9 +52,9 @@
     --input: #27272a;
     --ring: #52525b;
     --sidebar-bg: #0c0c0e;
-    --sidebar-border: #18181b;
-    --code-bg: #09090b;
-    --code-border: #1f1f23;
+    --sidebar-border: #27272a;
+    --code-bg: #121214;
+    --code-border: #27272a;
   }
 
   * {

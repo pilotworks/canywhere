@@ -214,10 +214,10 @@ export const Sidebar: React.FC = () => {
                             <button
                               key={chat.id}
                               onClick={() => client.selectChat(chat.id)}
-                              className={`w-full flex items-center justify-between px-2 py-1 rounded-md text-left text-xs transition-colors cursor-pointer ${
+                              className={`w-full flex items-center justify-between px-2.5 py-1 rounded-md text-left text-xs transition-colors cursor-pointer ${
                                 isChatActive
-                                  ? "bg-[var(--primary)] text-[var(--primary-foreground)] font-medium"
-                                  : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60 hover:text-[var(--foreground)]"
+                                  ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium border border-[var(--border)] shadow-xs"
+                                  : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]"
                               }`}
                             >
                               <span className="truncate">{chat.title}</span>
@@ -264,10 +264,10 @@ export const Sidebar: React.FC = () => {
                   <button
                     key={chat.id}
                     onClick={() => client.selectChat(chat.id)}
-                    className={`w-full flex items-center justify-between px-2 py-1.5 rounded-md text-left text-xs transition-colors cursor-pointer ${
+                    className={`w-full flex items-center justify-between px-2.5 py-1 rounded-md text-left text-xs transition-colors cursor-pointer ${
                       isChatActive
-                        ? "bg-[var(--primary)] text-[var(--primary-foreground)] font-medium"
-                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60 hover:text-[var(--foreground)]"
+                        ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium border border-[var(--border)] shadow-xs"
+                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]"
                     }`}
                   >
                     <div className="flex items-center gap-1.5 truncate">
