@@ -667,8 +667,10 @@ impl CodexAdapter {
             "params": params
         });
 
+        tracing::info!("[CodexSendRequest] id={}, method={}, params={}", id, method, params);
         self.write_line(&payload).await?;
         let res = rx.await?;
+        tracing::info!("[CodexRecvResponse] id={}, res={}", id, res);
         if let Some(err) = res.get("error") {
             let msg = err
                 .get("message")
