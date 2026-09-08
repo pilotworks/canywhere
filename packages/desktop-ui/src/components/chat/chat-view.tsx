@@ -98,17 +98,30 @@ export const ChatView: React.FC = () => {
 
   if (!activeChat) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-[var(--muted-foreground)] bg-[var(--background)] p-8 select-none">
-        <div className="w-12 h-12 rounded-2xl bg-[var(--secondary)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--foreground)]">
-          <Terminal className="w-5 h-5 text-[var(--foreground)]" />
+      <div className="flex-1 flex flex-col h-screen bg-[var(--background)] select-none">
+        {/* Header bar in empty state matching sidebar height and draggable */}
+        <header
+          data-tauri-drag-region
+          className="h-10 border-b border-[var(--border)] px-4 flex items-center justify-between shrink-0 bg-[var(--card)]/50 backdrop-blur-md text-xs select-none"
+        >
+          <div data-tauri-drag-region className="flex items-center gap-2 text-[var(--muted-foreground)]">
+            <Terminal className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
+            <span className="text-[var(--muted-foreground)] font-medium">No Active Session</span>
+          </div>
+        </header>
+
+        <div className="flex-1 flex flex-col items-center justify-center text-[var(--muted-foreground)] p-8">
+          <div className="w-12 h-12 rounded-2xl bg-[var(--secondary)] border border-[var(--border)] flex items-center justify-center mb-4 text-[var(--foreground)]">
+            <Terminal className="w-5 h-5 text-[var(--foreground)]" />
+          </div>
+          <h3 className="text-sm font-semibold text-[var(--foreground)] mb-1">Canywhere Autonomous Coding Assistant</h3>
+          <p className="text-xs text-[var(--muted-foreground)] text-center max-w-sm mb-6">
+            Decoupled remote workstation controller for OpenAI Codex and CLI models.
+          </p>
+          <Button size="sm" onClick={() => client.createChat()}>
+            Start New Conversation
+          </Button>
         </div>
-        <h3 className="text-sm font-semibold text-[var(--foreground)] mb-1">Canywhere Autonomous Coding Assistant</h3>
-        <p className="text-xs text-[var(--muted-foreground)] text-center max-w-sm mb-6">
-          Decoupled remote workstation controller for OpenAI Codex and CLI models.
-        </p>
-        <Button size="sm" onClick={() => client.createChat()}>
-          Start New Conversation
-        </Button>
       </div>
     );
   }
@@ -148,8 +161,11 @@ export const ChatView: React.FC = () => {
   return (
     <div className="flex-1 flex flex-col h-screen bg-[var(--background)] text-[var(--foreground)] select-text">
       {/* Top Header / Breadcrumbs Bar */}
-      <header className="h-11 border-b border-[var(--border)] px-4 flex items-center justify-between shrink-0 bg-[var(--card)]/50 backdrop-blur-md text-xs select-none">
-        <div className="flex items-center gap-2 text-[var(--muted-foreground)] truncate">
+      <header
+        data-tauri-drag-region
+        className="h-10 border-b border-[var(--border)] px-4 flex items-center justify-between shrink-0 bg-[var(--card)]/50 backdrop-blur-md text-xs select-none"
+      >
+        <div data-tauri-drag-region className="flex items-center gap-2 text-[var(--muted-foreground)] truncate">
           {activeWorkspace ? (
             <>
               <FolderGit2 className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />

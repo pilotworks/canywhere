@@ -10,6 +10,7 @@ export * from "./generated/Device.js";
 export * from "./generated/DevicePlatform.js";
 export * from "./generated/DeviceTransport.js";
 export * from "./generated/FileDiffStatus.js";
+export * from "./generated/FileTreeNode.js";
 export * from "./generated/Message.js";
 export * from "./generated/MessageBlock.js";
 export * from "./generated/MessageRole.js";

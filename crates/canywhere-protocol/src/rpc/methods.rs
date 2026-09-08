@@ -29,6 +29,21 @@ pub struct WorkspaceTreeResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkspaceReadFileParams {
+    pub workspace_id: String,
+    pub relative_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceReadFileResult {
+    pub path: String,
+    pub content: String,
+    pub size: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct ChatListParams {
     pub workspace_id: Option<String>,
 }

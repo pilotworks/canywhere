@@ -3,6 +3,7 @@ import { client } from "./network/client.js";
 import { Sidebar } from "./components/layout/sidebar.js";
 import { ChatView } from "./components/chat/chat-view.js";
 import { ApprovalModal } from "./components/approval/approval-modal.js";
+import { FileViewerModal } from "./components/layout/file-viewer-modal.js";
 
 export const App: React.FC = () => {
   useEffect(() => {
@@ -17,6 +18,7 @@ export const App: React.FC = () => {
         <ChatView />
       </main>
       <ApprovalModal />
+      <FileViewerModal />
     </div>
   );
 };

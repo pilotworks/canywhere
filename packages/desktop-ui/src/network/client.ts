@@ -129,6 +129,22 @@ export class CanywhereClient {
     return res.workspace;
   }
 
+  async getWorkspaceTree(workspaceId: string, subPath?: string, maxDepth: number = 3): Promise<any> {
+    const res = await this.call("workspace.tree", {
+      workspaceId,
+      subPath,
+      maxDepth,
+    });
+    return res.root;
+  }
+
+  async readWorkspaceFile(workspaceId: string, relativePath: string): Promise<{ path: string; content: string; size: number }> {
+    return await this.call("workspace.readFile", {
+      workspaceId,
+      relativePath,
+    });
+  }
+
   async createChat(workspaceId?: string, title?: string, prompt?: string): Promise<any> {
     const res = await this.call("chat.create", {
       kind: workspaceId ? "workspace" : "standalone",

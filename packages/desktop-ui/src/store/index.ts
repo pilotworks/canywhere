@@ -8,6 +8,7 @@ import {
   Device,
   PairingQrPayload,
   ModelInfo,
+  FileTreeNode,
 } from "../types/index.js";
 
 export interface ConnectionState {
@@ -29,17 +30,26 @@ export const useConnectionStore = create<ConnectionState>((set) => ({
 export interface WorkspaceState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
+  fileTrees: Record<string, FileTreeNode | null>; // workspaceId -> FileTreeNode
+  activeFile: { workspaceId: string; path: string; content: string } | null;
   setWorkspaces: (workspaces: Workspace[]) => void;
   addWorkspace: (workspace: Workspace) => void;
   setActiveWorkspaceId: (id: string | null) => void;
+  setFileTree: (workspaceId: string, tree: FileTreeNode | null) => void;
+  setActiveFile: (file: { workspaceId: string; path: string; content: string } | null) => void;
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   workspaces: [],
   activeWorkspaceId: null,
+  fileTrees: {},
+  activeFile: null,
   setWorkspaces: (workspaces) => set({ workspaces }),
   addWorkspace: (workspace) => set((s) => ({ workspaces: [workspace, ...s.workspaces] })),
-  setActiveWorkspaceId: (activeWorkspaceId) => set({ activeWorkspaceId })
+  setActiveWorkspaceId: (activeWorkspaceId) => set({ activeWorkspaceId }),
+  setFileTree: (workspaceId, tree) =>
+    set((s) => ({ fileTrees: { ...s.fileTrees, [workspaceId]: tree } })),
+  setActiveFile: (activeFile) => set({ activeFile }),
 }));
 
 export interface ChatState {

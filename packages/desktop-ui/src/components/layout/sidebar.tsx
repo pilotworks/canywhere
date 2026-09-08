@@ -13,6 +13,7 @@ import {
   Terminal,
   Settings,
   HelpCircle,
+  Files,
 } from "lucide-react";
 import { useConnectionStore, useWorkspaceStore, useChatStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
@@ -20,6 +21,7 @@ import { PairingModal } from "../pairing/pairing-modal.js";
 import { ThemeToggle } from "../ui/theme-toggle.js";
 import { Button } from "../ui/button.js";
 import { Input } from "../ui/input.js";
+import { FileTreeView } from "./file-tree-view.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +44,12 @@ export const Sidebar: React.FC = () => {
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Record<string, boolean>>({
     all: true,
   });
+  const [fileTreeExpanded, setFileTreeExpanded] = useState<Record<string, boolean>>({});
+
+  const toggleFileTree = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFileTreeExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const toggleWorkspaceExpand = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -64,10 +72,13 @@ export const Sidebar: React.FC = () => {
   return (
     <aside className="w-64 bg-[var(--sidebar-bg)] border-r border-[var(--sidebar-border)] flex flex-col h-screen select-none text-[13px]">
       {/* Window Drag Title Bar Header for macOS */}
-      <div className="h-10 flex items-center justify-between px-3 border-b border-[var(--sidebar-border)] text-xs text-[var(--muted-foreground)] shrink-0">
-        <div className="flex items-center gap-2 pl-14">
-          <span className="font-semibold tracking-tight text-[var(--foreground)]">Canywhere</span>
-          <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-[var(--secondary)] border border-[var(--border)]">v0.1</span>
+      <div
+        data-tauri-drag-region
+        className="h-10 flex items-center justify-between px-3 border-b border-[var(--sidebar-border)] text-xs text-[var(--muted-foreground)] shrink-0"
+      >
+        <div data-tauri-drag-region className="flex items-center gap-2 pl-20">
+          <span data-tauri-drag-region className="font-semibold tracking-tight text-[var(--foreground)]">Canywhere</span>
+          <span data-tauri-drag-region className="text-[10px] font-mono px-1 py-0.2 rounded bg-[var(--secondary)] border border-[var(--border)]">v0.1</span>
         </div>
         <Button
           variant="ghost"
@@ -133,17 +144,46 @@ export const Sidebar: React.FC = () => {
                         <span className="truncate">{ws.name}</span>
                       </div>
 
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          client.createChat(ws.id);
-                        }}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--foreground)] text-[var(--muted-foreground)]"
-                        title="New Chat in Workspace"
-                      >
-                        <Plus className="w-3 h-3" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => toggleFileTree(ws.id, e)}
+                          className={`p-0.5 rounded transition-colors ${
+                            fileTreeExpanded[ws.id]
+                              ? "text-sky-400 bg-sky-950/30"
+                              : "opacity-0 group-hover:opacity-100 hover:text-[var(--foreground)] text-[var(--muted-foreground)]"
+                          }`}
+                          title="Browse Project Files"
+                        >
+                          <Files className="w-3 h-3" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            client.createChat(ws.id);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-[var(--foreground)] text-[var(--muted-foreground)]"
+                          title="New Chat in Workspace"
+                        >
+                          <Plus className="w-3 h-3" />
+                        </button>
+                      </div>
                     </div>
+
+                    {/* File Explorer Tree View */}
+                    {fileTreeExpanded[ws.id] && (
+                      <div className="my-1 rounded-md border border-[var(--border)] bg-[var(--background)]/60 overflow-hidden">
+                        <div className="px-2 py-1 bg-[var(--secondary)]/50 text-[10px] uppercase font-semibold text-[var(--muted-foreground)] flex items-center justify-between border-b border-[var(--border)]">
+                          <span>Project Files</span>
+                          <button
+                            onClick={(e) => toggleFileTree(ws.id, e)}
+                            className="hover:text-[var(--foreground)]"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <FileTreeView workspaceId={ws.id} />
+                      </div>
+                    )}
 
                     {/* Nested Chats */}
                     {isExpanded && childChats.length > 0 && (

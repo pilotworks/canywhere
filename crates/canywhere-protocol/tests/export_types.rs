@@ -12,6 +12,7 @@ fn export_typescript_and_json_schema() {
 
     // Export TS types
     Workspace::export_all_to(out_dir).unwrap();
+    FileTreeNode::export_all_to(out_dir).unwrap();
     Chat::export_all_to(out_dir).unwrap();
     Message::export_all_to(out_dir).unwrap();
     ApprovalRequest::export_all_to(out_dir).unwrap();

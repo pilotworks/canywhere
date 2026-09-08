@@ -57,6 +57,47 @@ impl RpcDispatcher {
                 Ok(serde_json::json!({ "workspace": workspace }))
             }
 
+            "workspace.tree" => {
+                let params: WorkspaceTreeParams = serde_json::from_value(p)?;
+                let ws = self.repo.get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+
+                let base_path = std::path::Path::new(&ws.root_path);
+                let target_dir = if let Some(sub) = &params.sub_path {
+                    base_path.join(sub)
+                } else {
+                    base_path.to_path_buf()
+                };
+
+                let max_depth = params.max_depth.unwrap_or(3);
+                let root_node = build_file_tree(&target_dir, base_path, 0, max_depth)?;
+                Ok(serde_json::to_value(WorkspaceTreeResult { root: root_node })?)
+            }
+
+            "workspace.readFile" => {
+                let params: WorkspaceReadFileParams = serde_json::from_value(p)?;
+                let ws = self.repo.get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+
+                let base_path = std::path::Path::new(&ws.root_path);
+                let file_path = base_path.join(&params.relative_path);
+
+                // Security sandbox check: prevent directory traversal
+                let canonical_base = base_path.canonicalize()?;
+                let canonical_file = file_path.canonicalize()?;
+                if !canonical_file.starts_with(&canonical_base) {
+                    anyhow::bail!("Access denied: path is outside workspace root");
+                }
+
+                let content = std::fs::read_to_string(&canonical_file)?;
+                let size = content.len();
+                Ok(serde_json::to_value(WorkspaceReadFileResult {
+                    path: params.relative_path,
+                    content,
+                    size,
+                })?)
+            }
+
             "chat.list" => {
                 let ws_id = p["workspaceId"].as_str();
                 let chats = self.repo.list_chats(ws_id)?;
@@ -225,4 +266,65 @@ impl RpcDispatcher {
             _ => anyhow::bail!("Method not found: {}", method),
         }
     }
+}
+
+fn build_file_tree(
+    current_path: &std::path::Path,
+    base_root: &std::path::Path,
+    current_depth: u32,
+    max_depth: u32,
+) -> Result<FileTreeNode> {
+    let name = current_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "/".to_string());
+
+    let relative_path = current_path
+        .strip_prefix(base_root)
+        .unwrap_or(current_path)
+        .to_string_lossy()
+        .to_string();
+
+    let is_dir = current_path.is_dir();
+
+    let mut children = None;
+    let mut size = None;
+
+    if is_dir {
+        if current_depth < max_depth {
+            let mut node_children = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(current_path) {
+                let mut sorted_entries: Vec<_> = entries.flatten().collect();
+                sorted_entries.sort_by_key(|e| {
+                    let is_file = e.file_type().map(|ft| ft.is_file()).unwrap_or(false);
+                    (is_file, e.file_name())
+                });
+
+                for entry in sorted_entries {
+                    let entry_name = entry.file_name().to_string_lossy().to_string();
+                    // Skip hidden git/node_modules/target to prevent huge trees
+                    if entry_name.starts_with('.') || entry_name == "node_modules" || entry_name == "target" || entry_name == "dist" {
+                        continue;
+                    }
+
+                    if let Ok(child_node) = build_file_tree(&entry.path(), base_root, current_depth + 1, max_depth) {
+                        node_children.push(child_node);
+                    }
+                }
+            }
+            children = Some(node_children);
+        } else {
+            children = Some(Vec::new());
+        }
+    } else if let Ok(meta) = std::fs::metadata(current_path) {
+        size = Some(meta.len() as i64);
+    }
+
+    Ok(FileTreeNode {
+        name,
+        path: relative_path,
+        is_directory: is_dir,
+        size,
+        children,
+    })
 }
