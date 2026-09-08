@@ -35,7 +35,7 @@ pub async fn start_daemon(port: u16) -> anyhow::Result<()> {
         pairing.host_public_key()
     );
 
-    let codex_bin = std::env::var("CODEX_BIN").unwrap_or_else(|_| "codex".to_string());
+    let codex_bin = resolve_codex_binary();
     info!("🤖 [CanywhereDaemon] Probing Codex CLI at: {}", codex_bin);
 
     let (adapter, _event_rx) = adapters::CodexAdapter::new(&codex_bin);
@@ -52,4 +52,39 @@ pub async fn start_daemon(port: u16) -> anyhow::Result<()> {
 
     let event_tx = adapter.event_tx();
     server::run_server(port, repo, adapter, pairing, event_tx).await
+}
+
+fn resolve_codex_binary() -> String {
+    if let Ok(bin) = std::env::var("CODEX_BIN") {
+        if !bin.trim().is_empty() {
+            return bin;
+        }
+    }
+
+    // Try `which codex`
+    if let Ok(output) = std::process::Command::new("which").arg("codex").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if !path.is_empty() {
+                return path;
+            }
+        }
+    }
+
+    // Check common user installation directories
+    if let Ok(home) = std::env::var("HOME") {
+        let candidates = [
+            format!("{}/.local/bin/codex", home),
+            format!("{}/.cargo/bin/codex", home),
+            "/opt/homebrew/bin/codex".to_string(),
+            "/usr/local/bin/codex".to_string(),
+        ];
+        for cand in candidates {
+            if std::path::Path::new(&cand).exists() {
+                return cand;
+            }
+        }
+    }
+
+    "codex".to_string()
 }

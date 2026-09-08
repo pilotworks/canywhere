@@ -188,13 +188,22 @@ export class CanywhereClient {
 
     useChatStore.getState().setChatStatus(chatId, "running");
 
-    const res = await this.call("turn.send", {
-      chatId,
-      content,
-      model: model || useModelStore.getState().selectedModel,
-    });
+    try {
+      const res = await this.call("turn.send", {
+        chatId,
+        content,
+        model: model || useModelStore.getState().selectedModel,
+      });
 
-    useChatStore.getState().setActiveTurn(chatId, res.turnId);
+      useChatStore.getState().setActiveTurn(chatId, res.turnId);
+    } catch (err: any) {
+      console.error("[CanywhereClient] turn.send failed", err);
+      useChatStore.getState().setChatStatus(chatId, "idle");
+      useChatStore.getState().addBlock(chatId, agentMsgId, {
+        type: "text",
+        content: `Error: ${err?.message || String(err)}`,
+      });
+    }
   }
 
   async steerTurn(chatId: string, turnId: string, content: string): Promise<void> {

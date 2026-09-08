@@ -174,6 +174,59 @@ impl CodexAdapter {
         Ok(thread_id)
     }
 
+    pub async fn resume_thread(&self, chat_id: &str, thread_id: &str) -> Result<String> {
+        let res = self
+            .send_request(
+                "thread/resume",
+                serde_json::json!({
+                    "threadId": thread_id,
+                    "excludeTurns": true
+                }),
+            )
+            .await?;
+
+        let id = res
+            .get("thread")
+            .and_then(|t| t.get("id"))
+            .and_then(|id| id.as_str())
+            .or_else(|| res.get("threadId").and_then(|id| id.as_str()))
+            .unwrap_or(thread_id)
+            .to_string();
+
+        self.thread_to_chat
+            .lock()
+            .await
+            .insert(id.clone(), chat_id.to_string());
+        Ok(id)
+    }
+
+    pub async fn resume_or_start_thread(
+        &self,
+        chat_id: &str,
+        thread_id: Option<&str>,
+        cwd: &str,
+        sub_paths: Option<&[String]>,
+    ) -> Result<String> {
+        if let Some(th_id) = thread_id {
+            if !th_id.trim().is_empty() {
+                match self.resume_thread(chat_id, th_id).await {
+                    Ok(id) => {
+                        tracing::info!("[CodexAdapter] Successfully resumed thread: {}", id);
+                        return Ok(id);
+                    }
+                    Err(err) => {
+                        tracing::warn!(
+                            "[CodexAdapter] Failed to resume thread {}, starting new thread: {}",
+                            th_id,
+                            err
+                        );
+                    }
+                }
+            }
+        }
+        self.start_thread(chat_id, cwd, sub_paths).await
+    }
+
     pub async fn list_models(&self) -> Result<Vec<ModelInfo>> {
         let res = self
             .send_request(
@@ -287,6 +340,20 @@ impl CodexAdapter {
             turn_params["model"] = serde_json::Value::String(m.to_string());
         }
 
+        // Pre-register mappings before sending request to eliminate streaming delta race conditions
+        self.chat_active_turn.lock().await.insert(
+            chat_id.to_string(),
+            (String::new(), message_id.to_string()),
+        );
+        self.thread_to_chat
+            .lock()
+            .await
+            .insert(thread_id.to_string(), chat_id.to_string());
+        self.chat_accumulated_text
+            .lock()
+            .await
+            .insert(chat_id.to_string(), String::new());
+
         let res = self.send_request("turn/start", turn_params).await?;
 
         let turn_id = res
@@ -301,10 +368,6 @@ impl CodexAdapter {
             chat_id.to_string(),
             (turn_id.clone(), message_id.to_string()),
         );
-        self.chat_accumulated_text
-            .lock()
-            .await
-            .insert(chat_id.to_string(), String::new());
         Ok(turn_id)
     }
 
@@ -411,26 +474,44 @@ impl CodexAdapter {
 
         let chat_id = match thread_to_chat.lock().await.get(thread_id).cloned() {
             Some(c) => c,
-            None => return,
+            None => {
+                let active = chat_turn.lock().await;
+                if active.len() == 1 {
+                    active.keys().next().cloned().unwrap()
+                } else {
+                    return;
+                }
+            }
         };
 
         let active_turn = chat_turn.lock().await.get(&chat_id).cloned();
 
         if method == "item/agentMessage/delta" {
-            if let Some((_, message_id)) = active_turn {
-                let delta = params["delta"].as_str().unwrap_or("").to_string();
-                {
+            let delta = params["delta"].as_str().unwrap_or("").to_string();
+            let msg_id = active_turn
+                .as_ref()
+                .map(|t| t.1.clone())
+                .unwrap_or_else(|| nanoid::nanoid!(16));
+            {
+                let mut text_lock = chat_text.lock().await;
+                text_lock
+                    .entry(chat_id.clone())
+                    .or_default()
+                    .push_str(&delta);
+            }
+            let _ = tx.send(AgentEvent::TokenDelta {
+                chat_id,
+                message_id: msg_id,
+                delta,
+            });
+        } else if method == "item/completed" {
+            let item = &params["item"];
+            let item_type = item["type"].as_str().unwrap_or("");
+            if item_type == "agentMessage" {
+                if let Some(text) = item["text"].as_str() {
                     let mut text_lock = chat_text.lock().await;
-                    text_lock
-                        .entry(chat_id.clone())
-                        .or_default()
-                        .push_str(&delta);
+                    text_lock.insert(chat_id.clone(), text.to_string());
                 }
-                let _ = tx.send(AgentEvent::TokenDelta {
-                    chat_id,
-                    message_id,
-                    delta,
-                });
             }
         } else if method == "item/commandExecution/requestApproval" {
             let external_req_id = req_id
@@ -562,7 +643,15 @@ impl CodexAdapter {
         });
 
         self.write_line(&payload).await?;
-        Ok(rx.await?)
+        let res = rx.await?;
+        if let Some(err) = res.get("error") {
+            let msg = err
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown JSON-RPC error");
+            anyhow::bail!("{msg}");
+        }
+        Ok(res)
     }
 
     async fn send_response(&self, id: i64, result: serde_json::Value) -> Result<()> {

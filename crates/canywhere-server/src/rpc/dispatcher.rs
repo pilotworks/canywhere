@@ -225,47 +225,44 @@ end try"#;
                     None => anyhow::bail!("Chat not found"),
                 };
 
-                // Self-healing: if thread_id is missing or empty, initialize thread now
-                let thread_id = match chat
-                    .external_thread_id
-                    .as_ref()
-                    .filter(|s| !s.trim().is_empty())
-                {
-                    Some(th) => th.clone(),
-                    None => {
-                        let mut cwd = String::new();
-                        let mut sub_paths = None;
-                        if let Some(ws_id) = &chat.workspace_id {
-                            if let Some(ws) = self.repo.get_workspace(ws_id)? {
-                                cwd = ws.root_path;
-                                sub_paths = Some(ws.sub_paths);
-                            }
-                        }
-                        if cwd.is_empty() {
-                            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-                            let scratch_dir = std::path::PathBuf::from(home)
-                                .join(".canywhere")
-                                .join("scratch")
-                                .join("codex")
-                                .join(&chat.id);
-                            let _ = std::fs::create_dir_all(&scratch_dir);
-                            cwd = scratch_dir.to_string_lossy().to_string();
-                        }
-                        let th = self
-                            .adapter
-                            .start_thread(&chat.id, &cwd, sub_paths.as_deref())
-                            .await?;
-                        let _ = self
-                            .repo
-                            .update_chat_status(&chat.id, ChatStatus::Idle, Some(&th));
-                        chat.external_thread_id = Some(th.clone());
-                        th
+                let mut cwd = String::new();
+                let mut sub_paths = None;
+                if let Some(ws_id) = &chat.workspace_id {
+                    if let Some(ws) = self.repo.get_workspace(ws_id)? {
+                        cwd = ws.root_path;
+                        sub_paths = Some(ws.sub_paths);
                     }
-                };
+                }
+                if cwd.is_empty() {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                    let scratch_dir = std::path::PathBuf::from(home)
+                        .join(".canywhere")
+                        .join("scratch")
+                        .join("codex")
+                        .join(&chat.id);
+                    let _ = std::fs::create_dir_all(&scratch_dir);
+                    cwd = scratch_dir.to_string_lossy().to_string();
+                }
 
-                let message_id = params
+                let thread_id = self
+                    .adapter
+                    .resume_or_start_thread(
+                        &chat.id,
+                        chat.external_thread_id.as_deref(),
+                        &cwd,
+                        sub_paths.as_deref(),
+                    )
+                    .await?;
+
+                let _ = self
+                    .repo
+                    .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
+                chat.external_thread_id = Some(thread_id.clone());
+
+                let user_msg_id = params
                     .client_message_id
                     .unwrap_or_else(|| nanoid::nanoid!(16));
+                let agent_msg_id = nanoid::nanoid!(16);
 
                 // Save user message to persistent history
                 let now = std::time::SystemTime::now()
@@ -274,7 +271,7 @@ end try"#;
                     .as_millis() as i64;
 
                 let user_msg = Message {
-                    id: message_id.clone(),
+                    id: user_msg_id.clone(),
                     chat_id: chat.id.clone(),
                     turn_id: None,
                     role: MessageRole::User,
@@ -293,7 +290,7 @@ end try"#;
                     .submit_turn(
                         &chat.id,
                         &thread_id,
-                        &message_id,
+                        &agent_msg_id,
                         &params.content,
                         params.model.as_deref(),
                     )
