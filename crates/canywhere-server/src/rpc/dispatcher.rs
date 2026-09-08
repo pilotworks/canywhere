@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 
-use crate::adapters::CodexAdapter;
+use crate::adapters::{AgentEvent, CodexAdapter};
 use crate::db::repositories::RepositoryManager;
 use crate::security::PairingSecurityManager;
 use canywhere_protocol::models::*;
@@ -205,10 +205,20 @@ end try"#;
                 let chat_id = p["chatId"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("chatId required"))?;
-                let chat = self
+                let mut chat = self
                     .repo
                     .get_chat(chat_id)?
                     .ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
+
+                // Self-healing: if SQLite says running but no active turn is in memory, reset to Idle
+                if chat.status == ChatStatus::Running {
+                    let has_active_turn = self.adapter.get_active_turn(chat_id).await.is_some();
+                    if !has_active_turn {
+                        let _ = self.repo.update_chat_status(chat_id, ChatStatus::Idle, None);
+                        chat.status = ChatStatus::Idle;
+                    }
+                }
+
                 let messages = self.repo.get_chat_history(chat_id)?;
                 let pending_approvals = Vec::new(); // Approvals handled in-flight
                 Ok(serde_json::to_value(ChatGetResult {
@@ -216,6 +226,17 @@ end try"#;
                     messages,
                     pending_approvals,
                 })?)
+            }
+
+            "chat.delete" => {
+                let params: ChatDeleteParams = serde_json::from_value(p)?;
+                let success = self.repo.delete_chat(&params.chat_id)?;
+                if success {
+                    let _ = self.adapter.event_tx().send(AgentEvent::ChatDeleted {
+                        chat_id: params.chat_id,
+                    });
+                }
+                Ok(serde_json::to_value(ChatDeleteResult { success })?)
             }
 
             "turn.send" => {
@@ -285,6 +306,13 @@ end try"#;
                     tracing::error!("[RpcDispatcher] Failed to record user message: {}", e);
                 }
 
+                tracing::info!(
+                    "[RpcDispatcher] Submitting turn for chat={}, thread={}, model={:?}",
+                    chat.id,
+                    thread_id,
+                    params.model
+                );
+
                 let turn_id = self
                     .adapter
                     .submit_turn(
@@ -293,8 +321,32 @@ end try"#;
                         &agent_msg_id,
                         &params.content,
                         params.model.as_deref(),
+                        params.reasoning_effort.as_deref(),
                     )
                     .await?;
+
+                tracing::info!(
+                    "[RpcDispatcher] Turn submitted: chat={}, turn_id={}",
+                    chat.id,
+                    turn_id
+                );
+
+                // Auto-generate title from first prompt if still default
+                if chat.title == "New Chat" || chat.title.trim().is_empty() {
+                    let clean_prompt = params.content.lines().next().unwrap_or("New Chat").trim();
+                    let new_title = if clean_prompt.chars().count() > 36 {
+                        format!("{}...", clean_prompt.chars().take(33).collect::<String>())
+                    } else {
+                        clean_prompt.to_string()
+                    };
+                    if !new_title.is_empty() {
+                        let _ = self.repo.update_chat_title(&chat.id, &new_title);
+                        let _ = self.adapter.event_tx().send(AgentEvent::ChatTitleUpdated {
+                            chat_id: chat.id.clone(),
+                            title: new_title,
+                        });
+                    }
+                }
 
                 let _ = self
                     .repo
@@ -346,19 +398,40 @@ end try"#;
                 let chat_id = p["chatId"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("chatId required"))?;
-                let turn_id = p["turnId"]
-                    .as_str()
-                    .ok_or_else(|| anyhow::anyhow!("turnId required"))?;
+                let mut turn_id = p.get("turnId")
+                    .and_then(|t| t.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
                 let chat = self
                     .repo
                     .get_chat(chat_id)?
                     .ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
                 let thread_id = chat.external_thread_id.unwrap_or_default();
 
-                self.adapter.interrupt_turn(&thread_id, turn_id).await?;
+                if turn_id.is_empty() {
+                    if let Some(t_id) = self.adapter.get_active_turn(chat_id).await {
+                        turn_id = t_id;
+                    }
+                }
+
+                if !thread_id.is_empty() && !turn_id.is_empty() {
+                    let _ = self.adapter.interrupt_turn(&thread_id, &turn_id).await;
+                }
+
+                self.adapter.clear_active_turn(chat_id).await;
+
                 let _ = self
                     .repo
                     .update_chat_status(chat_id, ChatStatus::Idle, None);
+
+                let _ = self.adapter.event_tx().send(AgentEvent::TurnCompleted {
+                    chat_id: chat_id.to_string(),
+                    turn_id,
+                    status: ChatStatus::Idle,
+                    text_content: None,
+                });
+
                 Ok(serde_json::json!({ "status": "interrupted" }))
             }
 

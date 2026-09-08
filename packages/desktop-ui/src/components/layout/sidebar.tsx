@@ -14,7 +14,11 @@ import {
   Settings,
   HelpCircle,
   FolderSearch,
+  Loader2,
+  Pause,
+  Trash2,
 } from "lucide-react";
+import type { Chat } from "../../types/index.js";
 import { useConnectionStore, useWorkspaceStore, useChatStore, useUiStore, useDeviceStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { PairingModal } from "../pairing/pairing-modal.js";
@@ -29,6 +33,74 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu.js";
 import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
+
+interface SidebarChatItemProps {
+  chat: Chat;
+  isActive: boolean;
+}
+
+const SidebarChatItem: React.FC<SidebarChatItemProps> = ({ chat, isActive }) => {
+  const isRunning = chat.status === "running";
+  const isAwaitingApproval = chat.status === "awaitingApproval";
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    client.deleteChat(chat.id);
+  };
+
+  const handleInterrupt = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    client.interruptTurn(chat.id);
+  };
+
+  return (
+    <div
+      onClick={() => client.selectChat(chat.id)}
+      className={`group flex items-center justify-between px-2.5 py-1.5 rounded-md text-left text-xs transition-colors cursor-pointer ${
+        isActive
+          ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium border border-[var(--border)] shadow-xs"
+          : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60 hover:text-[var(--foreground)]"
+      }`}
+    >
+      <div className="flex items-center gap-1.5 truncate min-w-0 flex-1 pr-1.5">
+        <MessageSquare className="w-3 h-3 text-[var(--muted-foreground)] shrink-0 opacity-70" />
+        <span className="truncate" title={chat.title || "New Chat"}>
+          {chat.title || "New Chat"}
+        </span>
+      </div>
+
+      <div className="flex items-center shrink-0">
+        {isRunning ? (
+          <div className="relative flex items-center justify-center w-4 h-4">
+            <span className="group-hover:hidden flex items-center justify-center">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]" />
+            </span>
+            <button
+              onClick={handleInterrupt}
+              className="hidden group-hover:flex items-center justify-center w-4 h-4 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+              title="Stop generating"
+            >
+              <Pause className="w-3 h-3 fill-current" />
+            </button>
+          </div>
+        ) : isAwaitingApproval ? (
+          <span
+            className="w-1.5 h-1.5 rounded-full bg-[var(--foreground)] animate-pulse"
+            title="Awaiting approval"
+          />
+        ) : (
+          <button
+            onClick={handleDelete}
+            className="opacity-0 group-hover:opacity-100 p-0.5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-all cursor-pointer"
+            title="Delete chat"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export const Sidebar: React.FC = () => {
   const connectionStatus = useConnectionStore((s) => s.status);
@@ -213,28 +285,13 @@ export const Sidebar: React.FC = () => {
                     {/* Nested Chats */}
                     {isExpanded && childChats.length > 0 && (
                       <div className="pl-6 space-y-0.5">
-                        {childChats.map((chat) => {
-                          const isChatActive = activeChatId === chat.id;
-                          return (
-                            <button
-                              key={chat.id}
-                              onClick={() => client.selectChat(chat.id)}
-                              className={`w-full flex items-center justify-between px-2.5 py-1 rounded-md text-left text-xs transition-colors cursor-pointer ${
-                                isChatActive
-                                  ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium border border-[var(--border)] shadow-xs"
-                                  : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]"
-                              }`}
-                            >
-                              <span className="truncate">{chat.title}</span>
-                              {chat.status === "running" && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0 ml-1.5" />
-                              )}
-                              {chat.status === "awaitingApproval" && (
-                                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping shrink-0 ml-1.5" />
-                              )}
-                            </button>
-                          );
-                        })}
+                        {childChats.map((chat) => (
+                          <SidebarChatItem
+                            key={chat.id}
+                            chat={chat}
+                            isActive={activeChatId === chat.id}
+                          />
+                        ))}
                       </div>
                     )}
                   </div>
@@ -263,28 +320,13 @@ export const Sidebar: React.FC = () => {
                 No standalone chats.
               </div>
             ) : (
-              standaloneChats.map((chat) => {
-                const isChatActive = activeChatId === chat.id;
-                return (
-                  <button
-                    key={chat.id}
-                    onClick={() => client.selectChat(chat.id)}
-                    className={`w-full flex items-center justify-between px-2.5 py-1 rounded-md text-left text-xs transition-colors cursor-pointer ${
-                      isChatActive
-                        ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium border border-[var(--border)] shadow-xs"
-                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5 truncate">
-                      <span className="text-[var(--muted-foreground)]">•</span>
-                      <span className="truncate">{chat.title}</span>
-                    </div>
-                    {chat.status === "running" && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
-                    )}
-                  </button>
-                );
-              })
+              standaloneChats.map((chat) => (
+                <SidebarChatItem
+                  key={chat.id}
+                  chat={chat}
+                  isActive={activeChatId === chat.id}
+                />
+              ))
             )}
           </div>
         </div>

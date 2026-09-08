@@ -45,39 +45,44 @@ pub async fn run_server(
     let mut persist_rx = event_tx.subscribe();
     tokio::spawn(async move {
         while let Ok(event) = persist_rx.recv().await {
-            if let AgentEvent::TurnCompleted {
-                chat_id,
-                turn_id,
-                status,
-                text_content,
-            } = event
-            {
-                let _ = repo_persist.update_chat_status(&chat_id, status, None);
-                if let Some(text) = text_content {
-                    if !text.trim().is_empty() {
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap_or_default()
-                            .as_millis() as i64;
-                        let agent_msg = canywhere_protocol::models::Message {
-                            id: nanoid::nanoid!(16),
-                            chat_id: chat_id.clone(),
-                            turn_id: Some(turn_id),
-                            role: canywhere_protocol::models::MessageRole::Agent,
-                            blocks: vec![canywhere_protocol::models::MessageBlock::Text {
-                                content: text,
-                            }],
-                            created_at: now,
-                            streaming: false,
-                        };
-                        if let Err(e) = repo_persist.record_message(&agent_msg) {
-                            tracing::error!(
-                                "[HostServer] Failed to record completed agent message: {}",
-                                e
-                            );
+            match event {
+                AgentEvent::TurnCompleted {
+                    chat_id,
+                    turn_id,
+                    status,
+                    text_content,
+                } => {
+                    let _ = repo_persist.update_chat_status(&chat_id, status, None);
+                    if let Some(text) = text_content {
+                        if !text.trim().is_empty() {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as i64;
+                            let agent_msg = canywhere_protocol::models::Message {
+                                id: nanoid::nanoid!(16),
+                                chat_id: chat_id.clone(),
+                                turn_id: Some(turn_id),
+                                role: canywhere_protocol::models::MessageRole::Agent,
+                                blocks: vec![canywhere_protocol::models::MessageBlock::Text {
+                                    content: text,
+                                }],
+                                created_at: now,
+                                streaming: false,
+                            };
+                            if let Err(e) = repo_persist.record_message(&agent_msg) {
+                                tracing::error!(
+                                    "[HostServer] Failed to record completed agent message: {}",
+                                    e
+                                );
+                            }
                         }
                     }
                 }
+                AgentEvent::ChatTitleUpdated { chat_id, title } => {
+                    let _ = repo_persist.update_chat_title(&chat_id, &title);
+                }
+                _ => {}
             }
         }
     });
@@ -207,6 +212,28 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                             "chatId": chat_id,
                             "turnId": turn_id,
                             "status": status
+                        }
+                    })
+                }
+                AgentEvent::ChatTitleUpdated { chat_id, title } => {
+                    info!(
+                        "🏷️  [HostServer] Chat title updated: {} -> {}",
+                        chat_id, title
+                    );
+                    serde_json::json!({
+                        "method": "chat.updated",
+                        "params": {
+                            "chatId": chat_id,
+                            "title": title
+                        }
+                    })
+                }
+                AgentEvent::ChatDeleted { chat_id } => {
+                    info!("🗑️  [HostServer] Chat deleted: {}", chat_id);
+                    serde_json::json!({
+                        "method": "chat.deleted",
+                        "params": {
+                            "chatId": chat_id
                         }
                     })
                 }

@@ -36,6 +36,13 @@ pub enum AgentEvent {
         status: ChatStatus,
         text_content: Option<String>,
     },
+    ChatTitleUpdated {
+        chat_id: String,
+        title: String,
+    },
+    ChatDeleted {
+        chat_id: String,
+    },
 }
 
 pub struct CodexAdapter {
@@ -168,10 +175,10 @@ impl CodexAdapter {
             })?
             .to_string();
 
-        self.thread_to_chat
-            .lock()
-            .await
-            .insert(thread_id.clone(), chat_id.to_string());
+        {
+            let mut t2c = self.thread_to_chat.lock().await;
+            t2c.insert(thread_id.clone(), chat_id.to_string());
+        }
         Ok(thread_id)
     }
 
@@ -194,10 +201,10 @@ impl CodexAdapter {
             .unwrap_or(thread_id)
             .to_string();
 
-        self.thread_to_chat
-            .lock()
-            .await
-            .insert(id.clone(), chat_id.to_string());
+        {
+            let mut t2c = self.thread_to_chat.lock().await;
+            t2c.insert(id.clone(), chat_id.to_string());
+        }
         Ok(id)
     }
 
@@ -331,29 +338,51 @@ impl CodexAdapter {
         message_id: &str,
         prompt: &str,
         model: Option<&str>,
+        effort: Option<&str>,
     ) -> Result<String> {
+        tracing::info!(
+            "[CodexAdapter] submit_turn starting: chat={}, thread={}, model={:?}, effort={:?}",
+            chat_id,
+            thread_id,
+            model,
+            effort
+        );
+
         let mut turn_params = serde_json::json!({
             "threadId": thread_id,
             "input": [{ "type": "text", "text": prompt }]
         });
 
         if let Some(m) = model {
-            turn_params["model"] = serde_json::Value::String(m.to_string());
+            let m_trimmed = m.trim();
+            if !m_trimmed.is_empty() && m_trimmed != "default" {
+                turn_params["model"] = serde_json::Value::String(m_trimmed.to_string());
+            }
+        }
+
+        if let Some(eff) = effort {
+            let eff_trimmed = eff.trim();
+            if !eff_trimmed.is_empty() && eff_trimmed != "default" {
+                turn_params["effort"] = serde_json::Value::String(eff_trimmed.to_string());
+            }
         }
 
         // Pre-register mappings before sending request to eliminate streaming delta race conditions
-        self.chat_active_turn.lock().await.insert(
-            chat_id.to_string(),
-            (String::new(), message_id.to_string()),
-        );
-        self.thread_to_chat
-            .lock()
-            .await
-            .insert(thread_id.to_string(), chat_id.to_string());
-        self.chat_accumulated_text
-            .lock()
-            .await
-            .insert(chat_id.to_string(), String::new());
+        {
+            let mut active = self.chat_active_turn.lock().await;
+            active.insert(
+                chat_id.to_string(),
+                (String::new(), message_id.to_string()),
+            );
+        }
+        {
+            let mut t2c = self.thread_to_chat.lock().await;
+            t2c.insert(thread_id.to_string(), chat_id.to_string());
+        }
+        {
+            let mut text = self.chat_accumulated_text.lock().await;
+            text.insert(chat_id.to_string(), String::new());
+        }
 
         let res = self.send_request("turn/start", turn_params).await?;
 
@@ -365,9 +394,18 @@ impl CodexAdapter {
             .unwrap_or("")
             .to_string();
 
-        self.chat_active_turn.lock().await.insert(
-            chat_id.to_string(),
-            (turn_id.clone(), message_id.to_string()),
+        {
+            let mut active = self.chat_active_turn.lock().await;
+            active.insert(
+                chat_id.to_string(),
+                (turn_id.clone(), message_id.to_string()),
+            );
+        }
+
+        tracing::info!(
+            "[CodexAdapter] submit_turn succeeded: chat={}, turn_id={}",
+            chat_id,
+            turn_id
         );
         Ok(turn_id)
     }
@@ -416,15 +454,30 @@ impl CodexAdapter {
         Ok(())
     }
 
+    pub async fn get_active_turn(&self, chat_id: &str) -> Option<String> {
+        let active = self.chat_active_turn.lock().await;
+        active.get(chat_id).map(|(turn_id, _)| turn_id.clone()).filter(|s| !s.is_empty())
+    }
+
+    pub async fn clear_active_turn(&self, chat_id: &str) {
+        let mut active = self.chat_active_turn.lock().await;
+        active.remove(chat_id);
+    }
+
     pub async fn interrupt_turn(&self, thread_id: &str, turn_id: &str) -> Result<()> {
-        self.send_request(
-            "turn/interrupt",
-            serde_json::json!({
-                "threadId": thread_id,
-                "expectedTurnId": turn_id
-            }),
-        )
-        .await?;
+        if !turn_id.is_empty() {
+            let res = self.send_request(
+                "turn/interrupt",
+                serde_json::json!({
+                    "threadId": thread_id,
+                    "turnId": turn_id
+                }),
+            )
+            .await;
+            if let Err(e) = res {
+                tracing::warn!("[CodexAdapter] turn/interrupt warning: {}", e);
+            }
+        }
         Ok(())
     }
 
@@ -459,6 +512,20 @@ impl CodexAdapter {
             Some(m) => m,
             None => return,
         };
+
+        // Only handle methods that Canywhere cares about; ignore others immediately without touching locks
+        match method {
+            "item/agentMessage/delta"
+            | "item/reasoning/textDelta"
+            | "item/reasoning/summaryTextDelta"
+            | "item/completed"
+            | "item/commandExecution/requestApproval"
+            | "item/fileChange/requestApproval"
+            | "turn/completed"
+            | "thread/name/updated" => {}
+            _ => return,
+        }
+
         let params = &msg["params"];
         let req_id = msg.get("id"); // If Some, it's a ServerRequest expecting a response
 
@@ -473,19 +540,32 @@ impl CodexAdapter {
             })
             .unwrap_or("");
 
-        let chat_id = match thread_to_chat.lock().await.get(thread_id).cloned() {
+        let chat_id_opt = {
+            let t2c = thread_to_chat.lock().await;
+            t2c.get(thread_id).cloned()
+        };
+
+        let chat_id = match chat_id_opt {
             Some(c) => c,
             None => {
                 let active = chat_turn.lock().await;
                 if active.len() == 1 {
                     active.keys().next().cloned().unwrap()
                 } else {
+                    tracing::warn!(
+                        "[CodexAdapter] No chat mapping found for thread_id '{}', method '{}'",
+                        thread_id,
+                        method
+                    );
                     return;
                 }
             }
         };
 
-        let active_turn = chat_turn.lock().await.get(&chat_id).cloned();
+        let active_turn = {
+            let active = chat_turn.lock().await;
+            active.get(&chat_id).cloned()
+        };
 
         if method == "item/agentMessage/delta" {
             let delta = params["delta"].as_str().unwrap_or("").to_string();
@@ -642,6 +722,18 @@ impl CodexAdapter {
                 status: ChatStatus::Idle,
                 text_content,
             });
+        } else if method == "thread/name/updated" {
+            let thread_name = params
+                .get("threadName")
+                .and_then(|n| n.as_str())
+                .or_else(|| params.get("name").and_then(|n| n.as_str()))
+                .unwrap_or("");
+            if !thread_name.trim().is_empty() {
+                let _ = tx.send(AgentEvent::ChatTitleUpdated {
+                    chat_id,
+                    title: thread_name.trim().to_string(),
+                });
+            }
         }
     }
 

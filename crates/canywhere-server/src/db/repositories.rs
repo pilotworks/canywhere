@@ -11,7 +11,19 @@ pub struct RepositoryManager {
 
 impl RepositoryManager {
     pub fn new(db: Database) -> Self {
-        Self { db }
+        let repo = Self { db };
+        let _ = repo.reset_running_chats_to_idle();
+        repo
+    }
+
+    pub fn reset_running_chats_to_idle(&self) -> Result<()> {
+        let conn = self.db.conn();
+        let now = chrono_now();
+        conn.execute(
+            "UPDATE chats SET status = 'idle', updated_at = ?1 WHERE status = 'running' OR status = 'awaiting_approval'",
+            params![now],
+        )?;
+        Ok(())
     }
 
     // Workspaces
@@ -178,6 +190,37 @@ impl RepositoryManager {
         Ok(())
     }
 
+    pub fn update_chat_title(&self, id: &str, title: &str) -> Result<()> {
+        let conn = self.db.conn();
+        let now = chrono_now();
+        conn.execute(
+            "UPDATE chats SET title = ?1, updated_at = ?2 WHERE id = ?3",
+            params![title, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_chat(&self, id: &str) -> Result<bool> {
+        let conn = self.db.conn();
+        conn.execute(
+            "DELETE FROM message_blocks WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?1)",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM messages WHERE chat_id = ?1",
+            params![id],
+        )?;
+        conn.execute(
+            "DELETE FROM approval_requests WHERE chat_id = ?1",
+            params![id],
+        )?;
+        let changes = conn.execute(
+            "DELETE FROM chats WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(changes > 0)
+    }
+
     // Devices & Pairing
     pub fn create_pairing_session(&self, token: &str, secret: &str, ttl_ms: i64) -> Result<i64> {
         let conn = self.db.conn();
@@ -286,7 +329,7 @@ impl RepositoryManager {
         )?;
 
         for (idx, block) in msg.blocks.iter().enumerate() {
-            self.record_message_block(&msg.id, idx as i32, block)?;
+            Self::insert_message_block(&conn, &msg.id, idx as i32, block)?;
         }
         Ok(())
     }
@@ -298,6 +341,15 @@ impl RepositoryManager {
         block: &MessageBlock,
     ) -> Result<()> {
         let conn = self.db.conn();
+        Self::insert_message_block(&conn, message_id, sequence, block)
+    }
+
+    fn insert_message_block(
+        conn: &rusqlite::Connection,
+        message_id: &str,
+        sequence: i32,
+        block: &MessageBlock,
+    ) -> Result<()> {
         let id = Uuid::new_v4().to_string();
         let now = chrono_now();
         let block_type = match block {

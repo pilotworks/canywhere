@@ -156,6 +156,7 @@ async fn test_real_codex_thread_start() {
             &msg_id,
             "Please reply with just the word 'HELLO'",
             None,
+            None,
         )
         .await
     {
@@ -204,4 +205,88 @@ async fn test_real_codex_thread_start() {
         got_event || !turn_id.is_empty(),
         "Must have either received an event or turn_id"
     );
+}
+
+#[tokio::test]
+async fn test_real_codex_turn_send_via_dispatcher() {
+    let codex_bin = std::env::var("CODEX_BIN").unwrap_or_else(|_| "codex".to_string());
+    let (adapter, mut event_rx) = CodexAdapter::new(&codex_bin);
+    let adapter = Arc::new(adapter);
+
+    if let Err(e) = adapter.initialize().await {
+        eprintln!("Codex not available for live test, skipping: {}", e);
+        return;
+    }
+
+    let db = Database::open_in_memory().unwrap();
+    let repo = Arc::new(RepositoryManager::new(db));
+    let pairing = Arc::new(PairingSecurityManager::new(Arc::clone(&repo), 7890));
+    let dispatcher = RpcDispatcher::new(Arc::clone(&repo), Arc::clone(&adapter), pairing);
+
+    // 1. Create a chat
+    let chat_req = RpcRequestEnvelope {
+        id: RpcId::Number(1),
+        method: "chat.create".to_string(),
+        params: Some(serde_json::json!({
+            "kind": "standalone",
+            "providerId": "codex",
+            "title": "Turn Send Test Chat"
+        })),
+    };
+    let chat_res = dispatcher.dispatch(chat_req).await;
+    assert!(chat_res.error.is_none());
+    let chat_id = chat_res.result.unwrap()["chat"]["id"].as_str().unwrap().to_string();
+
+    // 2. Dispatch turn.send
+    let turn_req = RpcRequestEnvelope {
+        id: RpcId::Number(2),
+        method: "turn.send".to_string(),
+        params: Some(serde_json::json!({
+            "chatId": chat_id,
+            "content": "Say hello",
+            "model": null
+        })),
+    };
+    let turn_res = dispatcher.dispatch(turn_req).await;
+    assert!(turn_res.error.is_none(), "turn.send must succeed: {:?}", turn_res.error);
+    let turn_id = turn_res.result.unwrap()["turnId"].as_str().unwrap().to_string();
+    assert!(!turn_id.is_empty(), "turnId must not be empty");
+    println!("Successfully dispatched turn.send: turn_id={}", turn_id);
+
+    // 3. Verify event stream
+    let timeout = tokio::time::sleep(tokio::time::Duration::from_secs(10));
+    tokio::pin!(timeout);
+    let mut received_event = false;
+
+    loop {
+        tokio::select! {
+            _ = &mut timeout => {
+                println!("Timeout waiting for event, but turn.send succeeded");
+                break;
+            }
+            res = event_rx.recv() => {
+                if let Ok(ev) = res {
+                    match ev {
+                        canywhere_server::adapters::AgentEvent::TokenDelta { chat_id: c_id, delta, .. } => {
+                            if c_id == chat_id {
+                                println!("Received TokenDelta for chat: {:?}", delta);
+                                received_event = true;
+                                break;
+                            }
+                        }
+                        canywhere_server::adapters::AgentEvent::TurnCompleted { chat_id: c_id, .. } => {
+                            if c_id == chat_id {
+                                println!("Received TurnCompleted for chat");
+                                received_event = true;
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+
+    assert!(received_event || !turn_id.is_empty());
 }

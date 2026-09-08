@@ -111,7 +111,18 @@ export class CanywhereClient {
     useChatStore.getState().setActiveChatId(chatId);
     try {
       const res = await this.call("chat.get", { chatId });
-      useChatStore.getState().setMessages(chatId, res.messages);
+      if (res.chat) {
+        useChatStore.getState().updateChat(chatId, { status: res.chat.status });
+        if (res.chat.status === "idle" || res.chat.status === "error") {
+          useChatStore.getState().setActiveTurn(chatId, null);
+        }
+      }
+      const safeMessages = (res.messages || []).map((m: any) =>
+        res.chat?.status === "idle" || res.chat?.status === "error"
+          ? { ...m, streaming: false }
+          : m
+      );
+      useChatStore.getState().setMessages(chatId, safeMessages);
       useApprovalStore.getState().setPendingApprovals(res.pendingApprovals);
     } catch (err) {
       console.error("[CanywhereClient] Failed to load chat history", err);
@@ -189,10 +200,13 @@ export class CanywhereClient {
     useChatStore.getState().setChatStatus(chatId, "running");
 
     try {
+      const activeModel = model || useModelStore.getState().selectedModel || null;
+      const activeEffort = useModelStore.getState().selectedEffort || null;
       const res = await this.call("turn.send", {
         chatId,
         content,
-        model: model || useModelStore.getState().selectedModel,
+        model: activeModel,
+        reasoningEffort: activeEffort,
       });
 
       useChatStore.getState().setActiveTurn(chatId, res.turnId);
@@ -225,9 +239,24 @@ export class CanywhereClient {
     });
   }
 
-  async interruptTurn(chatId: string, turnId: string): Promise<void> {
-    await this.call("turn.interrupt", { chatId, turnId });
+  async interruptTurn(chatId: string, turnId?: string): Promise<void> {
+    const activeTurnId = turnId || useChatStore.getState().activeTurnId[chatId] || "";
+    try {
+      await this.call("turn.interrupt", { chatId, turnId: activeTurnId });
+    } catch (e) {
+      console.warn("[CanywhereClient] turn.interrupt failed", e);
+    }
     useChatStore.getState().setChatStatus(chatId, "idle");
+    useChatStore.getState().setActiveTurn(chatId, null);
+  }
+
+  async deleteChat(chatId: string): Promise<void> {
+    useChatStore.getState().removeChat(chatId);
+    try {
+      await this.call("chat.delete", { chatId });
+    } catch (err) {
+      console.error("[CanywhereClient] Failed to delete chat", err);
+    }
   }
 
   async respondApproval(approvalId: string, decision: ApprovalDecision): Promise<void> {
@@ -337,6 +366,16 @@ export class CanywhereClient {
         this.tokenBuffer.flush();
         useChatStore.getState().setChatStatus(params.chatId, params.status);
         useChatStore.getState().setActiveTurn(params.chatId, null);
+        break;
+      }
+
+      case "chat.updated": {
+        useChatStore.getState().updateChat(params.chatId, { title: params.title });
+        break;
+      }
+
+      case "chat.deleted": {
+        useChatStore.getState().removeChat(params.chatId);
         break;
       }
     }

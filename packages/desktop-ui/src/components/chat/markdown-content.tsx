@@ -103,6 +103,19 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
           ),
           th: ({ children }) => <th className="px-3 py-1.5 font-semibold bg-[var(--secondary)]">{children}</th>,
           td: ({ children }) => <td className="px-3 py-1.5 border-t border-[var(--border)]">{children}</td>,
+          input: ({ type, checked }) => {
+            if (type === "checkbox") {
+              return (
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  readOnly
+                  className="rounded border-[var(--border)] text-emerald-500 mr-2 inline-block align-middle accent-emerald-500 cursor-default"
+                />
+              );
+            }
+            return null;
+          },
         }}
       >
         {content}

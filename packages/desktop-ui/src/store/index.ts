@@ -67,6 +67,8 @@ export interface ChatState {
   addBlock: (chatId: string, messageId: string, block: MessageBlock) => void;
   updateBlock: (chatId: string, messageId: string, blockId: string, update: Partial<MessageBlock>) => void;
   setActiveTurn: (chatId: string, turnId: string | null) => void;
+  updateChat: (chatId: string, update: Partial<Chat>) => void;
+  removeChat: (chatId: string) => void;
 }
 
 export const EMPTY_MESSAGES: Message[] = [];
@@ -79,6 +81,24 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setChats: (chats) => set({ chats }),
   addChat: (chat) => set((s) => ({ chats: [chat, ...s.chats] })),
+  updateChat: (chatId, update) =>
+    set((s) => ({
+      chats: s.chats.map((c) => (c.id === chatId ? { ...c, ...update } : c)),
+    })),
+  removeChat: (chatId) =>
+    set((s) => {
+      const remainingChats = s.chats.filter((c) => c.id !== chatId);
+      const newMessages = { ...s.messages };
+      delete newMessages[chatId];
+      const newActiveTurn = { ...s.activeTurnId };
+      delete newActiveTurn[chatId];
+      return {
+        chats: remainingChats,
+        activeChatId: s.activeChatId === chatId ? (remainingChats[0]?.id || null) : s.activeChatId,
+        messages: newMessages,
+        activeTurnId: newActiveTurn,
+      };
+    }),
   setActiveChatId: (activeChatId) => set({ activeChatId }),
   setChatStatus: (chatId, status) =>
     set((s) => {
@@ -210,21 +230,88 @@ export const useDeviceStore = create<DeviceState>((set) => ({
 export interface ModelState {
   models: ModelInfo[];
   selectedModel: string;
+  selectedEffort: string;
   setModels: (models: ModelInfo[]) => void;
   setSelectedModel: (model: string) => void;
+  setSelectedEffort: (effort: string) => void;
 }
+
+const STORAGE_KEY_MODEL = "canywhere:last_selected_model";
+const STORAGE_KEY_EFFORT = "canywhere:last_selected_effort";
+
+const getSavedModel = () => {
+  try {
+    return localStorage.getItem(STORAGE_KEY_MODEL) || "";
+  } catch {
+    return "";
+  }
+};
+
+const getSavedEffort = () => {
+  try {
+    return localStorage.getItem(STORAGE_KEY_EFFORT) || "";
+  } catch {
+    return "";
+  }
+};
 
 export const useModelStore = create<ModelState>((set) => ({
   models: [],
-  selectedModel: "gpt-5-codex",
+  selectedModel: getSavedModel(),
+  selectedEffort: getSavedEffort(),
   setModels: (models) => {
-    const defaultModel = models.find((m) => m.isDefault)?.model || (models[0]?.model ?? "gpt-5-codex");
-    set((s) => ({
-      models,
-      selectedModel: s.selectedModel || defaultModel,
-    }));
+    if (!models || models.length === 0) return;
+    const defaultModelInfo = models.find((m) => m.isDefault) || models[0];
+    const defaultModel = defaultModelInfo?.model || "";
+    set((s) => {
+      const savedModel = s.selectedModel || getSavedModel();
+      const matchedModel = models.find((m) => m.model === savedModel);
+      const activeModel = matchedModel ? matchedModel.model : defaultModel;
+      const activeModelInfo = matchedModel || defaultModelInfo;
+
+      const supportedEfforts = activeModelInfo?.supportedReasoningEfforts || [];
+      const defaultEffort = activeModelInfo?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
+
+      const savedEffort = s.selectedEffort || getSavedEffort();
+      const activeEffort = supportedEfforts.includes(savedEffort) ? savedEffort : defaultEffort;
+
+      try {
+        localStorage.setItem(STORAGE_KEY_MODEL, activeModel);
+        if (activeEffort) {
+          localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
+        }
+      } catch {}
+
+      return {
+        models,
+        selectedModel: activeModel,
+        selectedEffort: activeEffort,
+      };
+    });
   },
-  setSelectedModel: (selectedModel) => set({ selectedModel }),
+  setSelectedModel: (selectedModel) => {
+    try {
+      localStorage.setItem(STORAGE_KEY_MODEL, selectedModel);
+    } catch {}
+    set((s) => {
+      const modelInfo = s.models.find((m) => m.model === selectedModel);
+      const supportedEfforts = modelInfo?.supportedReasoningEfforts || [];
+      const defaultEffort = modelInfo?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
+      const activeEffort = supportedEfforts.includes(s.selectedEffort) ? s.selectedEffort : defaultEffort;
+      if (activeEffort) {
+        try {
+          localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
+        } catch {}
+      }
+      return { selectedModel, selectedEffort: activeEffort };
+    });
+  },
+  setSelectedEffort: (selectedEffort) => {
+    try {
+      localStorage.setItem(STORAGE_KEY_EFFORT, selectedEffort);
+    } catch {}
+    set({ selectedEffort });
+  },
 }));
 
 export type RightTabType = "fileTree" | "terminal" | "filePreview" | "diff";

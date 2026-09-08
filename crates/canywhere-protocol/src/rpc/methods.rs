@@ -76,11 +76,24 @@ pub struct ChatGetResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct ChatDeleteParams {
+    pub chat_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatDeleteResult {
+    pub success: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct TurnSendParams {
     pub chat_id: String,
     pub content: String,
     pub client_message_id: Option<String>,
     pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
