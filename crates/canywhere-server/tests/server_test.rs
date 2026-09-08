@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use canywhere_protocol::models::{Device, DevicePlatform, DeviceTransport};
 use canywhere_protocol::rpc::*;
 use canywhere_server::adapters::CodexAdapter;
 use canywhere_server::db::repositories::RepositoryManager;
@@ -15,7 +16,7 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     let (adapter, _) = CodexAdapter::new("mock");
     let adapter = Arc::new(adapter);
 
-    let dispatcher = RpcDispatcher::new(repo, adapter, pairing);
+    let dispatcher = RpcDispatcher::new(Arc::clone(&repo), adapter, pairing);
 
     // 1. Create Workspace
     let req = RpcRequestEnvelope {
@@ -52,6 +53,47 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     let pair_res = dispatcher.dispatch(pair_req).await;
     assert!(pair_res.error.is_none());
     assert!(pair_res.result.unwrap()["qrPayload"]["token"].is_string());
+
+    // 3b. Device list and revoke
+    repo.register_device(Device {
+        id: "dev-iphone-1".to_string(),
+        name: "Tien's iPhone".to_string(),
+        platform: DevicePlatform::Ios,
+        public_key: "abc123pubkey".to_string(),
+        paired_at: 1000,
+        last_seen_at: 1000,
+        last_transport: DeviceTransport::Lan,
+        revoked: false,
+    }).unwrap();
+
+    let dev_list_req = RpcRequestEnvelope {
+        id: RpcId::Number(31),
+        method: "device.list".to_string(),
+        params: None,
+    };
+    let dev_list_res = dispatcher.dispatch(dev_list_req).await;
+    assert!(dev_list_res.error.is_none());
+    let dev_list: DeviceListResult = serde_json::from_value(dev_list_res.result.unwrap()).unwrap();
+    assert_eq!(dev_list.devices.len(), 1);
+    assert_eq!(dev_list.devices[0].name, "Tien's iPhone");
+    assert!(!dev_list.devices[0].revoked);
+
+    let revoke_req = RpcRequestEnvelope {
+        id: RpcId::Number(32),
+        method: "device.revoke".to_string(),
+        params: Some(serde_json::json!({ "deviceId": "dev-iphone-1" })),
+    };
+    let revoke_res = dispatcher.dispatch(revoke_req).await;
+    assert!(revoke_res.error.is_none());
+    assert_eq!(revoke_res.result.unwrap()["revoked"], true);
+
+    let dev_list_res2 = dispatcher.dispatch(RpcRequestEnvelope {
+        id: RpcId::Number(33),
+        method: "device.list".to_string(),
+        params: None,
+    }).await;
+    let dev_list2: DeviceListResult = serde_json::from_value(dev_list_res2.result.unwrap()).unwrap();
+    assert!(dev_list2.devices[0].revoked);
 
     // 4. Create Standalone Chat
     let chat_req = RpcRequestEnvelope {

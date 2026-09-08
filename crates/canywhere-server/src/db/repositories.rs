@@ -261,6 +261,15 @@ impl RepositoryManager {
         Ok(list)
     }
 
+    pub fn revoke_device(&self, id: &str) -> Result<bool> {
+        let conn = self.db.conn();
+        let changes = conn.execute(
+            "UPDATE devices SET revoked = 1 WHERE id = ?1",
+            params![id],
+        )?;
+        Ok(changes > 0)
+    }
+
     // Messages & Blocks
     pub fn record_message(&self, msg: &Message) -> Result<()> {
         let conn = self.db.conn();

@@ -229,7 +229,23 @@ export class CanywhereClient {
   async createPairingSession(): Promise<any> {
     const res = await this.call("pairing.createSession", {});
     useDeviceStore.getState().setQrPayload(res.qrPayload);
+    await this.refreshDevices();
     return res.qrPayload;
+  }
+
+  async refreshDevices(): Promise<void> {
+    try {
+      const devRes = await this.call("device.list", {});
+      useDeviceStore.getState().setDevices(devRes.devices || []);
+    } catch (e) {
+      console.error("Failed to refresh devices:", e);
+    }
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    useDeviceStore.getState().removeDevice(deviceId);
+    await this.call("device.revoke", { deviceId });
+    await this.refreshDevices();
   }
 
   call(method: string, params: any): Promise<any> {

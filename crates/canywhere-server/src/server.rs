@@ -94,8 +94,8 @@ pub async fn run_server(
         .layer(CorsLayer::permissive())
         .with_state(state);
 
-    let addr = format!("127.0.0.1:{}", port);
-    info!("[HostServer] Listening on http://{}", addr);
+    let addr = format!("0.0.0.0:{}", port);
+    info!("[HostServer] Listening on http://{} (LAN & Tailscale accessible)", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

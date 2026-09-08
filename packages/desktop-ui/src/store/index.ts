@@ -196,13 +196,15 @@ export interface DeviceState {
   qrPayload: PairingQrPayload | null;
   setDevices: (devices: Device[]) => void;
   setQrPayload: (qrPayload: PairingQrPayload | null) => void;
+  removeDevice: (id: string) => void;
 }
 
 export const useDeviceStore = create<DeviceState>((set) => ({
   devices: [],
   qrPayload: null,
   setDevices: (devices) => set({ devices }),
-  setQrPayload: (qrPayload) => set({ qrPayload })
+  setQrPayload: (qrPayload) => set({ qrPayload }),
+  removeDevice: (id) => set((s) => ({ devices: s.devices.filter((d) => d.id !== id) }))
 }));
 
 export interface ModelState {

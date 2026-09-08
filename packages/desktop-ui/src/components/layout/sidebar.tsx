@@ -15,7 +15,7 @@ import {
   HelpCircle,
   FolderSearch,
 } from "lucide-react";
-import { useConnectionStore, useWorkspaceStore, useChatStore, useUiStore } from "../../store/index.js";
+import { useConnectionStore, useWorkspaceStore, useChatStore, useUiStore, useDeviceStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { PairingModal } from "../pairing/pairing-modal.js";
 import { ThemeToggle } from "../ui/theme-toggle.js";
@@ -38,6 +38,8 @@ export const Sidebar: React.FC = () => {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
+  const devices = useDeviceStore((s) => s.devices);
+  const activeDevicesCount = devices.filter((d) => !d.revoked).length;
 
   const [isResizing, setIsResizing] = useState(false);
   const [pairingOpen, setPairingOpen] = useState(false);
@@ -316,9 +318,13 @@ export const Sidebar: React.FC = () => {
               variant="ghost"
               size="icon-sm"
               onClick={() => setPairingOpen(true)}
-              title="Pair Remote Mobile Device"
+              title={activeDevicesCount > 0 ? `Pair Remote Device (${activeDevicesCount} connected)` : "Pair Remote Mobile Device"}
+              className="relative"
             >
               <Smartphone className="w-3.5 h-3.5" />
+              {activeDevicesCount > 0 && (
+                <span className="absolute 0.5 top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-[var(--sidebar)]" />
+              )}
             </Button>
           </div>
         </div>

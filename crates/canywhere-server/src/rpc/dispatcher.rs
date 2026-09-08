@@ -387,6 +387,21 @@ end try"#;
                 Ok(serde_json::to_value(DeviceListResult { devices })?)
             }
 
+            "device.revoke" => {
+                let device_id = p
+                    .get("deviceId")
+                    .or_else(|| p.get("id"))
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("Missing deviceId parameter"))?;
+
+                let success = self.repo.revoke_device(device_id)?;
+                Ok(serde_json::json!({
+                    "status": "ok",
+                    "deviceId": device_id,
+                    "revoked": success,
+                }))
+            }
+
             "model.list" => {
                 let models = self.adapter.list_models().await?;
                 Ok(serde_json::to_value(ModelListResult { models })?)

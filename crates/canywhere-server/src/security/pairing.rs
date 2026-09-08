@@ -38,7 +38,7 @@ impl PairingSecurityManager {
 
         let mut endpoints = vec![format!("ws://127.0.0.1:{}/rpc", self.port)];
 
-        // Probe local network IP if available
+        // Probe local LAN network IP if available
         if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
             if socket.connect("8.8.8.8:80").is_ok() {
                 if let Ok(local_addr) = socket.local_addr() {
@@ -46,6 +46,22 @@ impl PairingSecurityManager {
                     if !ip.is_loopback() {
                         endpoints.insert(0, format!("ws://{}:{}/rpc", ip, self.port));
                     }
+                }
+            }
+        }
+
+        // Probe Tailscale IP and MagicDNS if available
+        if let Some(ts) = crate::discovery::resolve_tailscale_info() {
+            if let Some(dns) = ts.magic_dns {
+                let ep = format!("ws://{}:{}/rpc", dns, self.port);
+                if !endpoints.contains(&ep) {
+                    endpoints.insert(0, ep);
+                }
+            }
+            if let Some(ip) = ts.ipv4 {
+                let ep = format!("ws://{}:{}/rpc", ip, self.port);
+                if !endpoints.contains(&ep) {
+                    endpoints.insert(0, ep);
                 }
             }
         }
