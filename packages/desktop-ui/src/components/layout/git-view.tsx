@@ -452,7 +452,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                 className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer opacity-70 hover:opacity-100"
                 title="Unstage all changes"
               >
-                <Minus className="w-3.5 h-3.5" />
+                <Minus className="w-3 h-3" />
               </button>
             )}
           </div>
@@ -486,15 +486,15 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                             handleUnstage([file.path]);
                           }}
                           disabled={isBusy}
-                          className={`h-5 w-5 items-center justify-center rounded cursor-pointer hover:text-[var(--foreground)] ${
+                          className={`p-0.5 rounded cursor-pointer hover:text-[var(--foreground)] opacity-70 hover:opacity-100 transition-opacity ${
                             isBusy ? "flex" : "hidden group-hover:flex"
                           }`}
                           title="Unstage change"
                         >
                           {isBusy ? (
-                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <Loader2 className="w-3 h-3 animate-spin" />
                           ) : (
-                            <Minus className="w-3.5 h-3.5" />
+                            <Minus className="w-3 h-3" />
                           )}
                         </button>
 
@@ -549,7 +549,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                   className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer opacity-70 hover:opacity-100"
                   title="Stage all changes"
                 >
-                  <Plus className="w-3.5 h-3.5" />
+                  <Plus className="w-3 h-3" />
                 </button>
               </div>
             )}
@@ -578,7 +578,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                       {/* Hover actions (discard & stage) + Permanent status indicator on the right */}
                       <div className="flex items-center gap-1 shrink-0 h-full">
                         {/* Hover actions: discard & stage (takes 0 space when hidden) */}
-                        <div className={`items-center gap-0.5 ${
+                        <div className={`items-center gap-1 ${
                           isBusy ? "flex" : "hidden group-hover:flex"
                         }`}>
                           <button
@@ -587,10 +587,10 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                               handleDiscard([file.path]);
                             }}
                             disabled={isBusy}
-                            className="h-5 w-5 flex items-center justify-center hover:text-rose-400 rounded cursor-pointer transition-colors"
+                            className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer opacity-70 hover:opacity-100 transition-opacity"
                             title="Discard changes"
                           >
-                            <RotateCcw className="w-3.5 h-3.5" />
+                            <RotateCcw className="w-3 h-3" />
                           </button>
                           <button
                             onClick={(e) => {
@@ -598,13 +598,13 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                               handleStage([file.path]);
                             }}
                             disabled={isBusy}
-                            className="h-5 w-5 flex items-center justify-center hover:text-[var(--foreground)] rounded cursor-pointer transition-colors"
+                            className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer opacity-70 hover:opacity-100 transition-opacity"
                             title="Stage change"
                           >
                             {isBusy ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              <Loader2 className="w-3 h-3 animate-spin" />
                             ) : (
-                              <Plus className="w-3.5 h-3.5" />
+                              <Plus className="w-3 h-3" />
                             )}
                           </button>
                         </div>
