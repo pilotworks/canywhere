@@ -477,13 +477,30 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                         {file.path}
                       </span>
 
-                      {/* Actions on hover (or status indicator when not hovered, like VS Code) */}
-                      <div className="relative flex items-center justify-end shrink-0 min-w-[20px]">
-                        {/* Status indicator (M, A, D, R) - hidden when hovered */}
+                      {/* Hover action (unstage) + Permanent status indicator on the right */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Hover action: unstage */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleUnstage([file.path]);
+                          }}
+                          disabled={isBusy}
+                          className={`p-0.5 rounded cursor-pointer transition-opacity hover:text-[var(--foreground)] ${
+                            isBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                          }`}
+                          title="Unstage change"
+                        >
+                          {isBusy ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Minus className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+
+                        {/* Status indicator (M, A, D, R) - always visible at right edge */}
                         <span
-                          className={`text-[9px] font-bold px-1 rounded transition-opacity ${
-                            isBusy ? "opacity-0" : "group-hover:opacity-0"
-                          } ${
+                          className={`text-[9px] font-bold px-1 rounded ${
                             file.status === "added"
                               ? "text-emerald-400"
                               : file.status === "deleted"
@@ -495,27 +512,6 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                         >
                           {file.status[0].toUpperCase()}
                         </span>
-
-                        {/* Hover action: unstage - absolute positioned at right */}
-                        <div className={`absolute right-0 flex items-center transition-opacity ${
-                          isBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                        }`}>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleUnstage([file.path]);
-                            }}
-                            disabled={isBusy}
-                            className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer transition-colors"
-                            title="Unstage change"
-                          >
-                            {isBusy ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Minus className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </div>
                       </div>
                     </div>
                   );
@@ -579,25 +575,10 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                         {file.path}
                       </span>
 
-                      {/* Actions on hover (or status indicator when not hovered, like VS Code) */}
-                      <div className="relative flex items-center justify-end shrink-0 min-w-[36px]">
-                        {/* Status indicator (M, U, D) - right aligned, hidden when hovered */}
-                        <span
-                          className={`text-[9px] font-bold px-1 rounded transition-opacity ${
-                            isBusy ? "opacity-0" : "group-hover:opacity-0"
-                          } ${
-                            file.status === "untracked"
-                              ? "text-sky-400"
-                              : file.status === "deleted"
-                              ? "text-rose-400"
-                              : "text-amber-400"
-                          }`}
-                        >
-                          {file.status === "untracked" ? "U" : file.status[0].toUpperCase()}
-                        </span>
-
-                        {/* Hover actions: discard & stage - absolute positioned at right */}
-                        <div className={`absolute right-0 flex items-center gap-0.5 transition-opacity ${
+                      {/* Hover actions (discard & stage) + Permanent status indicator on the right */}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Hover actions: discard & stage */}
+                        <div className={`flex items-center gap-0.5 transition-opacity ${
                           isBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100"
                         }`}>
                           <button
@@ -627,6 +608,19 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                             )}
                           </button>
                         </div>
+
+                        {/* Status indicator (M, U, D) - always visible at right edge */}
+                        <span
+                          className={`text-[9px] font-bold px-1 rounded ${
+                            file.status === "untracked"
+                              ? "text-sky-400"
+                              : file.status === "deleted"
+                              ? "text-rose-400"
+                              : "text-amber-400"
+                          }`}
+                        >
+                          {file.status === "untracked" ? "U" : file.status[0].toUpperCase()}
+                        </span>
                       </div>
                     </div>
                   );
