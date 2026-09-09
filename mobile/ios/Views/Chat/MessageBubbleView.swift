@@ -69,30 +69,6 @@ struct MessageBubbleView: View {
 
     private var agentBubble: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Header with Codex avatar
-            HStack(spacing: 8) {
-                ZStack {
-                    Circle()
-                        .fill(Theme.primaryGradient)
-                        .frame(width: 22, height: 22)
-
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-
-                Text("Codex")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer()
-
-                if message.streaming {
-                    PulsingDot(color: .indigo)
-                }
-            }
-            .padding(.bottom, 2)
-
             if message.role == .agent && message.streaming {
                 if message.blocks.isEmpty {
                     HStack(spacing: 8) {
@@ -114,6 +90,16 @@ struct MessageBubbleView: View {
                     case .toolGroup(let blocks):
                         ToolCallGroupView(blocks: blocks, isStreaming: true)
                     }
+                }
+
+                if !message.blocks.isEmpty {
+                    HStack(spacing: 6) {
+                        PulsingDot(color: .indigo)
+                        Text("Generating...")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 2)
                 }
             } else {
                 // When turn completes, group preparatory work under WorkedForView

@@ -3,8 +3,10 @@ import AVFoundation
 
 struct QRScannerView: UIViewControllerRepresentable {
     let onCodeScanned: (String) -> Void
+    var isPaused: Bool = false
 
-    init(onCodeScanned: @escaping (String) -> Void) {
+    init(isPaused: Bool = false, onCodeScanned: @escaping (String) -> Void) {
+        self.isPaused = isPaused
         self.onCodeScanned = onCodeScanned
     }
 
@@ -14,7 +16,12 @@ struct QRScannerView: UIViewControllerRepresentable {
         return controller
     }
 
-    func updateUIViewController(_ uiViewController: ScannerViewController, context: Context) {}
+    func updateUIViewController(_ uiViewController: ScannerViewController, context: Context) {
+        context.coordinator.isPaused = isPaused
+        if !isPaused {
+            context.coordinator.hasFoundCode = false
+        }
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onCodeScanned: onCodeScanned)
@@ -23,13 +30,15 @@ struct QRScannerView: UIViewControllerRepresentable {
     final class Coordinator: NSObject, @unchecked Sendable, AVCaptureMetadataOutputObjectsDelegate {
         let onCodeScanned: (String) -> Void
         var hasFoundCode = false
+        var isPaused = false
 
         init(onCodeScanned: @escaping (String) -> Void) {
             self.onCodeScanned = onCodeScanned
         }
 
         func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) {
-            guard !hasFoundCode,
+            guard !isPaused,
+                  !hasFoundCode,
                   let metadataObj = metadataObjects.first as? AVMetadataMachineReadableCodeObject,
                   let stringValue = metadataObj.stringValue else {
                 return

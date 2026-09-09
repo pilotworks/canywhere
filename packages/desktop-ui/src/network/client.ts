@@ -544,7 +544,11 @@ export class CanywhereClient {
       }
 
       case "chat.updated": {
-        useChatStore.getState().updateChat(params.chatId, { title: params.title });
+        console.log("📩 [DesktopClient] chat.updated received:", params);
+        const update: Partial<import("../types/index.js").Chat> = {};
+        if (params.title !== undefined) update.title = params.title;
+        if (params.permissionMode !== undefined) update.permissionMode = params.permissionMode;
+        useChatStore.getState().updateChat(params.chatId, update);
         break;
       }
 

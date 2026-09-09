@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @Bindable var session = AppSessionState.shared
+    @State private var showConnectionsSheet = false
 
     init() {}
 
@@ -23,6 +24,9 @@ struct RootView: View {
                     }
                     .animation(.spring(response: 0.35, dampingFraction: 0.8), value: session.connectionStatus)
                 }
+                .sheet(isPresented: $showConnectionsSheet) {
+                    HostConnectionsSheet()
+                }
             }
         }
     }
@@ -33,12 +37,18 @@ struct RootView: View {
             switch session.connectionStatus {
             case .connecting:
                 PulsingDot(color: .orange)
-                Text("Connecting to host...")
+                Text("Connecting...")
                     .font(.caption.weight(.medium))
-            case .reconnecting(let attempt, _):
+            case .reconnecting(let attempt, let ep):
+                let info = EndpointInfo(rawUrl: ep)
                 PulsingDot(color: .orange)
-                Text("Reconnecting (\(attempt))...")
-                    .font(.caption.weight(.medium))
+                HStack(spacing: 4) {
+                    Text("Reconnecting (\(attempt))")
+                        .font(.caption.weight(.medium))
+                    Text("[\(info.kind.rawValue)]")
+                        .font(.caption2.bold())
+                        .foregroundStyle(info.kind.color)
+                }
             case .disconnected:
                 PulsingDot(color: .red)
                 Text("Disconnected")
@@ -49,17 +59,32 @@ struct RootView: View {
 
             Spacer()
 
-            Button {
-                Haptics.shared.impact(.light)
-                session.connectToSavedHost()
-            } label: {
-                Text("Retry")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(Color.accentColor.opacity(0.15))
-                    .foregroundStyle(Color.accentColor)
-                    .clipShape(Capsule())
+            HStack(spacing: 6) {
+                Button {
+                    Haptics.shared.selection()
+                    showConnectionsSheet = true
+                } label: {
+                    Image(systemName: "network")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                        .padding(5)
+                        .background(Color(uiColor: .tertiarySystemFill))
+                        .clipShape(Circle())
+                }
+                .accessibilityLabel("Change Connection")
+
+                Button {
+                    Haptics.shared.impact(.light)
+                    session.connectToSavedHost()
+                } label: {
+                    Text("Retry")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 3)
+                        .background(Color.accentColor.opacity(0.15))
+                        .foregroundStyle(Color.accentColor)
+                        .clipShape(Capsule())
+                }
             }
         }
         .padding(.horizontal, 14)
@@ -72,5 +97,10 @@ struct RootView: View {
         )
         .shadow(color: Color.black.opacity(0.08), radius: 10, y: 4)
         .padding(.horizontal, 16)
+        .contentShape(Capsule())
+        .onTapGesture {
+            Haptics.shared.selection()
+            showConnectionsSheet = true
+        }
     }
 }

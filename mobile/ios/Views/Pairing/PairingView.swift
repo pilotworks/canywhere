@@ -55,7 +55,7 @@ struct PairingView: View {
                             )
                             .shadow(color: Color.black.opacity(0.06), radius: 16, y: 6)
 
-                        QRScannerView { code in
+                        QRScannerView(isPaused: isPairing) { code in
                             Haptics.shared.notification(.success)
                             handleScannedPayload(code)
                         }
@@ -82,15 +82,21 @@ struct PairingView: View {
                     .padding(.vertical, 8)
 
                     if let error = errorMessage {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.circle.fill")
-                                .font(.caption)
+                        HStack(alignment: .top, spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.footnote)
+                                .foregroundStyle(.red)
+                                .padding(.top, 2)
                             Text(error)
                                 .font(.footnote)
+                                .foregroundStyle(.red)
+                                .multilineTextAlignment(.leading)
                         }
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 12)
+                        .padding(12)
+                        .background(Color.red.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .padding(.horizontal, 20)
+                        .padding(.top, 8)
                     }
 
                     // Discovered Hosts via Bonjour
@@ -163,15 +169,15 @@ struct PairingView: View {
                             Capsule().stroke(Theme.subtleBorder, lineWidth: 1)
                         )
                     }
+                    .sheet(isPresented: $showManualSheet) {
+                        ManualConnectSheet { ep, token, hostName in
+                            try await session.pair(endpoints: [ep], token: token, hostName: hostName)
+                        }
+                    }
                     .padding(.bottom, 24)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
-            .sheet(isPresented: $showManualSheet) {
-                ManualConnectSheet { ep, token, hostName in
-                    try await session.pair(endpoints: [ep], token: token, hostName: hostName)
-                }
-            }
             .onAppear {
                 bonjour.startDiscovery()
                 withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
@@ -234,36 +240,40 @@ struct PairingView: View {
 
     private func handleScannedPayload(_ rawPayload: String) {
         guard !isPairing else { return }
-        isPairing = true
         errorMessage = nil
 
-        Task {
-            do {
-                guard let data = rawPayload.data(using: .utf8) else {
-                    throw NSError(domain: "QR", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid QR code encoding"])
-                }
-
-                struct QRPayload: Decodable {
-                    let host_name: String?
-                    let hostName: String?
-                    let token: String
-                    let endpoints: [String]
-                    let host_public_key: String?
-                    let hostPublicKey: String?
-                }
-
-                let payload = try JSONDecoder().decode(QRPayload.self, from: data)
-                let host = payload.hostName ?? payload.host_name ?? "Canywhere Host"
-
-                try await session.pair(
-                    endpoints: payload.endpoints,
-                    token: payload.token,
-                    hostName: host
-                )
-            } catch {
-                errorMessage = "Pairing failed: \(error.localizedDescription)"
+        do {
+            guard let data = rawPayload.data(using: .utf8) else {
+                throw NSError(domain: "QR", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid QR code encoding"])
             }
-            isPairing = false
+
+            struct QRPayload: Decodable {
+                let host_name: String?
+                let hostName: String?
+                let token: String
+                let endpoints: [String]
+                let host_public_key: String?
+                let hostPublicKey: String?
+            }
+
+            let payload = try JSONDecoder().decode(QRPayload.self, from: data)
+            let host = payload.hostName ?? payload.host_name ?? "Canywhere Host"
+
+            isPairing = true
+            Task {
+                do {
+                    try await session.pair(
+                        endpoints: payload.endpoints,
+                        token: payload.token,
+                        hostName: host
+                    )
+                } catch {
+                    errorMessage = "Pairing failed: \(error.localizedDescription)"
+                }
+                isPairing = false
+            }
+        } catch {
+            errorMessage = "Pairing failed: \(error.localizedDescription)"
         }
     }
 }

@@ -278,6 +278,22 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
+                AgentEvent::ChatPermissionUpdated {
+                    chat_id,
+                    permission_mode,
+                } => {
+                    info!(
+                        "🛡️  [HostServer] Chat permission updated: {} -> {:?}",
+                        chat_id, permission_mode
+                    );
+                    serde_json::json!({
+                        "method": "chat.updated",
+                        "params": {
+                            "chatId": chat_id,
+                            "permissionMode": permission_mode
+                        }
+                    })
+                }
                 AgentEvent::ChatDeleted { chat_id } => {
                     info!("🗑️  [HostServer] Chat deleted: {}", chat_id);
                     serde_json::json!({

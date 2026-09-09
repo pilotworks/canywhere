@@ -145,6 +145,22 @@ final class ChatViewModel {
 
     func handleNotification(method: String, data: Data) {
         switch method {
+        case "chat.updated", "title.updated":
+            do {
+                let payload = try data.decodeRPCParams(ChatUpdatedPayload.self)
+                print("📩 [ChatViewModel] chat.updated for \(payload.chatId) (current=\(chatId)): perm=\(String(describing: payload.permissionMode))")
+                guard payload.chatId == chatId else { return }
+                if let title = payload.title {
+                    self.chat = self.chat?.with(title: title)
+                }
+                if let perm = payload.permissionMode {
+                    self.permissionMode = perm
+                    self.chat = self.chat?.with(permissionMode: .some(perm))
+                }
+            } catch {
+                print("⚠️ [ChatViewModel] Failed to decode chat.updated: \(error)")
+            }
+
         case "message.created":
             do {
                 let payload = try data.decodeRPCParams(MessageCreatedPayload.self)

@@ -32,6 +32,9 @@
 		F1D8928258D9B55221167AD8 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F6AB173E278F9DFEF6EB6982 /* AVFoundation.framework */; };
 		F48894B7B900FEB4C524E850 /* CryptoKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FDD67D6DC750DB1CF0B8860D /* CryptoKit.framework */; };
 		F69F661505BAC5297CD8628C /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DDED80E5EB27AB152014B8C /* MessageBubbleView.swift */; };
+		E1A0000129FEA2D390354001 /* EndpointInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A0000229FEA2D390354002 /* EndpointInfo.swift */; };
+		E1A0000529FEA2D390354005 /* HostConnectionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A0000629FEA2D390354006 /* HostConnectionsSheet.swift */; };
+		E1A0000729FEA2D390354007 /* ConnectionDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A0000829FEA2D390354008 /* ConnectionDiagnostics.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -61,6 +64,9 @@
 		FDD67D6DC750DB1CF0B8860D /* CryptoKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
 		"TEMP_3BEBF1B9-3F85-4766-BEC2-9B0371CABCFF" /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		"TEMP_56E7ABBD-F7C3-4AD3-A4A4-BB6B8F1A0565" /* CanywhereApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanywhereApp.swift; sourceTree = "<group>"; };
+		E1A0000229FEA2D390354002 /* EndpointInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointInfo.swift; sourceTree = "<group>"; };
+		E1A0000629FEA2D390354006 /* HostConnectionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostConnectionsSheet.swift; sourceTree = "<group>"; };
+		E1A0000829FEA2D390354008 /* ConnectionDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionDiagnostics.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -117,6 +123,7 @@
 			isa = PBXGroup;
 			children = (
 				65E3F4C78B123EA230B5D1F9 /* UITheme.swift */,
+				E1A0000629FEA2D390354006 /* HostConnectionsSheet.swift */,
 			);
 			path = Common;
 			sourceTree = "<group>";
@@ -195,6 +202,8 @@
 			children = (
 				8C96BAA87827A61DB07F31A8 /* BonjourBrowser.swift */,
 				A01A02867CA796504D2B12C9 /* ConnectionManager.swift */,
+				E1A0000829FEA2D390354008 /* ConnectionDiagnostics.swift */,
+				E1A0000229FEA2D390354002 /* EndpointInfo.swift */,
 				12FBC1FEA0D67A5E523C11BA /* WireMessages.swift */,
 			);
 			path = Network;
@@ -300,6 +309,9 @@
 				E97D6130614027734D1FA18A /* ToolCallBlockView.swift in Sources */,
 				B84FCC4EBC41A2A6F2E26E20 /* UITheme.swift in Sources */,
 				AC3FFCC1565BC563AF1FD1A9 /* WireMessages.swift in Sources */,
+				E1A0000129FEA2D390354001 /* EndpointInfo.swift in Sources */,
+				E1A0000529FEA2D390354005 /* HostConnectionsSheet.swift in Sources */,
+				E1A0000729FEA2D390354007 /* ConnectionDiagnostics.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

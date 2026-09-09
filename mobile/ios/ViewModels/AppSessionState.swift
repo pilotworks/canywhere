@@ -9,6 +9,7 @@ final class AppSessionState {
     var connectionStatus: ConnectionStatus = .disconnected
     var pairedHostName: String?
     var pairedEndpoint: String?
+    var allEndpoints: [String] = []
     var hostPublicKey: String?
 
     var chats: [Chat] = []
@@ -26,6 +27,10 @@ final class AppSessionState {
            let savedHost = UserDefaults.standard.string(forKey: "paired_host_name") {
             self.pairedEndpoint = savedEndpoint
             self.pairedHostName = savedHost
+            self.hostPublicKey = UserDefaults.standard.string(forKey: "host_public_key")
+
+            let savedAll = UserDefaults.standard.stringArray(forKey: "paired_endpoints_all") ?? [savedEndpoint]
+            self.allEndpoints = savedAll.isEmpty ? [savedEndpoint] : savedAll
         }
 
         setupConnectionHandlers()
@@ -48,11 +53,26 @@ final class AppSessionState {
                             }
                         }
                     }
+                },
+                onActiveEndpointChanged: { [weak self] newEndpoint in
+                    Task { @MainActor in
+                        guard let self = self else { return }
+                        if self.pairedEndpoint != newEndpoint {
+                            print("🔄 [AppSessionState] Active endpoint switched to: \(newEndpoint)")
+                            self.pairedEndpoint = newEndpoint
+                            UserDefaults.standard.set(newEndpoint, forKey: "paired_endpoint")
+                        }
+                    }
                 }
             )
 
             if let endpoint = pairedEndpoint {
-                await connectionManager.connect(endpoint: endpoint)
+                await connectionManager.setCandidateEndpoints(allEndpoints, activeEndpoint: endpoint)
+                do {
+                    try await connectionManager.connect(endpoint: endpoint)
+                } catch {
+                    print("⚠️ [AppSessionState] Initial connection failed: \(error)")
+                }
             }
         }
     }
@@ -60,7 +80,57 @@ final class AppSessionState {
     func connectToSavedHost() {
         guard let endpoint = pairedEndpoint else { return }
         Task {
-            await connectionManager.connect(endpoint: endpoint)
+            await connectionManager.setCandidateEndpoints(allEndpoints, activeEndpoint: endpoint)
+            do {
+                try await connectionManager.connect(endpoint: endpoint)
+            } catch {
+                print("⚠️ [AppSessionState] Reconnect failed: \(error)")
+            }
+        }
+    }
+
+    func switchEndpoint(to endpoint: String) async throws {
+        // 1. Non-destructive switch in ConnectionManager
+        try await connectionManager.switchToEndpoint(endpoint: endpoint)
+
+        // 2. Update local state and persistence only on success
+        self.pairedEndpoint = endpoint
+        UserDefaults.standard.set(endpoint, forKey: "paired_endpoint")
+
+        if !self.allEndpoints.contains(endpoint) {
+            self.allEndpoints.append(endpoint)
+            UserDefaults.standard.set(self.allEndpoints, forKey: "paired_endpoints_all")
+        }
+        await connectionManager.setCandidateEndpoints(self.allEndpoints, activeEndpoint: endpoint)
+
+        // 3. Refresh chats and state
+        await refreshAll()
+    }
+
+    func addCustomEndpoint(_ endpoint: String) {
+        let clean = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        let formatted = (clean.hasPrefix("ws://") || clean.hasPrefix("wss://")) ? clean : "ws://\(clean)"
+        if !allEndpoints.contains(formatted) {
+            allEndpoints.append(formatted)
+            UserDefaults.standard.set(allEndpoints, forKey: "paired_endpoints_all")
+            Task {
+                await connectionManager.setCandidateEndpoints(allEndpoints, activeEndpoint: pairedEndpoint)
+            }
+        }
+    }
+
+    func removeEndpoint(_ endpoint: String) {
+        guard allEndpoints.count > 1 else { return }
+        allEndpoints.removeAll { $0 == endpoint }
+        UserDefaults.standard.set(allEndpoints, forKey: "paired_endpoints_all")
+        if pairedEndpoint == endpoint, let next = allEndpoints.first {
+            Task {
+                try? await switchEndpoint(to: next)
+            }
+        }
+        Task {
+            await connectionManager.setCandidateEndpoints(allEndpoints, activeEndpoint: pairedEndpoint)
         }
     }
 
@@ -73,14 +143,31 @@ final class AppSessionState {
         let signature = try KeyManager.shared.signToken(token)
         let deviceName = UIDevice.current.name
 
-        var lastError: Error?
+        // Check health of all candidate endpoints concurrently
+        let healthMap = await EndpointHealthChecker.shared.checkAll(endpoints: endpoints, timeoutSeconds: 2.0)
 
-        for ep in endpoints {
+        // Prioritize live endpoints (sorted by lowest latency), then fallback to LAN/Tailscale
+        let sorted = endpoints.sorted { ep1, ep2 in
+            let h1 = healthMap[ep1] ?? .offline(reason: "")
+            let h2 = healthMap[ep2] ?? .offline(reason: "")
+            if case .online(let ms1) = h1, case .online(let ms2) = h2 {
+                return ms1 < ms2
+            }
+            if h1.isLive && !h2.isLive { return true }
+            if !h1.isLive && h2.isLive { return false }
+
+            let k1 = EndpointInfo.classify(ep1)
+            let k2 = EndpointInfo.classify(ep2)
+            if k1 == .lan && k2 != .lan { return true }
+            if k1 == .tailscale && k2 == .custom { return true }
+            return false
+        }
+
+        var lastError: Error?
+        for ep in sorted {
             do {
                 print("🔌 [Pairing] Trying endpoint: \(ep)")
-                await connectionManager.connect(endpoint: ep)
-
-                try await Task.sleep(nanoseconds: 500_000_000)
+                try await connectionManager.connect(endpoint: ep, timeoutSeconds: 5.0)
 
                 struct PairParams: Encodable, Sendable {
                     let token: String
@@ -105,27 +192,35 @@ final class AppSessionState {
 
                 let result: PairResult = try await connectionManager.sendRequest(
                     method: "pairing.exchange",
-                    params: params
+                    params: params,
+                    timeoutSeconds: 5.0
                 )
 
                 if result.status == "paired" {
                     self.pairedEndpoint = ep
                     self.pairedHostName = hostName
                     self.hostPublicKey = result.hostPublicKey
+                    self.allEndpoints = endpoints
 
                     UserDefaults.standard.set(ep, forKey: "paired_endpoint")
                     UserDefaults.standard.set(hostName, forKey: "paired_host_name")
+                    UserDefaults.standard.set(result.hostPublicKey, forKey: "host_public_key")
+                    UserDefaults.standard.set(endpoints, forKey: "paired_endpoints_all")
 
+                    await connectionManager.setCandidateEndpoints(endpoints, activeEndpoint: ep)
                     await refreshAll()
                     return
                 }
             } catch {
                 print("⚠️ [Pairing] Failed on \(ep): \(error)")
                 lastError = error
+                if error.localizedDescription.lowercased().contains("invalid or expired") {
+                    throw error
+                }
             }
         }
 
-        throw lastError ?? NSError(domain: "Pairing", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to pair on any host endpoint"])
+        throw lastError ?? NSError(domain: "Pairing", code: -1, userInfo: [NSLocalizedDescriptionKey: "Unable to connect to host endpoints."])
     }
 
     func unpair() {
@@ -133,8 +228,12 @@ final class AppSessionState {
             await connectionManager.disconnect()
             UserDefaults.standard.removeObject(forKey: "paired_endpoint")
             UserDefaults.standard.removeObject(forKey: "paired_host_name")
+            UserDefaults.standard.removeObject(forKey: "host_public_key")
+            UserDefaults.standard.removeObject(forKey: "paired_endpoints_all")
             self.pairedEndpoint = nil
             self.pairedHostName = nil
+            self.hostPublicKey = nil
+            self.allEndpoints = []
             self.chats = []
             self.workspaces = []
             self.models = []
@@ -147,6 +246,9 @@ final class AppSessionState {
             group.addTask { await self.loadChats() }
             group.addTask { await self.loadWorkspaces() }
             group.addTask { await self.loadModels() }
+        }
+        if let active = activeChatViewModel {
+            await active.loadChat()
         }
     }
 
@@ -377,9 +479,24 @@ final class AppSessionState {
             }
 
         case "chat.updated", "title.updated":
-            if let payload = try? data.decodeRPCParams(ChatTitleUpdatedPayload.self) {
+            if let payload = try? data.decodeRPCParams(ChatUpdatedPayload.self) {
+                print("📩 [AppSessionState] chat.updated received for \(payload.chatId): perm=\(String(describing: payload.permissionMode)), title=\(String(describing: payload.title))")
                 if let idx = chats.firstIndex(where: { $0.id == payload.chatId }) {
-                    chats[idx] = chats[idx].with(title: payload.title)
+                    if let title = payload.title {
+                        chats[idx] = chats[idx].with(title: title)
+                    }
+                    if let perm = payload.permissionMode {
+                        chats[idx] = chats[idx].with(permissionMode: .some(perm))
+                    }
+                }
+                if let active = activeChatViewModel, active.chatId == payload.chatId {
+                    if let title = payload.title {
+                        active.chat = active.chat?.with(title: title)
+                    }
+                    if let perm = payload.permissionMode {
+                        active.permissionMode = perm
+                        active.chat = active.chat?.with(permissionMode: .some(perm))
+                    }
                 }
             }
 

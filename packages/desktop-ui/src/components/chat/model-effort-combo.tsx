@@ -86,6 +86,28 @@ function formatEffortLabel(effort: string): string {
   return effort.charAt(0).toUpperCase() + effort.slice(1).toLowerCase();
 }
 
+export function getSliderStepPosition(
+  currentIndex: number,
+  totalSteps: number,
+  thumbDiameter: number = 22
+) {
+  const thumbRadius = thumbDiameter / 2;
+  const fraction =
+    totalSteps <= 1 ? 0.5 : Math.max(0, Math.min(1, currentIndex / (totalSteps - 1)));
+  const center =
+    totalSteps <= 1
+      ? "50%"
+      : `calc(${thumbRadius}px + ${fraction * 100}% - ${fraction * thumbDiameter}px)`;
+  const progressWidth =
+    totalSteps <= 1
+      ? "100%"
+      : currentIndex >= totalSteps - 1
+      ? "100%"
+      : `calc(${thumbRadius}px + ${fraction * 100}% - ${fraction * thumbDiameter}px)`;
+
+  return { fraction, center, progressWidth };
+}
+
 export function ModelEffortCombo({
   models,
   selectedModel,
@@ -124,6 +146,8 @@ export function ModelEffortCombo({
       onSelectEffort(defEffort);
     }
   };
+
+  const activeSliderPosition = getSliderStepPosition(currentIndex, steps.length, 22);
 
   return (
     <DropdownMenu onOpenChange={(open) => { if (!open) setView("main"); }}>
@@ -176,65 +200,67 @@ export function ModelEffortCombo({
               </button>
             </div>
 
-            {/* Stepped Slider with filled progress track and circular thumb */}
+            {/* Stepped Slider with original line track and larger circular thumb */}
             <div className="py-0.5">
               {supportedEfforts.length > 0 ? (
-                <div className="relative flex items-center h-7">
-                  {/* Track container with rounded pill ends */}
-                  <div className="relative w-full h-[20px] bg-[var(--secondary)] border border-[var(--border)]/70 rounded-full flex items-center px-2">
+                <div className="relative flex items-center h-7 select-none">
+                  {/* Track line kept as original h-[20px] pill */}
+                  <div className="relative w-full h-[20px] bg-[var(--secondary)] border border-[var(--border)]/70 rounded-full overflow-hidden flex items-center">
                     {/* Active Progress Fill */}
                     <div
-                      className="absolute left-0 top-0 bottom-0 bg-[var(--foreground)]/25 dark:bg-white/25 rounded-full transition-all duration-150"
+                      className="absolute left-0 top-0 bottom-0 bg-[var(--foreground)]/25 dark:bg-white/25 transition-all duration-150"
                       style={{
-                        width:
-                          steps.length <= 1
-                            ? "100%"
-                            : `calc(${(currentIndex / (steps.length - 1)) * 100}% + 10px)`,
+                        width: activeSliderPosition.progressWidth,
                       }}
-                    />
-
-                    {/* Step tick points */}
-                    <div className="relative w-full flex justify-between items-center z-10 pointer-events-none">
-                      {steps.map((step, idx) => (
-                        <div
-                          key={step}
-                          className={`w-1 h-1 rounded-full transition-colors ${
-                            idx <= currentIndex
-                              ? "bg-white/60"
-                              : "bg-[var(--muted-foreground)]/40"
-                          }`}
-                        />
-                      ))}
-                    </div>
-
-                    {/* Circular Thumb with drop shadow */}
-                    <div
-                      className="absolute top-1/2 -translate-y-1/2 w-[20px] h-[20px] bg-white rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.3)] pointer-events-none transition-all duration-150 z-20"
-                      style={{
-                        left:
-                          steps.length <= 1
-                            ? "50%"
-                            : `calc(${(currentIndex / (steps.length - 1)) * (100 - (20 / 220) * 100)}%)`,
-                      }}
-                    />
-
-                    {/* Draggable / Clickable Stepped Range Input */}
-                    <input
-                      type="range"
-                      min={0}
-                      max={steps.length - 1}
-                      step={1}
-                      value={currentIndex}
-                      onChange={(e) => {
-                        const nextIdx = Number(e.target.value);
-                        const nextEffort = steps[nextIdx];
-                        if (nextEffort) {
-                          onSelectEffort(nextEffort);
-                        }
-                      }}
-                      className="absolute inset-0 w-full opacity-0 cursor-pointer z-30"
                     />
                   </div>
+
+                  {/* Step tick points placed on track */}
+                  <div className="absolute inset-0 pointer-events-none flex items-center">
+                    {steps.map((step, idx) => {
+                      const stepPos = getSliderStepPosition(idx, steps.length, 22);
+                      return (
+                        <div
+                          key={step}
+                          className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-1 h-1 rounded-full transition-colors ${
+                            idx <= currentIndex
+                              ? "bg-white/70"
+                              : "bg-[var(--muted-foreground)]/40"
+                          }`}
+                          style={{
+                            left: stepPos.center,
+                          }}
+                        />
+                      );
+                    })}
+                  </div>
+
+                  {/* Circular Thumb (subtly bigger than 20px line, w-[22px] h-[22px]) */}
+                  <div
+                    className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-[22px] h-[22px] bg-white rounded-full shadow-[0_2px_6px_rgba(0,0,0,0.35)] border border-black/10 dark:border-white/20 pointer-events-none transition-all duration-150 z-20"
+                    style={{
+                      left: activeSliderPosition.center,
+                    }}
+                  />
+
+                  {/* Draggable / Clickable Stepped Range Input */}
+                  <input
+                    type="range"
+                    min={0}
+                    max={steps.length - 1}
+                    step={1}
+                    value={currentIndex}
+                    aria-label="Reasoning effort"
+                    aria-valuetext={formatEffortLabel(steps[currentIndex] ?? "")}
+                    onChange={(e) => {
+                      const nextIdx = Number(e.target.value);
+                      const nextEffort = steps[nextIdx];
+                      if (nextEffort) {
+                        onSelectEffort(nextEffort);
+                      }
+                    }}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-30"
+                  />
                 </div>
               ) : (
                 <div className="text-center py-1 text-[10px] text-[var(--muted-foreground)]">

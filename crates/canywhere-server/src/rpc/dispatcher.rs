@@ -431,6 +431,10 @@ end try"#;
                 let params: ChatSetPermissionParams = serde_json::from_value(p)?;
                 self.repo
                     .update_chat_permission_mode(&params.chat_id, params.permission_mode)?;
+                let _ = self.adapter.event_tx().send(AgentEvent::ChatPermissionUpdated {
+                    chat_id: params.chat_id.clone(),
+                    permission_mode: params.permission_mode,
+                });
                 Ok(serde_json::to_value(ChatSetPermissionResult {
                     success: true,
                     permission_mode: params.permission_mode,
@@ -609,6 +613,10 @@ end try"#;
                 if params.permission_mode.is_some() && params.permission_mode != Some(chat.permission_mode) {
                     let _ = self.repo.update_chat_permission_mode(&chat.id, resolved_perm_mode);
                     chat.permission_mode = resolved_perm_mode;
+                    let _ = self.adapter.event_tx().send(AgentEvent::ChatPermissionUpdated {
+                        chat_id: chat.id.clone(),
+                        permission_mode: resolved_perm_mode,
+                    });
                 }
 
                 let turn_id = self

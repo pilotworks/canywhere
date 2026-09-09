@@ -82,10 +82,13 @@ struct TurnCompletedPayload: Decodable, Sendable {
     let textContent: String?
 }
 
-struct ChatTitleUpdatedPayload: Decodable, Sendable {
+struct ChatUpdatedPayload: Decodable, Sendable {
     let chatId: String
-    let title: String
+    let title: String?
+    let permissionMode: PermissionMode?
 }
+
+typealias ChatTitleUpdatedPayload = ChatUpdatedPayload
 
 struct ChatCreatedPayload: Decodable, Sendable {
     let chat: Chat

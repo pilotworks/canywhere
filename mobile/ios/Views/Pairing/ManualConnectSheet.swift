@@ -2,7 +2,11 @@ import SwiftUI
 
 struct ManualConnectSheet: View {
     @Environment(\.dismiss) private var dismiss
+    #if targetEnvironment(simulator)
     @State private var endpoint: String = "ws://127.0.0.1:7890/rpc"
+    #else
+    @State private var endpoint: String = "ws://192.168.1.x:7890/rpc"
+    #endif
     @State private var token: String = ""
     @State private var hostName: String = "Canywhere Host"
     @State private var isConnecting = false
@@ -86,12 +90,15 @@ struct ManualConnectSheet: View {
                     .cardStyle(cornerRadius: 18)
 
                     if let error = errorMessage {
-                        HStack(spacing: 8) {
+                        HStack(alignment: .top, spacing: 8) {
                             Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.footnote)
                                 .foregroundStyle(.red)
+                                .padding(.top, 2)
                             Text(error)
                                 .font(.footnote)
                                 .foregroundStyle(.red)
+                                .multilineTextAlignment(.leading)
                         }
                         .padding(12)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -145,6 +152,9 @@ struct ManualConnectSheet: View {
             do {
                 try await onPair(endpoint, token.trimmingCharacters(in: .whitespaces), hostName)
                 dismiss()
+            } catch let report as PairingDiagnosticReport {
+                errorMessage = report.detailedSummary
+                isConnecting = false
             } catch {
                 errorMessage = error.localizedDescription
                 isConnecting = false

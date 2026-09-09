@@ -80,79 +80,12 @@ struct ComposerView: View {
         VStack(spacing: 8) {
             // Controls bar: Model & Reasoning effort selectors
             HStack(spacing: 8) {
-                // Model Selector Menu
-                Menu {
-                    ForEach(availableModels) { m in
-                        Button {
-                            Haptics.shared.selection()
-                            selectedModel = m.model
-                            let newEffort = m.defaultReasoningEffort ?? effort
-                            if let defEffort = m.defaultReasoningEffort {
-                                effort = defEffort
-                            }
-                            AppSessionState.shared.updateSelectedModel(m.model, effort: newEffort)
-                        } label: {
-                            HStack {
-                                Text(m.displayName)
-                                if (selectedModel == m.model) || (selectedModel == nil && m.isDefault) {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "cpu")
-                            .font(.system(size: 11))
-                        Text(currentModelInfo?.displayName ?? selectedModel ?? "Model")
-                            .font(.caption.weight(.semibold))
-                            .lineLimit(1)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(Theme.subtleBorder, lineWidth: 1))
-                }
-                .foregroundStyle(.primary)
-
-                // Reasoning effort selector (only if model supports reasoning efforts)
-                if let efforts = currentModelInfo?.supportedReasoningEfforts, !efforts.isEmpty {
-                    Menu {
-                        ForEach(efforts, id: \.self) { eff in
-                            Button {
-                                Haptics.shared.selection()
-                                effort = eff
-                                let curModel = selectedModel ?? currentModelInfo?.model ?? "gpt-5-codex"
-                                AppSessionState.shared.updateSelectedModel(curModel, effort: eff)
-                            } label: {
-                                HStack {
-                                    Text(eff.capitalized + " Effort")
-                                    if effort == eff {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: "slider.horizontal.3")
-                                .font(.system(size: 11))
-                            Text(effort.capitalized)
-                                .font(.caption.weight(.semibold))
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 8, weight: .bold))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
-                        .background(Color(uiColor: .secondarySystemGroupedBackground))
-                        .clipShape(Capsule())
-                        .overlay(Capsule().stroke(Theme.subtleBorder, lineWidth: 1))
-                    }
-                    .foregroundStyle(.primary)
-                }
+                // Unified Model & Reasoning Effort Combo
+                ModelEffortComboView(
+                    models: availableModels,
+                    selectedModel: $selectedModel,
+                    effort: $effort
+                )
 
                 // Permission Mode Selector Menu
                 Menu {
@@ -324,6 +257,327 @@ struct ComposerView: View {
             return .blue
         case .auto:
             return .orange
+        }
+    }
+}
+
+// MARK: - Model & Effort Combo View (iOS)
+
+struct ModelEffortComboView: View {
+    let models: [ModelInfo]
+    @Binding var selectedModel: String?
+    @Binding var effort: String
+
+    @State private var isPresented = false
+
+    private var activeModel: ModelInfo? {
+        models.first(where: { $0.model == selectedModel })
+            ?? models.first(where: { $0.isDefault })
+            ?? models.first
+    }
+
+    private var supportedEfforts: [String] {
+        activeModel?.supportedReasoningEfforts ?? []
+    }
+
+    private var currentEffort: String {
+        if !effort.isEmpty { return effort }
+        return activeModel?.defaultReasoningEffort ?? supportedEfforts.first ?? ""
+    }
+
+    private var formattedEffort: String {
+        formatEffortLabel(currentEffort)
+    }
+
+    private var steps: [String] {
+        supportedEfforts.isEmpty ? ["none"] : supportedEfforts
+    }
+
+    private var currentIndex: Int {
+        let idx = steps.firstIndex(of: currentEffort) ?? 0
+        return max(0, min(idx, steps.count - 1))
+    }
+
+    var body: some View {
+        Button {
+            Haptics.shared.selection()
+            isPresented = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: modelIcon(for: activeModel?.model ?? selectedModel ?? ""))
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.accentColor)
+
+                Text(formattedEffort)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text("·")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                Text(activeModel?.displayName ?? selectedModel ?? "5.6 Luna")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Color.accentColor.opacity(0.35), lineWidth: 1))
+        }
+        .sheet(isPresented: $isPresented) {
+            NavigationStack {
+                List {
+                    // MARK: Model Selection Section
+                    Section {
+                        NavigationLink {
+                            ModelSelectionListView(
+                                models: models,
+                                selectedModel: $selectedModel,
+                                effort: $effort,
+                                onDismiss: { isPresented = false }
+                            )
+                        } label: {
+                            HStack {
+                                Text(activeModel?.displayName ?? selectedModel ?? "5.6 Luna")
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+
+                                Spacer()
+                            }
+                            .frame(height: 32)
+                        }
+                    } header: {
+                        Text("Model")
+                    }
+
+                    // MARK: Reasoning Effort Section
+                    if !supportedEfforts.isEmpty {
+                        Section {
+                            VStack(alignment: .leading, spacing: 14) {
+                                HStack {
+                                    Text("Effort Level")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+
+                                    Spacer()
+
+                                    Text(formattedEffort)
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.primary)
+
+                                    Button {
+                                        Haptics.shared.selection()
+                                        let defEffort = activeModel?.defaultReasoningEffort ?? steps[steps.count / 2]
+                                        effort = defEffort
+                                        let curModel = selectedModel ?? activeModel?.model ?? "gpt-5-codex"
+                                        AppSessionState.shared.updateSelectedModel(curModel, effort: defEffort)
+                                    } label: {
+                                        Image(systemName: "arrow.counterclockwise")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundStyle(.secondary)
+                                            .padding(4)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                SteppedEffortSlider(
+                                    steps: steps,
+                                    currentIndex: currentIndex,
+                                    onSelectIndex: { nextIdx in
+                                        guard nextIdx >= 0 && nextIdx < steps.count else { return }
+                                        let nextEffort = steps[nextIdx]
+                                        effort = nextEffort
+                                        let curModel = selectedModel ?? activeModel?.model ?? "gpt-5-codex"
+                                        AppSessionState.shared.updateSelectedModel(curModel, effort: nextEffort)
+                                    }
+                                )
+                                .frame(height: 24)
+                                .padding(.vertical, 2)
+                            }
+                            .padding(.vertical, 4)
+                        } header: {
+                            Text("Reasoning Effort")
+                        } footer: {
+                            Text("Controls how much compute and reasoning Codex allocates before responding.")
+                                .font(.caption2)
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+                .navigationTitle("Model & Reasoning")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            isPresented = false
+                        }
+                        .font(.body.weight(.semibold))
+                    }
+                }
+            }
+            .presentationDetents([.medium])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func formatEffortLabel(_ str: String) -> String {
+        if str.isEmpty || str == "none" { return "None" }
+        if str.lowercased() == "extra_high" { return "Extra High" }
+        return str.prefix(1).uppercased() + str.dropFirst().lowercased()
+    }
+
+    private func modelIcon(for modelId: String) -> String {
+        let lower = modelId.lowercased()
+        if lower.contains("codex") {
+            return "chevron.left.forwardslash.chevron.right"
+        } else if lower.contains("mini") || lower.contains("sol") {
+            return "bolt.fill"
+        } else if lower.contains("astra") || lower.contains("plus") || lower.contains("pro") {
+            return "sparkles"
+        } else {
+            return "cpu"
+        }
+    }
+}
+
+// MARK: - Native iOS Model Selection List View
+
+private struct ModelSelectionListView: View {
+    let models: [ModelInfo]
+    @Binding var selectedModel: String?
+    @Binding var effort: String
+    let onDismiss: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section {
+                ForEach(models) { m in
+                    let isSelected = (selectedModel == m.model) || (selectedModel == nil && m.isDefault)
+                    Button {
+                        Haptics.shared.selection()
+                        selectedModel = m.model
+                        let newEffort = m.defaultReasoningEffort ?? effort
+                        if let defEffort = m.defaultReasoningEffort {
+                            effort = defEffort
+                        }
+                        AppSessionState.shared.updateSelectedModel(m.model, effort: newEffort)
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(m.displayName)
+                                .font(.body.weight(isSelected ? .semibold : .regular))
+                                .foregroundStyle(Color.primary)
+                                .lineLimit(1)
+
+                            if m.isDefault {
+                                Text("DEFAULT")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Color.secondary.opacity(0.15))
+                                    .clipShape(Capsule())
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                        .frame(height: 32)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("Select Model")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+// MARK: - Stepped Effort Slider (Matching Web 20px Track + 22px Centered Thumb)
+
+private struct SteppedEffortSlider: View {
+    let steps: [String]
+    let currentIndex: Int
+    let onSelectIndex: (Int) -> Void
+
+    private let trackHeight: CGFloat = 20
+    private let thumbDiameter: CGFloat = 22
+
+    var body: some View {
+        GeometryReader { proxy in
+            let totalWidth = proxy.size.width
+            let thumbRadius = thumbDiameter / 2
+            let totalSteps = steps.count
+            let centerY = proxy.size.height / 2
+
+            // Fraction and position calculation matching web's getSliderStepPosition
+            let fraction: CGFloat = totalSteps <= 1 ? 0.5 : CGFloat(currentIndex) / CGFloat(totalSteps - 1)
+            let usableWidth = max(0, totalWidth - thumbDiameter)
+            let thumbCenter = thumbRadius + fraction * usableWidth
+            let progressWidth = totalSteps <= 1 ? totalWidth : (currentIndex >= totalSteps - 1 ? totalWidth : thumbCenter)
+
+            ZStack(alignment: .leading) {
+                // Background Track (20px pill, centered vertically)
+                Capsule()
+                    .fill(Color(uiColor: .secondarySystemFill))
+                    .frame(height: trackHeight)
+                    .overlay(Capsule().stroke(Color.secondary.opacity(0.2), lineWidth: 1))
+                    .position(x: totalWidth / 2, y: centerY)
+
+                // Active Progress Fill (within 20px pill)
+                Capsule()
+                    .fill(Color.primary.opacity(0.18))
+                    .frame(width: max(trackHeight, progressWidth), height: trackHeight)
+                    .position(x: max(trackHeight, progressWidth) / 2, y: centerY)
+
+                // Tick Dots
+                ForEach(0..<totalSteps, id: \.self) { idx in
+                    let stepFraction: CGFloat = totalSteps <= 1 ? 0.5 : CGFloat(idx) / CGFloat(totalSteps - 1)
+                    let stepCenter = thumbRadius + stepFraction * usableWidth
+
+                    Circle()
+                        .fill(idx <= currentIndex ? Color.primary.opacity(0.7) : Color.secondary.opacity(0.35))
+                        .frame(width: 4, height: 4)
+                        .position(x: stepCenter, y: centerY)
+                }
+
+                // Thumb (22px diameter, strictly centered both horizontally & vertically)
+                Circle()
+                    .fill(Color.white)
+                    .frame(width: thumbDiameter, height: thumbDiameter)
+                    .shadow(color: Color.black.opacity(0.25), radius: 3, x: 0, y: 1.5)
+                    .overlay(Circle().stroke(Color.black.opacity(0.1), lineWidth: 0.5))
+                    .position(x: thumbCenter, y: centerY)
+            }
+            .frame(width: totalWidth, height: proxy.size.height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let locationX = value.location.x
+                        let relativeX = max(0, min(usableWidth, locationX - thumbRadius))
+                        let stepFraction = usableWidth > 0 ? (relativeX / usableWidth) : 0
+                        let nearestStep = Int(round(stepFraction * CGFloat(totalSteps - 1)))
+                        let clamped = max(0, min(totalSteps - 1, nearestStep))
+                        if clamped != currentIndex {
+                            Haptics.shared.selection()
+                            onSelectIndex(clamped)
+                        }
+                    }
+            )
         }
     }
 }

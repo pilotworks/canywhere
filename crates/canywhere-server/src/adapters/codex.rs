@@ -54,6 +54,10 @@ pub enum AgentEvent {
         chat_id: String,
         title: String,
     },
+    ChatPermissionUpdated {
+        chat_id: String,
+        permission_mode: canywhere_protocol::models::PermissionMode,
+    },
     ChatDeleted {
         chat_id: String,
     },

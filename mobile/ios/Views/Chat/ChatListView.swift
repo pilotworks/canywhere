@@ -17,6 +17,7 @@ struct ChatListView: View {
 
     @State private var selectedFilter: ChatFilter = .all
     @State private var showUnpairConfirmation = false
+    @State private var showConnectionsSheet = false
 
     enum ChatFilter: String, CaseIterable, Identifiable {
         case all = "All"
@@ -130,6 +131,9 @@ struct ChatListView: View {
         .sheet(isPresented: $showWorkspacesSheet) {
             manageWorkspacesSheet
         }
+        .sheet(isPresented: $showConnectionsSheet) {
+            HostConnectionsSheet()
+        }
         .sheet(item: $editingWorkspace) { _ in
             editWorkspaceSheet
         }
@@ -181,6 +185,13 @@ struct ChatListView: View {
             Menu {
                 Button {
                     Haptics.shared.selection()
+                    showConnectionsSheet = true
+                } label: {
+                    Label("Connection Settings", systemImage: "network")
+                }
+
+                Button {
+                    Haptics.shared.selection()
                     showWorkspacesSheet = true
                 } label: {
                     Label("Manage Workspaces", systemImage: "folder")
@@ -205,6 +216,11 @@ struct ChatListView: View {
         }
         .padding(14)
         .cardStyle(cornerRadius: 18)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            Haptics.shared.selection()
+            showConnectionsSheet = true
+        }
     }
 
     // MARK: - Filter Bar
