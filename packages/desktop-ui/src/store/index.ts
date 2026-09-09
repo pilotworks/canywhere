@@ -528,7 +528,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
   },
 }));
 
-export type RightTabType = "fileTree" | "terminal" | "filePreview" | "diff";
+export type RightTabType = "fileTree" | "git" | "terminal" | "filePreview" | "diff";
 
 export interface RightTabItem {
   id: string;
@@ -581,6 +581,7 @@ const getInitialRightSidebarWidth = (): number => {
 
 const DEFAULT_RIGHT_TABS: RightTabItem[] = [
   { id: "fileTree", type: "fileTree", title: "Files", isPermanent: true },
+  { id: "git", type: "git", title: "Git", isPermanent: true },
   { id: "terminal", type: "terminal", title: "Terminal", isPermanent: true },
 ];
 

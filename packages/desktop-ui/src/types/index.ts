@@ -27,6 +27,12 @@ export * from "./generated/ToolCallStatus.js";
 export * from "./generated/Workspace.js";
 export * from "./generated/FuzzyFileMatchItem.js";
 export * from "./generated/WorkspaceFileSearchResult.js";
+export * from "./generated/GitFileChange.js";
+export * from "./generated/GitStatusResult.js";
+export * from "./generated/GitDiffResult.js";
+export * from "./generated/GitBranchesResult.js";
+export * from "./generated/GitCommitItem.js";
+export * from "./generated/GitLogResult.js";
 
 export type ApprovalDecision = "accept" | "accept_for_session" | "decline" | "cancel";
 

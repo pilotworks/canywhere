@@ -228,6 +228,46 @@ export class CanywhereClient {
     return res?.path || null;
   }
 
+  async gitStatus(workspaceId: string): Promise<import("../types/index.js").GitStatusResult> {
+    return await this.call("git.status", { workspaceId });
+  }
+
+  async gitDiff(workspaceId: string, path?: string, staged?: boolean): Promise<{ diff: string }> {
+    return await this.call("git.diff", { workspaceId, path, staged });
+  }
+
+  async gitStage(workspaceId: string, paths: string[]): Promise<import("../types/index.js").GitStatusResult> {
+    return await this.call("git.stage", { workspaceId, paths });
+  }
+
+  async gitUnstage(workspaceId: string, paths: string[]): Promise<import("../types/index.js").GitStatusResult> {
+    return await this.call("git.unstage", { workspaceId, paths });
+  }
+
+  async gitDiscard(workspaceId: string, paths: string[]): Promise<import("../types/index.js").GitStatusResult> {
+    return await this.call("git.discard", { workspaceId, paths });
+  }
+
+  async gitCommit(workspaceId: string, message: string): Promise<{ hash: string }> {
+    return await this.call("git.commit", { workspaceId, message });
+  }
+
+  async gitBranches(workspaceId: string): Promise<import("../types/index.js").GitBranchesResult> {
+    return await this.call("git.branches", { workspaceId });
+  }
+
+  async gitCheckout(workspaceId: string, branch: string, createNew?: boolean): Promise<import("../types/index.js").GitStatusResult> {
+    return await this.call("git.checkout", { workspaceId, branch, createNew });
+  }
+
+  async gitLog(workspaceId: string, maxCount: number = 15): Promise<import("../types/index.js").GitLogResult> {
+    return await this.call("git.log", { workspaceId, maxCount });
+  }
+
+  async gitInit(workspaceId: string): Promise<import("../types/index.js").GitStatusResult> {
+    return await this.call("git.init", { workspaceId });
+  }
+
   openDraftChat(workspaceId?: string | null): void {
     useChatStore.getState().openDraftChat(workspaceId);
   }

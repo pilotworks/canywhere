@@ -6,6 +6,7 @@ use crate::models::{
     ApprovalRequest, Chat, ChatStatus, Device, FileTreeNode, Message, MessageBlock, ModelInfo,
     Provider, Workspace,
 };
+pub use crate::models::git::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

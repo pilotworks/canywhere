@@ -193,6 +193,121 @@ end try"#;
                 })?)
             }
 
+            "git.status" => {
+                let params: GitStatusParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                let status = crate::git::GitService::status(root).await?;
+                Ok(serde_json::to_value(status)?)
+            }
+
+            "git.diff" => {
+                let params: GitDiffParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                let diff = crate::git::GitService::diff(root, params.path.as_deref(), params.staged).await?;
+                Ok(serde_json::to_value(GitDiffResult { diff })?)
+            }
+
+            "git.stage" => {
+                let params: GitStageParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                crate::git::GitService::stage(root, &params.paths).await?;
+                let status = crate::git::GitService::status(root).await?;
+                Ok(serde_json::to_value(status)?)
+            }
+
+            "git.unstage" => {
+                let params: GitUnstageParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                crate::git::GitService::unstage(root, &params.paths).await?;
+                let status = crate::git::GitService::status(root).await?;
+                Ok(serde_json::to_value(status)?)
+            }
+
+            "git.discard" => {
+                let params: GitDiscardParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                crate::git::GitService::discard(root, &params.paths).await?;
+                let status = crate::git::GitService::status(root).await?;
+                Ok(serde_json::to_value(status)?)
+            }
+
+            "git.commit" => {
+                let params: GitCommitParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                let hash = crate::git::GitService::commit(root, &params.message).await?;
+                Ok(serde_json::to_value(GitCommitResult { hash })?)
+            }
+
+            "git.branches" => {
+                let params: GitBranchesParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                let branches = crate::git::GitService::branches(root).await?;
+                Ok(serde_json::to_value(branches)?)
+            }
+
+            "git.checkout" => {
+                let params: GitCheckoutParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                crate::git::GitService::checkout(root, &params.branch, params.create_new).await?;
+                let status = crate::git::GitService::status(root).await?;
+                Ok(serde_json::to_value(status)?)
+            }
+
+            "git.log" => {
+                let params: GitLogParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                let commits = crate::git::GitService::log(root, params.max_count.unwrap_or(15)).await?;
+                Ok(serde_json::to_value(GitLogResult { commits })?)
+            }
+
+            "git.init" => {
+                let params: GitInitParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                crate::git::GitService::init(root).await?;
+                let status = crate::git::GitService::status(root).await?;
+                Ok(serde_json::to_value(status)?)
+            }
+
             "chat.list" => {
                 let ws_id = p["workspaceId"].as_str();
                 let chats = self.repo.list_chats(ws_id)?;
