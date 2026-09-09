@@ -327,7 +327,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
             </button>
           </DropdownMenuTrigger>
 
-          <DropdownMenuContent align="start" className="w-56 p-1.5 text-[11px] font-mono">
+          <DropdownMenuContent align="start" className="w-52 p-1.5 text-[11px] font-mono">
             <div className="px-1.5 py-1 text-[10px] uppercase font-bold text-[var(--muted-foreground)] tracking-wider flex items-center justify-between">
               <span>Branches</span>
               <button
@@ -381,10 +381,10 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                   <DropdownMenuItem
                     key={b}
                     onClick={() => !isCurrent && handleCheckoutBranch(b, false)}
-                    className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer transition-colors text-xs ${
+                    className={`flex items-center justify-between cursor-pointer transition-colors ${
                       isCurrent
                         ? "bg-[var(--secondary)] font-semibold text-[var(--foreground)]"
-                        : "hover:bg-[var(--secondary)]/60 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                        : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                     }`}
                   >
                     <span className="truncate">{b}</span>
