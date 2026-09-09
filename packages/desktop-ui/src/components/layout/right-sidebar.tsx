@@ -226,7 +226,7 @@ export const RightSidebar: React.FC = () => {
         onDoubleClick={handleTitleBarDoubleClick}
         className="h-10 flex items-center border-b border-[var(--sidebar-border)] px-2 gap-1.5 shrink-0 bg-[var(--card)]/40 backdrop-blur-md text-xs select-none"
       >
-        {/* Fixed Icons Outside Scroll: Files & Terminal */}
+        {/* Fixed Icons Outside Scroll: Files, Git & Terminal */}
         <div className="flex items-center gap-1 shrink-0">
           <button
             onClick={() => setActiveTabId("fileTree")}
@@ -238,6 +238,18 @@ export const RightSidebar: React.FC = () => {
             title="Files (Workspace File Tree)"
           >
             <FolderTree className="w-4 h-4 text-amber-400" />
+          </button>
+
+          <button
+            onClick={() => setActiveTabId("git")}
+            className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors cursor-pointer ${
+              activeTabId === "git"
+                ? "bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)] shadow-xs"
+                : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]"
+            }`}
+            title="Source Control (Git)"
+          >
+            <GitBranch className="w-4 h-4 text-rose-400" />
           </button>
 
           <button
