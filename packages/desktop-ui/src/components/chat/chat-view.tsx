@@ -624,52 +624,60 @@ export const ChatView: React.FC = () => {
         {/* Composer Utility Toolbar */}
         <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--secondary)]/30 text-[11px] text-[var(--muted-foreground)] select-none">
           <div className="flex items-center gap-2 sm:gap-3">
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                title={activeWorkspace ? `Workspace: ${activeWorkspace.name} (Click to switch)` : "Select workspace"}
-                className="h-6 px-1.5 rounded-full border border-[var(--border)] bg-[var(--secondary)]/80 hover:bg-[var(--secondary)] hover:border-[var(--ring)] flex items-center gap-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer select-none"
-              >
-                <Folder className="w-3 h-3 text-[var(--muted-foreground)] shrink-0" />
-                <Plus className="w-2.5 h-2.5 text-[var(--muted-foreground)] shrink-0" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                <div className="px-2 py-1 text-[10px] font-mono font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
-                  Workspaces
-                </div>
-                {workspaces.map((ws) => {
-                  const isSelected = targetWorkspaceId === ws.id;
-                  return (
-                    <DropdownMenuItem
-                      key={ws.id}
-                      onClick={() => handleSelectWorkspace(ws.id)}
-                      className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
-                    >
-                      <div className="flex items-center gap-2 truncate">
-                        <Folder className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
-                        <span className="truncate">{ws.name}</span>
-                      </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 ml-2" />}
-                    </DropdownMenuItem>
-                  );
-                })}
-                {workspaces.length === 0 && (
-                  <div className="px-2 py-1.5 text-xs text-[var(--muted-foreground)] italic font-mono">
-                    No workspaces added
-                  </div>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => handleSelectWorkspace(null)}
-                  className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+            {isDraft && (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  title={activeWorkspace ? `Workspace: ${activeWorkspace.name} (Click to switch)` : "Select workspace"}
+                  className={`h-6 px-2 rounded-full flex items-center gap-1.5 text-[11px] font-mono transition-colors cursor-pointer select-none ${
+                    activeWorkspace
+                      ? "border border-[var(--border)] bg-[var(--secondary)]/80 hover:bg-[var(--secondary)] hover:border-[var(--ring)] text-[var(--foreground)]"
+                      : "border border-dashed border-[var(--border)] hover:border-[var(--ring)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] bg-transparent hover:bg-[var(--secondary)]/40"
+                  }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
-                    <span>Scratchpad mode</span>
+                  <Folder className="w-3 h-3 shrink-0 opacity-70" />
+                  {activeWorkspace && (
+                    <span className="truncate max-w-[120px]">{activeWorkspace.name}</span>
+                  )}
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <div className="px-2 py-1 text-[10px] font-mono font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+                    Workspaces
                   </div>
-                  {!targetWorkspaceId && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 ml-2" />}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {workspaces.map((ws) => {
+                    const isSelected = targetWorkspaceId === ws.id;
+                    return (
+                      <DropdownMenuItem
+                        key={ws.id}
+                        onClick={() => handleSelectWorkspace(ws.id)}
+                        className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <Folder className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
+                          <span className="truncate">{ws.name}</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 ml-2" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                  {workspaces.length === 0 && (
+                    <div className="px-2 py-1.5 text-xs text-[var(--muted-foreground)] italic font-mono">
+                      No workspaces added
+                    </div>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => handleSelectWorkspace(null)}
+                    className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
+                      <span>Scratchpad mode</span>
+                    </div>
+                    {!targetWorkspaceId && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 ml-2" />}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <ModelEffortCombo
               models={models}
               selectedModel={selectedModel}
