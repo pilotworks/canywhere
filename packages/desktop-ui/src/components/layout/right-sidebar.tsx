@@ -237,7 +237,7 @@ export const RightSidebar: React.FC = () => {
             }`}
             title="Files (Workspace File Tree)"
           >
-            <FolderTree className="w-4 h-4 text-amber-400" />
+            <FolderTree className="w-4 h-4" />
           </button>
 
           <button
@@ -249,7 +249,7 @@ export const RightSidebar: React.FC = () => {
             }`}
             title="Source Control (Git)"
           >
-            <GitBranch className="w-4 h-4 text-rose-400" />
+            <GitBranch className="w-4 h-4" />
           </button>
 
           <button
@@ -261,9 +261,9 @@ export const RightSidebar: React.FC = () => {
             }`}
             title={`Terminal Execution Feed (${commandBlocks.length} commands)`}
           >
-            <Terminal className="w-4 h-4 text-emerald-400" />
+            <Terminal className="w-4 h-4" />
             {commandBlocks.length > 0 && activeTabId !== "terminal" && (
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[var(--foreground)]" />
             )}
           </button>
         </div>

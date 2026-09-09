@@ -225,7 +225,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
   if (!currentWsId) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center font-mono select-none">
-        <FolderGit2 className="w-8 h-8 opacity-30 mb-2 text-rose-400" />
+        <FolderGit2 className="w-8 h-8 opacity-30 mb-2 text-[var(--foreground)]" />
         <p>No workspace selected.</p>
       </div>
     );
@@ -234,7 +234,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
   if (loading && !status) {
     return (
       <div className="flex items-center gap-2 py-4 px-3 text-[11px] font-mono text-[var(--muted-foreground)]">
-        <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-400" />
+        <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--foreground)]" />
         <span>Loading Git repository status...</span>
       </div>
     );
@@ -243,7 +243,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
   if (status && !status.isRepo) {
     return (
       <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center font-mono select-none space-y-3">
-        <FolderGit2 className="w-8 h-8 opacity-30 text-rose-400" />
+        <FolderGit2 className="w-8 h-8 opacity-30 text-[var(--foreground)]" />
         <div>
           <p className="font-semibold text-[var(--foreground)]">Not a Git repository</p>
           <p className="text-[10px] text-[var(--muted-foreground)] mt-1">
@@ -257,7 +257,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
           disabled={loading}
           className="gap-1.5 font-mono text-[11px]"
         >
-          <GitBranch className="w-3 h-3 text-rose-400" />
+          <GitBranch className="w-3 h-3 text-[var(--foreground)]" />
           <span>Initialize Git Repository</span>
         </Button>
       </div>
@@ -279,10 +279,10 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
             className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--secondary)] text-[var(--foreground)] font-medium text-[11px] cursor-pointer transition-colors border border-transparent hover:border-[var(--border)]"
             title="Switch branch"
           >
-            <GitBranch className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+            <GitBranch className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0" />
             <span className="truncate max-w-[120px]">{status?.branch || "main"}</span>
             {Boolean(status?.ahead || status?.behind) && (
-              <span className="text-[9px] px-1 py-0.2 rounded bg-sky-500/20 text-sky-400 font-bold">
+              <span className="text-[9px] px-1 py-0.2 rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--muted-foreground)] font-mono font-bold">
                 {status?.ahead ? `↑${status.ahead}` : ""}
                 {status?.behind ? `↓${status.behind}` : ""}
               </span>
@@ -297,7 +297,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                 <span>Branches</span>
                 <button
                   onClick={() => setIsCreatingBranch(!isCreatingBranch)}
-                  className="text-sky-400 hover:text-sky-300 cursor-pointer"
+                  className="text-[var(--foreground)] hover:text-[var(--muted-foreground)] cursor-pointer"
                   title="Create new branch"
                 >
                   <Plus className="w-3 h-3" />
@@ -311,7 +311,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                     value={newBranchName}
                     onChange={(e) => setNewBranchName(e.target.value)}
                     placeholder="new-branch-name"
-                    className="flex-1 bg-[var(--code-bg)] border border-[var(--border)] px-1.5 py-0.5 rounded text-[10px] text-[var(--foreground)] outline-hidden focus:border-sky-500"
+                    className="flex-1 bg-[var(--code-bg)] border border-[var(--border)] px-1.5 py-0.5 rounded text-[10px] text-[var(--foreground)] outline-hidden focus:border-[var(--ring)]"
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && newBranchName.trim()) {
                         handleCheckoutBranch(newBranchName.trim(), true);
@@ -338,12 +338,12 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                       onClick={() => !isCurrent && handleCheckoutBranch(b, false)}
                       className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer transition-colors ${
                         isCurrent
-                          ? "bg-[var(--secondary)] font-semibold text-rose-400"
-                          : "hover:bg-[var(--secondary)]/60 text-[var(--foreground)]"
+                          ? "bg-[var(--secondary)] font-semibold text-[var(--foreground)]"
+                          : "hover:bg-[var(--secondary)]/60 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                       }`}
                     >
                       <span className="truncate">{b}</span>
-                      {isCurrent && <Check className="w-3 h-3 text-rose-400 shrink-0" />}
+                      {isCurrent && <Check className="w-3 h-3 text-[var(--foreground)] shrink-0" />}
                     </div>
                   );
                 })}
@@ -361,7 +361,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
               setLogOpen(!logOpen);
             }}
             className={`p-1 h-7 w-7 text-[var(--muted-foreground)] hover:text-[var(--foreground)] ${
-              logOpen ? "bg-[var(--secondary)] text-rose-400" : ""
+              logOpen ? "bg-[var(--secondary)] text-[var(--foreground)]" : ""
             }`}
             title="Toggle Git History"
           >
@@ -376,14 +376,14 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
             className="p-1 h-7 w-7 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
             title="Refresh Git status"
           >
-            <RotateCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-rose-400" : ""}`} />
+            <RotateCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           </Button>
         </div>
       </div>
 
       {/* Error alert if any */}
       {errorMsg && (
-        <div className="m-2 p-2 rounded bg-rose-500/10 border border-rose-500/30 text-rose-400 text-[10px] flex items-start gap-1.5">
+        <div className="m-2 p-2 rounded bg-red-500/10 border border-red-500/20 text-red-400 text-[10px] flex items-start gap-1.5">
           <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
           <span className="break-all">{errorMsg}</span>
         </div>
@@ -392,13 +392,13 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
       {/* Main Scrollable Body */}
       <div className="flex-1 overflow-y-auto p-2.5 space-y-3 no-scrollbar">
         {/* Commit Composer Box */}
-        <div className="space-y-1.5 bg-[var(--secondary)]/20 p-2 rounded-lg border border-[var(--border)]">
+        <div className="space-y-1.5 bg-[var(--secondary)]/30 p-2 rounded-lg border border-[var(--border)]">
           <textarea
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
             placeholder="Commit message (Cmd+Enter)..."
             rows={2}
-            className="w-full bg-[var(--code-bg)] border border-[var(--border)] rounded p-2 text-xs text-[var(--foreground)] outline-hidden focus:border-rose-500 resize-none font-mono leading-relaxed"
+            className="w-full bg-[var(--code-bg)] border border-[var(--border)] rounded p-2 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-hidden focus:border-[var(--ring)] resize-none font-mono leading-relaxed"
             onKeyDown={(e) => {
               if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && commitMessage.trim()) {
                 handleCommit();
@@ -410,7 +410,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
             size="xs"
             onClick={handleCommit}
             disabled={committing || (!commitMessage.trim() && totalChanges === 0)}
-            className="w-full justify-center gap-1.5 font-mono text-[11px] bg-rose-500 hover:bg-rose-600 text-white shadow-xs"
+            className="w-full justify-center gap-1.5 font-mono text-[11px]"
           >
             {committing ? (
               <>
@@ -441,7 +441,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
             >
               {stagedOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
               <span>Staged Changes</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold">
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[var(--secondary)] border border-[var(--border)] text-[var(--muted-foreground)] font-semibold">
                 {stagedCount}
               </span>
             </button>
@@ -502,12 +502,12 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                         <span
                           className={`text-[9px] font-bold px-1 rounded flex items-center justify-center ${
                             file.status === "added"
-                              ? "text-emerald-400"
+                              ? "text-emerald-500/90 dark:text-emerald-400/90"
                               : file.status === "deleted"
-                              ? "text-rose-400"
+                              ? "text-red-500/90 dark:text-red-400/90"
                               : file.status === "renamed"
-                              ? "text-purple-400"
-                              : "text-amber-400"
+                              ? "text-purple-400/90"
+                              : "text-amber-500/90 dark:text-amber-400/90"
                           }`}
                         >
                           {file.status[0].toUpperCase()}
@@ -530,7 +530,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
             >
               {changesOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
               <span>Changes</span>
-              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-500/15 text-amber-400 font-semibold">
+              <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-[var(--secondary)] border border-[var(--border)] text-[var(--muted-foreground)] font-semibold">
                 {unstagedCount}
               </span>
             </button>
@@ -613,10 +613,10 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                         <span
                           className={`text-[9px] font-bold px-1 rounded flex items-center justify-center ${
                             file.status === "untracked"
-                              ? "text-sky-400"
+                              ? "text-emerald-500/90 dark:text-emerald-400/90"
                               : file.status === "deleted"
-                              ? "text-rose-400"
-                              : "text-amber-400"
+                              ? "text-red-500/90 dark:text-red-400/90"
+                              : "text-amber-500/90 dark:text-amber-400/90"
                           }`}
                         >
                           {file.status === "untracked" ? "U" : file.status[0].toUpperCase()}
@@ -634,7 +634,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
         {logOpen && (
           <div className="space-y-1.5 pt-2 border-t border-[var(--border)]">
             <div className="flex items-center justify-between py-1 px-1 text-[11px] text-[var(--muted-foreground)]">
-              <span className="font-bold uppercase tracking-wider flex items-center gap-1.5 text-rose-400">
+              <span className="font-bold uppercase tracking-wider flex items-center gap-1.5 text-[var(--foreground)]">
                 <History className="w-3 h-3" />
                 <span>Recent Commits</span>
               </span>
