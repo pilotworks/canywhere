@@ -46,6 +46,7 @@ import {
   CANYWHERE_SLASH_COMMANDS,
   SlashCommandDefinition,
 } from "./composer-popups.js";
+import { ModelEffortCombo } from "./model-effort-combo.js";
 
 const QUICK_STARTERS = [
   {
@@ -433,58 +434,16 @@ export const ChatView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
-          {/* Model Selector Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--secondary)] border border-[var(--border)] font-mono text-[11px] text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors cursor-pointer select-none">
-              <Cpu className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />
-              <span>{activeModelInfo?.displayName || selectedModel || "Select Model"}</span>
-              <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {(models.length > 0 ? models : [
-                { id: "gpt-5-codex", model: "gpt-5-codex", displayName: "gpt-5-codex", description: "Frontier autonomous coding", isDefault: true, supportedReasoningEfforts: ["low", "medium", "high"], defaultReasoningEffort: "medium" },
-                { id: "o3-mini", model: "o3-mini", displayName: "o3-mini", description: "Fast reasoning", isDefault: false, supportedReasoningEfforts: ["low", "medium", "high"], defaultReasoningEffort: "medium" },
-                { id: "gpt-4o", model: "gpt-4o", displayName: "gpt-4o", description: "General purpose", isDefault: false, supportedReasoningEfforts: [], defaultReasoningEffort: null },
-              ]).map((m) => (
-                <DropdownMenuItem
-                  key={m.id}
-                  onClick={() => setSelectedModel(m.model)}
-                  className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
-                >
-                  <div className="flex flex-col truncate pr-2">
-                    <span className="font-medium text-[var(--foreground)]">{m.displayName || m.model}</span>
-                    {m.description && (
-                      <span className="text-[10px] text-[var(--muted-foreground)] truncate">{m.description}</span>
-                    )}
-                  </div>
-                  {selectedModel === m.model && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Reasoning Effort Selector Dropdown (when supported by model) */}
-          {supportedEfforts.length > 0 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--secondary)] border border-[var(--border)] font-mono text-[11px] text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors cursor-pointer select-none">
-                <Zap className="w-3.5 h-3.5 text-amber-400" />
-                <span className="capitalize">{selectedEffort || "effort"}</span>
-                <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-36">
-                {supportedEfforts.map((eff) => (
-                  <DropdownMenuItem
-                    key={eff}
-                    onClick={() => setSelectedEffort(eff)}
-                    className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5 capitalize"
-                  >
-                    <span>{eff}</span>
-                    {selectedEffort === eff && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          {/* All-in-One Model & Effort Selector */}
+          <ModelEffortCombo
+            models={models}
+            selectedModel={selectedModel}
+            selectedEffort={selectedEffort}
+            onSelectModel={setSelectedModel}
+            onSelectEffort={setSelectedEffort}
+            size="md"
+            align="end"
+          />
 
           {/* Permission Mode Selector Dropdown */}
           {activeChat && (
@@ -832,10 +791,15 @@ export const ChatView: React.FC = () => {
               <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--foreground)] font-medium">
                 {activeWorkspace ? `Root: ${activeWorkspace.name}` : "Scratchpad mode"}
               </span>
-              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-[var(--secondary)]/70 border border-[var(--border)] text-[var(--muted-foreground)]">
-                {activeModelInfo?.displayName || selectedModel}
-                {selectedEffort && ` · ${selectedEffort}`}
-              </span>
+              <ModelEffortCombo
+                models={models}
+                selectedModel={selectedModel}
+                selectedEffort={selectedEffort}
+                onSelectModel={setSelectedModel}
+                onSelectEffort={setSelectedEffort}
+                size="sm"
+                align="start"
+              />
               {activeChat && (
                 <DropdownMenu>
                   <DropdownMenuTrigger className={`font-mono text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 cursor-pointer transition-colors hover:opacity-80 select-none ${PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.badgeBorder}`}>
