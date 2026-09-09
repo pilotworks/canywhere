@@ -100,7 +100,7 @@ export class CanywhereClient {
       if (chatsRes.chats.length > 0 && !useChatStore.getState().activeChatId) {
         this.selectChat(chatsRes.chats[0].id);
       } else if (chatsRes.chats.length === 0) {
-        this.openDraftChat(useWorkspaceStore.getState().activeWorkspaceId);
+        this.openDraftChat(null);
       }
 
       const devRes = await this.call("device.list", {});
@@ -134,6 +134,7 @@ export class CanywhereClient {
         Boolean(streamingMsg);
 
       if (res.chat) {
+        useWorkspaceStore.getState().setActiveWorkspaceId(res.chat.workspaceId || null);
         const resolvedStatus = isStillRunning ? (res.chat.status === "awaitingApproval" ? "awaitingApproval" : "running") : res.chat.status;
         useChatStore.getState().updateChat(chatId, { status: resolvedStatus });
         if (!isStillRunning) {

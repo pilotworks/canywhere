@@ -29,11 +29,14 @@ export const RightSidebar: React.FC = () => {
   const setActiveTabId = useUiStore((s) => s.setActiveRightTabId);
   const closeTab = useUiStore((s) => s.closeTab);
 
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
+  const chats = useChatStore((s) => s.chats);
+  const activeChatId = useChatStore((s) => s.activeChatId);
+  const draftChat = useChatStore((s) => s.draftChat);
+  const activeChat = chats.find((c) => c.id === activeChatId);
+  const activeWorkspaceId = activeChat ? activeChat.workspaceId : (draftChat?.workspaceId ?? null);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const activeWorkspace = workspaces.find((w) => w.id === activeWorkspaceId);
 
-  const activeChatId = useChatStore((s) => s.activeChatId);
   const messages = useChatStore((s) => (activeChatId && s.messages[activeChatId] ? s.messages[activeChatId] : EMPTY_MESSAGES));
 
   const [isResizing, setIsResizing] = useState(false);
@@ -335,7 +338,7 @@ export const RightSidebar: React.FC = () => {
             <div className="h-9 px-3 flex items-center justify-between text-xs text-[var(--muted-foreground)] border-b border-[var(--border)] bg-[var(--secondary)]/30 font-mono shrink-0">
               <span className="flex items-center gap-1.5 font-semibold text-[var(--foreground)] truncate">
                 <FolderGit2 className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{activeWorkspace ? activeWorkspace.name : "No Workspace Selected"}</span>
+                <span className="truncate">{activeWorkspace ? activeWorkspace.name : "No Workspace"}</span>
               </span>
               <span className="text-[10px] text-[var(--muted-foreground)] shrink-0">Tree</span>
             </div>
@@ -347,7 +350,7 @@ export const RightSidebar: React.FC = () => {
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center">
                 <FolderTree className="w-8 h-8 opacity-30 mb-2" />
-                <p>Select a workspace from the left sidebar to view its project files.</p>
+                <p>No workspace associated with this conversation.</p>
               </div>
             )}
           </div>
@@ -356,7 +359,14 @@ export const RightSidebar: React.FC = () => {
         {/* 2. GIT TAB */}
         {activeTab.type === "git" && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <GitView workspaceId={activeWorkspaceId} />
+            {activeWorkspaceId ? (
+              <GitView workspaceId={activeWorkspaceId} />
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center font-mono select-none">
+                <FolderGit2 className="w-8 h-8 opacity-30 mb-2 text-[var(--foreground)]" />
+                <p>No workspace associated with this conversation.</p>
+              </div>
+            )}
           </div>
         )}
 

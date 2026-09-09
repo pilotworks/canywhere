@@ -107,9 +107,11 @@ const SidebarChatItem: React.FC<SidebarChatItemProps> = ({ chat, isActive }) => 
 export const Sidebar: React.FC = () => {
   const connectionStatus = useConnectionStore((s) => s.status);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const chats = useChatStore((s) => s.chats);
   const activeChatId = useChatStore((s) => s.activeChatId);
+  const draftChat = useChatStore((s) => s.draftChat);
+  const activeChat = chats.find((c) => c.id === activeChatId);
+  const currentWorkspaceId = activeChat ? activeChat.workspaceId : (draftChat?.workspaceId ?? null);
   const sidebarWidth = useUiStore((s) => s.sidebarWidth);
   const setSidebarWidth = useUiStore((s) => s.setSidebarWidth);
   const devices = useDeviceStore((s) => s.devices);
@@ -215,7 +217,7 @@ export const Sidebar: React.FC = () => {
     e.preventDefault();
     if (!wsName || !wsPath) return;
     const ws = await client.createWorkspace(wsName, wsPath);
-    useWorkspaceStore.getState().setActiveWorkspaceId(ws.id);
+    client.openDraftChat(ws.id);
     setNewWsOpen(false);
     setWsName("");
     setWsPath("");
@@ -249,7 +251,7 @@ export const Sidebar: React.FC = () => {
         <Button
           variant="ghost"
           size="icon-sm"
-          onClick={() => client.openDraftChat(activeWorkspaceId || undefined)}
+          onClick={() => client.openDraftChat(currentWorkspaceId || undefined)}
           title="New Chat (⌘N)"
           className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
         >
@@ -281,24 +283,14 @@ export const Sidebar: React.FC = () => {
               </div>
             ) : (
               workspaces.map((ws) => {
-                const isWsActive = activeWorkspaceId === ws.id;
                 const isExpanded = expandedWorkspaces[ws.id] !== false; // Default expanded
                 const childChats = workspaceChats(ws.id);
 
                 return (
                   <div key={ws.id} className="space-y-0.5">
                     <div
-                      onClick={() => {
-                        useWorkspaceStore.getState().setActiveWorkspaceId(ws.id);
-                        if (useChatStore.getState().draftChat) {
-                          useChatStore.getState().setDraftChat({ workspaceId: ws.id });
-                        }
-                      }}
-                      className={`group flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
-                        isWsActive
-                          ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium"
-                          : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60 hover:text-[var(--foreground)]"
-                      }`}
+                      onClick={(e) => toggleWorkspaceExpand(ws.id, e)}
+                      className="group flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60 hover:text-[var(--foreground)]"
                     >
                       <div className="flex items-center gap-1.5 truncate">
                         <button

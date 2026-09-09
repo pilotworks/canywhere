@@ -112,13 +112,16 @@ export const useChatStore = create<ChatState>((set) => ({
 
   setChats: (chats) => set({ chats }),
   addChat: (chat) => set((s) => ({ chats: [chat, ...s.chats] })),
-  setDraftChat: (draftChat) => set({ draftChat }),
+  setDraftChat: (draftChat) => {
+    if (draftChat && draftChat.workspaceId !== undefined) {
+      useWorkspaceStore.getState().setActiveWorkspaceId(draftChat.workspaceId ?? null);
+    }
+    set({ draftChat });
+  },
   setDraftPermissionMode: (draftPermissionMode) => set({ draftPermissionMode }),
   openDraftChat: (workspaceId) => {
     const wsId = workspaceId ?? null;
-    if (wsId) {
-      useWorkspaceStore.getState().setActiveWorkspaceId(wsId);
-    }
+    useWorkspaceStore.getState().setActiveWorkspaceId(wsId);
     set({
       activeChatId: null,
       draftChat: { workspaceId: wsId },
@@ -201,7 +204,12 @@ export const useChatStore = create<ChatState>((set) => ({
       delete next[chatId];
       return { queuedMessages: next };
     }),
-  setActiveChatId: (activeChatId) => set({ activeChatId, draftChat: null }),
+  setActiveChatId: (activeChatId) =>
+    set((s) => {
+      const activeChat = activeChatId ? s.chats.find((c) => c.id === activeChatId) : null;
+      useWorkspaceStore.getState().setActiveWorkspaceId(activeChat?.workspaceId || null);
+      return { activeChatId, draftChat: null };
+    }),
   setChatStatus: (chatId, status) =>
     set((s) => {
       const isCompleted = status === "idle" || status === "error";

@@ -116,7 +116,6 @@ export const ChatView: React.FC = () => {
   const draftPermissionMode = useChatStore((s) => s.draftPermissionMode);
   const setDraftPermissionMode = useChatStore((s) => s.setDraftPermissionMode);
   const setDraftChat = useChatStore((s) => s.setDraftChat);
-  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const messages = useChatStore((s) =>
     activeChatId && s.messages[activeChatId] ? s.messages[activeChatId] : EMPTY_MESSAGES
@@ -162,7 +161,7 @@ export const ChatView: React.FC = () => {
 
   const activeChat = chats.find((c) => c.id === activeChatId);
   const isDraft = !activeChat;
-  const targetWorkspaceId = activeChat ? activeChat.workspaceId : (draftChat?.workspaceId ?? activeWorkspaceId);
+  const targetWorkspaceId = activeChat ? activeChat.workspaceId : (draftChat?.workspaceId ?? null);
   const activeWorkspace = workspaces.find((w) => w.id === targetWorkspaceId);
   const isRunning = activeChat?.status === "running";
   const currentPermissionMode = activeChat ? (activeChat.permissionMode || "onRequest") : draftPermissionMode;
@@ -172,14 +171,14 @@ export const ChatView: React.FC = () => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
         e.preventDefault();
-        const wsId = useWorkspaceStore.getState().activeWorkspaceId;
+        const wsId = activeChat ? activeChat.workspaceId : (draftChat?.workspaceId ?? null);
         client.openDraftChat(wsId || undefined);
         setTimeout(() => textareaRef.current?.focus(), 50);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [activeChat, draftChat]);
 
   // Auto-focus composer when entering draft mode
   useEffect(() => {
