@@ -477,37 +477,46 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                         {file.path}
                       </span>
 
-                      {/* Status indicator */}
-                      <span
-                        className={`text-[9px] font-bold px-1 rounded ${
-                          file.status === "added"
-                            ? "text-emerald-400"
-                            : file.status === "deleted"
-                            ? "text-rose-400"
-                            : file.status === "renamed"
-                            ? "text-purple-400"
-                            : "text-amber-400"
-                        }`}
-                      >
-                        {file.status[0].toUpperCase()}
-                      </span>
+                      {/* Actions on hover (or status indicator when not hovered, like VS Code) */}
+                      <div className="relative flex items-center justify-end shrink-0 min-w-[20px]">
+                        {/* Status indicator (M, A, D, R) - hidden when hovered */}
+                        <span
+                          className={`text-[9px] font-bold px-1 rounded transition-opacity ${
+                            isBusy ? "opacity-0" : "group-hover:opacity-0"
+                          } ${
+                            file.status === "added"
+                              ? "text-emerald-400"
+                              : file.status === "deleted"
+                              ? "text-rose-400"
+                              : file.status === "renamed"
+                              ? "text-purple-400"
+                              : "text-amber-400"
+                          }`}
+                        >
+                          {file.status[0].toUpperCase()}
+                        </span>
 
-                      {/* Hover action: unstage */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleUnstage([file.path]);
-                        }}
-                        disabled={isBusy}
-                        className="opacity-0 group-hover:opacity-100 hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer transition-opacity"
-                        title="Unstage change"
-                      >
-                        {isBusy ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <Minus className="w-3 h-3" />
-                        )}
-                      </button>
+                        {/* Hover action: unstage - absolute positioned at right */}
+                        <div className={`absolute right-0 flex items-center transition-opacity ${
+                          isBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        }`}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleUnstage([file.path]);
+                            }}
+                            disabled={isBusy}
+                            className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer transition-colors"
+                            title="Unstage change"
+                          >
+                            {isBusy ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Minus className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   );
                 })
@@ -570,47 +579,54 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                         {file.path}
                       </span>
 
-                      {/* Status indicator */}
-                      <span
-                        className={`text-[9px] font-bold px-1 rounded ${
-                          file.status === "untracked"
-                            ? "text-sky-400"
-                            : file.status === "deleted"
-                            ? "text-rose-400"
-                            : "text-amber-400"
-                        }`}
-                      >
-                        {file.status === "untracked" ? "U" : file.status[0].toUpperCase()}
-                      </span>
+                      {/* Actions on hover (or status indicator when not hovered, like VS Code) */}
+                      <div className="relative flex items-center justify-end shrink-0 min-w-[36px]">
+                        {/* Status indicator (M, U, D) - right aligned, hidden when hovered */}
+                        <span
+                          className={`text-[9px] font-bold px-1 rounded transition-opacity ${
+                            isBusy ? "opacity-0" : "group-hover:opacity-0"
+                          } ${
+                            file.status === "untracked"
+                              ? "text-sky-400"
+                              : file.status === "deleted"
+                              ? "text-rose-400"
+                              : "text-amber-400"
+                          }`}
+                        >
+                          {file.status === "untracked" ? "U" : file.status[0].toUpperCase()}
+                        </span>
 
-                      {/* Hover actions: discard & stage */}
-                      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 transition-opacity">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDiscard([file.path]);
-                          }}
-                          disabled={isBusy}
-                          className="hover:text-rose-400 p-0.5 rounded cursor-pointer"
-                          title="Discard changes"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStage([file.path]);
-                          }}
-                          disabled={isBusy}
-                          className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer"
-                          title="Stage change"
-                        >
-                          {isBusy ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Plus className="w-3.5 h-3.5" />
-                          )}
-                        </button>
+                        {/* Hover actions: discard & stage - absolute positioned at right */}
+                        <div className={`absolute right-0 flex items-center gap-0.5 transition-opacity ${
+                          isBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        }`}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDiscard([file.path]);
+                            }}
+                            disabled={isBusy}
+                            className="hover:text-rose-400 p-0.5 rounded cursor-pointer transition-colors"
+                            title="Discard changes"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStage([file.path]);
+                            }}
+                            disabled={isBusy}
+                            className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer transition-colors"
+                            title="Stage change"
+                          >
+                            {isBusy ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
