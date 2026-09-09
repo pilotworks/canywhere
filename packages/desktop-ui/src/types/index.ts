@@ -24,6 +24,8 @@ export * from "./generated/PermissionMode.js";
 export * from "./generated/Provider.js";
 export * from "./generated/ToolCallStatus.js";
 export * from "./generated/Workspace.js";
+export * from "./generated/FuzzyFileMatchItem.js";
+export * from "./generated/WorkspaceFileSearchResult.js";
 
 export type ApprovalDecision = "accept" | "accept_for_session" | "decline" | "cancel";
 

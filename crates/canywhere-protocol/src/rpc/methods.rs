@@ -44,6 +44,45 @@ pub struct WorkspaceReadFileResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct WorkspaceFileSearchParams {
+    pub workspace_id: String,
+    pub query: String,
+    #[serde(default)]
+    pub cancellation_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FuzzyFileMatchItem {
+    pub path: String,
+    pub root: String,
+    pub file_name: String,
+    pub match_type: String,
+    pub score: u32,
+    #[serde(default)]
+    pub indices: Option<Vec<u32>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceFileSearchResult {
+    pub files: Vec<FuzzyFileMatchItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatReviewParams {
+    pub chat_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatCompactParams {
+    pub chat_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspacePickFolderResult {
     pub path: Option<String>,
 }

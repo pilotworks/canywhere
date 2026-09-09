@@ -22,6 +22,8 @@ fn export_typescript_and_json_schema() {
     RpcRequestEnvelope::export_all_to(out_dir).unwrap();
     RpcResponseEnvelope::export_all_to(out_dir).unwrap();
     RpcNotificationEnvelope::export_all_to(out_dir).unwrap();
+    FuzzyFileMatchItem::export_all_to(out_dir).unwrap();
+    WorkspaceFileSearchResult::export_all_to(out_dir).unwrap();
 
     // Export JSON Schema for Swift Codegen
     let schema_dir = Path::new("../../schemas");

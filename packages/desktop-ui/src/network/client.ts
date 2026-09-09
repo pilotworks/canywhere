@@ -209,6 +209,18 @@ export class CanywhereClient {
     });
   }
 
+  async searchWorkspaceFiles(
+    workspaceId: string,
+    query: string,
+    cancellationToken?: string
+  ): Promise<import("../types/index.js").WorkspaceFileSearchResult> {
+    return await this.call("workspace.searchFiles", {
+      workspaceId,
+      query,
+      cancellationToken,
+    });
+  }
+
   async pickWorkspaceFolder(): Promise<string | null> {
     const res = await this.call("workspace.pickFolder", {});
     return res?.path || null;
@@ -272,6 +284,25 @@ export class CanywhereClient {
     }
     useChatStore.getState().setChatStatus(chatId, "idle");
     useChatStore.getState().setActiveTurn(chatId, null);
+  }
+
+  async startReview(chatId: string): Promise<any> {
+    try {
+      useChatStore.getState().setChatStatus(chatId, "running");
+      const res = await this.call("chat.review", { chatId });
+      if (res?.turnId) {
+        useChatStore.getState().setActiveTurn(chatId, res.turnId);
+      }
+      return res;
+    } catch (err: any) {
+      console.error("[CanywhereClient] chat.review failed", err);
+      useChatStore.getState().setChatStatus(chatId, "idle");
+      throw err;
+    }
+  }
+
+  async compactChat(chatId: string): Promise<any> {
+    return await this.call("chat.compact", { chatId });
   }
 
   async deleteChat(chatId: string): Promise<void> {

@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore, useUiStore, EMPTY_MESSAGES } from "../../store/index.js";
 import { client } from "../../network/client.js";
-import { Message, PermissionMode } from "../../types/index.js";
+import { Message, PermissionMode, FuzzyFileMatchItem } from "../../types/index.js";
 import { Button } from "../ui/button.js";
 import { Badge } from "../ui/badge.js";
 import {
@@ -40,12 +40,12 @@ import {
 import { RenderBlock, MessageBlocksRenderer } from "./render-block.js";
 import { InlineApprovalCard } from "./inline-approval-card.js";
 import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
-
-const SLASH_COMMANDS = [
-  { cmd: "/reset", desc: "Clear conversational state & start fresh" },
-  { cmd: "/scratch", desc: "Toggle scratchpad ephemeral workspace" },
-  { cmd: "/review", desc: "Trigger automated git changes code review" },
-];
+import {
+  FileSearchPopup,
+  SlashCommandPopup,
+  CANYWHERE_SLASH_COMMANDS,
+  SlashCommandDefinition,
+} from "./composer-popups.js";
 
 const QUICK_STARTERS = [
   {
@@ -126,13 +126,26 @@ export const ChatView: React.FC = () => {
   const supportedEfforts = activeModelInfo?.supportedReasoningEfforts || [];
 
   const [input, setInput] = useState("");
-  const [showSlashMenu, setShowSlashMenu] = useState(false);
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [hasUnseenMessages, setHasUnseenMessages] = useState(false);
 
+  // File mention state (@)
+  const [showFileMenu, setShowFileMenu] = useState(false);
+  const [fileQuery, setFileQuery] = useState("");
+  const [fileResults, setFileResults] = useState<FuzzyFileMatchItem[]>([]);
+  const [fileSelectIndex, setFileSelectIndex] = useState(0);
+  const [isFileSearching, setIsFileSearching] = useState(false);
+  const [atTokenRange, setAtTokenRange] = useState<{ start: number; end: number } | null>(null);
+
+  // Slash command state (/)
+  const [showSlashMenu, setShowSlashMenu] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+  const [slashSelectIndex, setSlashSelectIndex] = useState(0);
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const searchTimerRef = useRef<any>(null);
 
   const activeChat = chats.find((c) => c.id === activeChatId);
   const activeWorkspace = workspaces.find((w) => w.id === activeChat?.workspaceId);
@@ -141,6 +154,36 @@ export const ChatView: React.FC = () => {
   // Filter approvals for this active chat
   const chatApprovals = pendingApprovals.filter(
     (a) => a.chatId === activeChatId && a.status === "pending"
+  );
+
+  // Debounced file search via Codex App-Server
+  const performFileSearch = useCallback(
+    (query: string) => {
+      if (!activeWorkspace?.id) return;
+      if (searchTimerRef.current) {
+        clearTimeout(searchTimerRef.current);
+      }
+      setIsFileSearching(true);
+      searchTimerRef.current = setTimeout(async () => {
+        try {
+          const res = await client.searchWorkspaceFiles(activeWorkspace.id, query);
+          setFileResults(res.files || []);
+          setFileSelectIndex(0);
+        } catch (err) {
+          console.error("[ChatView] File search failed", err);
+          setFileResults([]);
+        } finally {
+          setIsFileSearching(false);
+        }
+      }, 100);
+    },
+    [activeWorkspace?.id]
+  );
+
+  const filteredSlashCommands = CANYWHERE_SLASH_COMMANDS.filter(
+    (c) =>
+      c.cmd.toLowerCase().includes("/" + slashFilter) ||
+      c.desc.toLowerCase().includes(slashFilter)
   );
 
   // Smart Auto-Scroll: Track user scroll position
@@ -175,14 +218,47 @@ export const ChatView: React.FC = () => {
     }
   };
 
-  // Auto-resize textarea height
+  // Auto-resize textarea height and detect @ / triggers
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setInput(val);
 
-    if (val.startsWith("/")) {
-      setShowSlashMenu(true);
+    const cursor = e.target.selectionStart ?? val.length;
+    const textBefore = val.slice(0, cursor);
+
+    // 1. Check for @ file mention
+    const atMatch = textBefore.match(/(?:^|\s)@([^\s]*)$/);
+    if (atMatch && activeWorkspace?.id) {
+      const query = atMatch[1];
+      const matchIndex = atMatch.index! + (atMatch[0].startsWith("@") ? 0 : 1);
+      setAtTokenRange({ start: matchIndex, end: cursor });
+      setFileQuery(query);
+      setShowFileMenu(true);
+      setShowSlashMenu(false);
+      if (query.trim().length > 0) {
+        performFileSearch(query);
+      } else {
+        if (searchTimerRef.current) {
+          clearTimeout(searchTimerRef.current);
+        }
+        setFileResults([]);
+        setIsFileSearching(false);
+      }
     } else {
+      setShowFileMenu(false);
+      setAtTokenRange(null);
+    }
+
+    // 2. Check for / slash command
+    const firstLine = val.split("\n")[0];
+    const isFirstLine = cursor <= firstLine.length;
+    const slashMatch = isFirstLine ? firstLine.match(/^\/([^\s]*)$/) : null;
+    if (slashMatch && !atMatch) {
+      const filter = slashMatch[1].toLowerCase();
+      setSlashFilter(filter);
+      setShowSlashMenu(true);
+      setSlashSelectIndex(0);
+    } else if (!atMatch) {
       setShowSlashMenu(false);
     }
 
@@ -192,9 +268,68 @@ export const ChatView: React.FC = () => {
     }
   };
 
-  const handleSelectSlash = (cmd: string) => {
-    setInput(cmd + " ");
+  const handleSelectFile = (file: FuzzyFileMatchItem) => {
+    if (!atTokenRange) return;
+    const path = file.path;
+    const formatted = path.includes(" ") ? `"${path}"` : path;
+    const before = input.slice(0, atTokenRange.start);
+    const after = input.slice(atTokenRange.end);
+    const nextInput = `${before}@${formatted} ${after}`;
+    const nextCursor = atTokenRange.start + formatted.length + 2; // @ + path + space
+
+    setInput(nextInput);
+    setShowFileMenu(false);
+    setAtTokenRange(null);
+
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+        textareaRef.current.setSelectionRange(nextCursor, nextCursor);
+      }
+    }, 0);
+  };
+
+  const handleSelectSlash = async (cmd: SlashCommandDefinition) => {
     setShowSlashMenu(false);
+
+    if (cmd.cmd === "/review") {
+      if (activeChatId) {
+        try {
+          setInput("");
+          await client.startReview(activeChatId);
+        } catch (err) {
+          console.error("Failed to trigger review", err);
+        }
+      }
+      return;
+    }
+
+    if (cmd.cmd === "/compact") {
+      if (activeChatId) {
+        try {
+          setInput("");
+          await client.compactChat(activeChatId);
+        } catch (err) {
+          console.error("Failed to trigger compact", err);
+        }
+      }
+      return;
+    }
+
+    if (cmd.cmd === "/reset") {
+      setInput("");
+      await client.createChat(activeWorkspace?.id);
+      return;
+    }
+
+    if (cmd.cmd === "/scratch") {
+      setInput("");
+      await client.createChat();
+      return;
+    }
+
+    // Default: insert command prefix into composer
+    setInput(cmd.cmd + " ");
     if (textareaRef.current) {
       textareaRef.current.focus();
     }
@@ -594,23 +729,25 @@ export const ChatView: React.FC = () => {
 
       {/* Information Dense Composer Input Area */}
       <div className="p-4 shrink-0 relative">
-        {/* Slash Command Suggestions Popover */}
+        {/* File Search (@) Suggestions Popover via Codex App-Server */}
+        {showFileMenu && (
+          <FileSearchPopup
+            files={fileResults}
+            selectedIndex={fileSelectIndex}
+            query={fileQuery}
+            isLoading={isFileSearching}
+            onSelect={handleSelectFile}
+          />
+        )}
+
+        {/* Slash Command (/) Suggestions Popover */}
         {showSlashMenu && (
-          <div className="max-w-3xl mx-auto mb-2 rounded-lg border border-[var(--border)] bg-[var(--popover)] shadow-lg overflow-hidden font-mono text-xs select-none">
-            <div className="px-3 py-1.5 bg-[var(--secondary)]/70 text-[10px] uppercase font-semibold text-[var(--muted-foreground)] border-b border-[var(--border)]">
-              Slash Commands
-            </div>
-            {SLASH_COMMANDS.map((s) => (
-              <button
-                key={s.cmd}
-                onClick={() => handleSelectSlash(s.cmd)}
-                className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-[var(--accent)] transition-colors cursor-pointer"
-              >
-                <span className="font-semibold text-emerald-400">{s.cmd}</span>
-                <span className="text-[11px] text-[var(--muted-foreground)]">{s.desc}</span>
-              </button>
-            ))}
-          </div>
+          <SlashCommandPopup
+            commands={filteredSlashCommands}
+            selectedIndex={slashSelectIndex}
+            filter={slashFilter}
+            onSelect={handleSelectSlash}
+          />
         )}
 
         <div className="max-w-3xl mx-auto rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] focus-within:border-[var(--ring)] focus-within:ring-1 focus-within:ring-[var(--ring)] transition-all shadow-xs overflow-hidden">
@@ -619,11 +756,65 @@ export const ChatView: React.FC = () => {
             value={input}
             onChange={handleInputChange}
             onKeyDown={(e) => {
+              // 1. File Search navigation
+              if (showFileMenu && fileResults.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setFileSelectIndex((i) => (i + 1) % fileResults.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setFileSelectIndex((i) => (i - 1 + fileResults.length) % fileResults.length);
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  if (fileResults[fileSelectIndex]) {
+                    handleSelectFile(fileResults[fileSelectIndex]);
+                  }
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setShowFileMenu(false);
+                  return;
+                }
+              }
+
+              // 2. Slash Command navigation
+              if (showSlashMenu && filteredSlashCommands.length > 0) {
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setSlashSelectIndex((i) => (i + 1) % filteredSlashCommands.length);
+                  return;
+                }
+                if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setSlashSelectIndex((i) => (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+                  return;
+                }
+                if (e.key === "Enter" || e.key === "Tab") {
+                  e.preventDefault();
+                  if (filteredSlashCommands[slashSelectIndex]) {
+                    handleSelectSlash(filteredSlashCommands[slashSelectIndex]);
+                  }
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setShowSlashMenu(false);
+                  return;
+                }
+              }
+
+              // Normal Send
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 handleSend();
               } else if (e.key === "Escape") {
                 setShowSlashMenu(false);
+                setShowFileMenu(false);
               }
             }}
             placeholder={

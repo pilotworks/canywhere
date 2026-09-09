@@ -8,6 +8,7 @@ use tokio::sync::{broadcast, oneshot, Mutex};
 use tracing::info;
 
 use canywhere_protocol::models::*;
+use canywhere_protocol::rpc::methods::*;
 
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
@@ -370,6 +371,115 @@ impl CodexAdapter {
                 default_reasoning_effort: None,
             },
         ])
+    }
+
+    pub async fn fuzzy_file_search(
+        &self,
+        roots: Vec<String>,
+        query: &str,
+        cancellation_token: Option<String>,
+    ) -> Result<Vec<FuzzyFileMatchItem>> {
+        let res = self
+            .send_request(
+                "fuzzyFileSearch",
+                serde_json::json!({
+                    "query": query,
+                    "roots": roots,
+                    "cancellationToken": cancellation_token
+                }),
+            )
+            .await?;
+
+        let mut list = Vec::new();
+        if let Some(files) = res.get("files").and_then(|f| f.as_array()) {
+            for file in files {
+                let path = file["path"].as_str().unwrap_or("").to_string();
+                let root = file["root"].as_str().unwrap_or("").to_string();
+                let file_name = file["fileName"].as_str().unwrap_or("").to_string();
+                let match_type = file["matchType"].as_str().unwrap_or("file").to_string();
+                let score = file["score"].as_u64().unwrap_or(0) as u32;
+                let indices = file["indices"]
+                    .as_array()
+                    .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|i| i as u32)).collect());
+
+                list.push(FuzzyFileMatchItem {
+                    path,
+                    root,
+                    file_name,
+                    match_type,
+                    score,
+                    indices,
+                });
+            }
+        }
+        Ok(list)
+    }
+
+    pub async fn start_review(&self, chat_id: &str, thread_id: &str) -> Result<String> {
+        let message_id = uuid::Uuid::new_v4().to_string();
+        {
+            let mut active = self.chat_active_turn.lock().await;
+            active.insert(
+                chat_id.to_string(),
+                (String::new(), message_id.to_string()),
+            );
+        }
+        {
+            let mut t2c = self.thread_to_chat.lock().await;
+            t2c.insert(thread_id.to_string(), chat_id.to_string());
+        }
+        {
+            let mut text = self.chat_accumulated_text.lock().await;
+            text.insert(chat_id.to_string(), String::new());
+        }
+        {
+            let mut reasoning = self.chat_accumulated_reasoning.lock().await;
+            reasoning.insert(chat_id.to_string(), String::new());
+        }
+        {
+            let mut blocks = self.chat_accumulated_blocks.lock().await;
+            blocks.insert(chat_id.to_string(), Vec::new());
+        }
+
+        let res = self
+            .send_request(
+                "review/start",
+                serde_json::json!({
+                    "threadId": thread_id,
+                    "target": { "type": "uncommittedChanges" }
+                }),
+            )
+            .await?;
+
+        let turn_id = res
+            .get("turn")
+            .and_then(|t| t.get("id"))
+            .and_then(|id| id.as_str())
+            .or_else(|| res.get("turnId").and_then(|id| id.as_str()))
+            .unwrap_or("")
+            .to_string();
+
+        {
+            let mut active = self.chat_active_turn.lock().await;
+            active.insert(
+                chat_id.to_string(),
+                (turn_id.clone(), message_id.to_string()),
+            );
+        }
+
+        Ok(turn_id)
+    }
+
+    pub async fn compact_thread(&self, thread_id: &str) -> Result<()> {
+        let _ = self
+            .send_request(
+                "thread/compact/start",
+                serde_json::json!({
+                    "threadId": thread_id
+                }),
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn submit_turn(

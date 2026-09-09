@@ -142,6 +142,24 @@ impl RpcDispatcher {
                 })?)
             }
 
+            "workspace.searchFiles" => {
+                let params: WorkspaceFileSearchParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+
+                let mut roots = vec![ws.root_path.clone()];
+                if !ws.sub_paths.is_empty() {
+                    roots.extend(ws.sub_paths);
+                }
+                let files = self
+                    .adapter
+                    .fuzzy_file_search(roots, &params.query, params.cancellation_token)
+                    .await?;
+                Ok(serde_json::to_value(WorkspaceFileSearchResult { files })?)
+            }
+
             "workspace.pickFolder" => {
                 let chosen_path = tokio::task::spawn_blocking(|| {
                     #[cfg(target_os = "macos")]
@@ -291,6 +309,69 @@ end try"#;
                     success: true,
                     permission_mode: params.permission_mode,
                 })?)
+            }
+
+            "chat.review" => {
+                let params: ChatReviewParams = serde_json::from_value(p)?;
+                let mut chat = match self.repo.get_chat(&params.chat_id)? {
+                    Some(c) => c,
+                    None => anyhow::bail!("Chat not found"),
+                };
+
+                let mut cwd = String::new();
+                let mut sub_paths = None;
+                if let Some(ws_id) = &chat.workspace_id {
+                    if let Some(ws) = self.repo.get_workspace(ws_id)? {
+                        cwd = ws.root_path;
+                        sub_paths = Some(ws.sub_paths);
+                    }
+                }
+                if cwd.is_empty() {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                    let scratch_dir = std::path::PathBuf::from(home)
+                        .join(".canywhere")
+                        .join("scratch")
+                        .join("codex")
+                        .join(&chat.id);
+                    let _ = std::fs::create_dir_all(&scratch_dir);
+                    cwd = scratch_dir.to_string_lossy().to_string();
+                }
+
+                let thread_id = self
+                    .adapter
+                    .resume_or_start_thread(
+                        &chat.id,
+                        chat.external_thread_id.as_deref(),
+                        &cwd,
+                        sub_paths.as_deref(),
+                    )
+                    .await?;
+
+                let _ = self
+                    .repo
+                    .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
+                chat.external_thread_id = Some(thread_id.clone());
+
+                let turn_id = self.adapter.start_review(&chat.id, &thread_id).await?;
+                Ok(serde_json::json!({
+                    "turnId": turn_id,
+                    "status": "running"
+                }))
+            }
+
+            "chat.compact" => {
+                let params: ChatCompactParams = serde_json::from_value(p)?;
+                let chat = match self.repo.get_chat(&params.chat_id)? {
+                    Some(c) => c,
+                    None => anyhow::bail!("Chat not found"),
+                };
+
+                if let Some(thread_id) = chat.external_thread_id.as_deref() {
+                    self.adapter.compact_thread(thread_id).await?;
+                    Ok(serde_json::json!({ "success": true }))
+                } else {
+                    anyhow::bail!("No active thread for chat to compact");
+                }
             }
 
             "turn.send" => {
