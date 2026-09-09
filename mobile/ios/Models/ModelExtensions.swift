@@ -75,3 +75,54 @@ extension MessageBlock {
         )
     }
 }
+
+// MARK: - Workspace File Search & Slash Command Models
+
+struct FuzzyFileMatchItem: Identifiable, Codable, Sendable, Equatable {
+    var id: String { path }
+    let path: String
+    let root: String
+    let fileName: String
+    let matchType: String
+    let score: UInt32?
+    let indices: [UInt32]?
+}
+
+struct WorkspaceFileSearchResult: Codable, Sendable {
+    let files: [FuzzyFileMatchItem]
+}
+
+struct SlashCommandItem: Identifiable, Sendable, Equatable {
+    var id: String { cmd }
+    let cmd: String
+    let desc: String
+    let category: String
+    let iconSystemName: String
+
+    static let availableCommands: [SlashCommandItem] = [
+        SlashCommandItem(
+            cmd: "/review",
+            desc: "Run automated git review on uncommitted changes via Codex app-server",
+            category: "codex",
+            iconSystemName: "arrow.triangle.2.circlepath"
+        ),
+        SlashCommandItem(
+            cmd: "/compact",
+            desc: "Compact conversational context & summarize thread history via Codex",
+            category: "codex",
+            iconSystemName: "arrow.down.right.and.arrow.up.left"
+        ),
+        SlashCommandItem(
+            cmd: "/reset",
+            desc: "Start a clean conversation thread in the current workspace",
+            category: "chat",
+            iconSystemName: "arrow.counterclockwise"
+        ),
+        SlashCommandItem(
+            cmd: "/scratch",
+            desc: "Create an ephemeral standalone scratchpad chat",
+            category: "chat",
+            iconSystemName: "sparkles"
+        )
+    ]
+}

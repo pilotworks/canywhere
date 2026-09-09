@@ -35,13 +35,14 @@ pub async fn run_server(
 ) -> anyhow::Result<()> {
     let dispatcher = Arc::new(RpcDispatcher::new(
         Arc::clone(&repo),
-        adapter,
+        Arc::clone(&adapter),
         Arc::clone(&pairing),
     ));
     let host_public_key = pairing.host_public_key().to_string();
 
-    // Spawn background task to persist agent messages and chat status on turn completion
+    // Spawn background task to persist agent messages and chat status on turn completion, and auto-dispatch queued prompts
     let repo_persist = Arc::clone(&repo);
+    let adapter_persist = Arc::clone(&adapter);
     let mut persist_rx = event_tx.subscribe();
     tokio::spawn(async move {
         while let Ok(event) = persist_rx.recv().await {
@@ -79,6 +80,108 @@ pub async fn run_server(
                                 "[HostServer] Failed to record completed agent message: {}",
                                 e
                             );
+                        }
+                    }
+
+                    // Auto-dispatch next queued message for this chat if available
+                    if status == canywhere_protocol::models::ChatStatus::Idle {
+                        if let Ok(Some(next_queue_item)) = repo_persist.pop_next_queued_message(&chat_id) {
+                            tracing::info!(
+                                "🚀 [HostServer] Auto-dispatching queued message {} for chat {}",
+                                next_queue_item.id,
+                                chat_id
+                            );
+
+                            // Broadcast updated queue state
+                            if let Ok(remaining_items) = repo_persist.list_queued_messages(&chat_id) {
+                                let _ = adapter_persist.event_tx().send(AgentEvent::QueueUpdated {
+                                    chat_id: chat_id.clone(),
+                                    items: remaining_items,
+                                });
+                            }
+
+                            // Retrieve chat info to submit next turn
+                            if let Ok(Some(chat)) = repo_persist.get_chat(&chat_id) {
+                                let thread_id = chat.external_thread_id.clone().unwrap_or_default();
+                                if !thread_id.is_empty() {
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap_or_default()
+                                        .as_millis() as i64;
+                                    let user_msg_id = nanoid::nanoid!(16);
+                                    let agent_msg_id = nanoid::nanoid!(16);
+
+                                    let user_msg = canywhere_protocol::models::Message {
+                                        id: user_msg_id,
+                                        chat_id: chat.id.clone(),
+                                        turn_id: None,
+                                        role: canywhere_protocol::models::MessageRole::User,
+                                        blocks: vec![canywhere_protocol::models::MessageBlock::Text {
+                                            content: next_queue_item.content.clone(),
+                                        }],
+                                        created_at: now,
+                                        streaming: false,
+                                    };
+                                    let _ = repo_persist.record_message(&user_msg);
+                                    let _ = adapter_persist.event_tx().send(AgentEvent::MessageCreated {
+                                        message: user_msg,
+                                    });
+
+                                    let agent_placeholder = canywhere_protocol::models::Message {
+                                        id: agent_msg_id.clone(),
+                                        chat_id: chat.id.clone(),
+                                        turn_id: None,
+                                        role: canywhere_protocol::models::MessageRole::Agent,
+                                        blocks: vec![],
+                                        created_at: now + 1,
+                                        streaming: true,
+                                    };
+                                    let _ = adapter_persist.event_tx().send(AgentEvent::MessageCreated {
+                                        message: agent_placeholder,
+                                    });
+
+                                    let _ = repo_persist.update_chat_status(&chat.id, canywhere_protocol::models::ChatStatus::Running, Some(&thread_id));
+
+                                    let resolved_perm_mode = next_queue_item.permission_mode.unwrap_or(chat.permission_mode);
+                                    let mut cwd = String::new();
+                                    if let Some(ws_id) = &chat.workspace_id {
+                                        if let Ok(Some(ws)) = repo_persist.get_workspace(ws_id) {
+                                            cwd = ws.root_path;
+                                        }
+                                    }
+                                    if cwd.is_empty() {
+                                        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                                        let scratch_dir = std::path::PathBuf::from(home)
+                                            .join(".canywhere")
+                                            .join("scratch")
+                                            .join("codex")
+                                            .join(&chat.id);
+                                        let _ = std::fs::create_dir_all(&scratch_dir);
+                                        cwd = scratch_dir.to_string_lossy().to_string();
+                                    }
+
+                                    let adapter_clone = Arc::clone(&adapter_persist);
+                                    let chat_id_clone = chat.id.clone();
+                                    let content_clone = next_queue_item.content.clone();
+                                    let model_clone = next_queue_item.model.clone();
+                                    let effort_clone = next_queue_item.reasoning_effort.clone();
+
+                                    tokio::spawn(async move {
+                                        if let Err(e) = adapter_clone.submit_turn(
+                                            &chat_id_clone,
+                                            &thread_id,
+                                            &agent_msg_id,
+                                            &content_clone,
+                                            model_clone.as_deref(),
+                                            effort_clone.as_deref(),
+                                            Some(resolved_perm_mode),
+                                            if cwd.is_empty() { None } else { Some(&cwd) },
+                                        ).await {
+                                            tracing::error!("[HostServer] Failed to submit auto-dispatched turn: {}", e);
+                                        }
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -337,6 +440,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         "method": "workspace.deleted",
                         "params": {
                             "workspaceId": workspace_id
+                        }
+                    })
+                }
+                AgentEvent::QueueUpdated { chat_id, items } => {
+                    info!("📋 [HostServer] Queue updated for chat {}: {} items", chat_id, items.len());
+                    serde_json::json!({
+                        "method": "queue.updated",
+                        "params": {
+                            "chatId": chat_id,
+                            "items": items
                         }
                     })
                 }

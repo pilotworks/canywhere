@@ -92,6 +92,7 @@ export interface ChatState {
   setActiveTurn: (chatId: string, turnId: string | null) => void;
   updateChat: (chatId: string, update: Partial<Chat>) => void;
   removeChat: (chatId: string) => void;
+  setQueuedMessages: (chatId: string, items: QueuedMessage[]) => void;
   enqueueMessage: (chatId: string, content: string, model?: string | null, effort?: string | null, permissionMode?: PermissionMode) => QueuedMessage;
   removeQueuedMessage: (chatId: string, queueId: string) => void;
   updateQueuedMessage: (chatId: string, queueId: string, content: string) => void;
@@ -151,6 +152,13 @@ export const useChatStore = create<ChatState>((set) => ({
         queuedMessages: newQueued,
       };
     }),
+  setQueuedMessages: (chatId, items) =>
+    set((s) => ({
+      queuedMessages: {
+        ...s.queuedMessages,
+        [chatId]: items,
+      },
+    })),
   enqueueMessage: (chatId, content, model, effort, permissionMode) => {
     const newItem: QueuedMessage = {
       id: "queue-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),

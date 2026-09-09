@@ -126,10 +126,22 @@ impl Database {
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS queued_messages (
+                id TEXT PRIMARY KEY,
+                chat_id TEXT NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+                content TEXT NOT NULL,
+                model TEXT,
+                reasoning_effort TEXT,
+                permission_mode TEXT,
+                sequence INTEGER NOT NULL,
+                created_at INTEGER NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_chats_ws ON chats(workspace_id);
             CREATE INDEX IF NOT EXISTS idx_msgs_chat ON messages(chat_id);
             CREATE INDEX IF NOT EXISTS idx_blocks_msg ON message_blocks(message_id);
             CREATE INDEX IF NOT EXISTS idx_dev_key ON devices(public_key);
+            CREATE INDEX IF NOT EXISTS idx_queue_chat ON queued_messages(chat_id, sequence);
             ",
         )?;
 

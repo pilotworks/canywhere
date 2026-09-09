@@ -26,7 +26,7 @@ struct MessageBubbleView: View {
         VStack(alignment: .trailing, spacing: 6) {
             ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
                 if let content = block.content {
-                    Text(content)
+                    Text(LocalizedStringKey(content))
                         .font(.body)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 16)
@@ -71,13 +71,8 @@ struct MessageBubbleView: View {
         VStack(alignment: .leading, spacing: 10) {
             if message.role == .agent && message.streaming {
                 if message.blocks.isEmpty {
-                    HStack(spacing: 8) {
-                        PulsingDot(color: .indigo)
-                        Text("Thinking...")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
+                    ShimmerText(text: "Working", font: .subheadline)
+                        .padding(.vertical, 4)
                 }
             }
 
@@ -93,13 +88,8 @@ struct MessageBubbleView: View {
                 }
 
                 if !message.blocks.isEmpty {
-                    HStack(spacing: 6) {
-                        PulsingDot(color: .indigo)
-                        Text("Generating...")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.top, 2)
+                    ShimmerText(text: "Working", font: .caption)
+                        .padding(.top, 2)
                 }
             } else {
                 // When turn completes, group preparatory work under WorkedForView
@@ -257,14 +247,7 @@ struct MessageBlockView: View {
         switch block.type {
         case .text:
             if let content = block.content, !content.isEmpty {
-                if isStreaming {
-                    Text(LocalizedStringKey(content))
-                        .font(.body)
-                } else {
-                    Text(LocalizedStringKey(content))
-                        .font(.body)
-                        .textSelection(.enabled)
-                }
+                MarkdownContentView(content: content, isStreaming: isStreaming)
             }
 
         case .reasoning:
@@ -275,53 +258,29 @@ struct MessageBlockView: View {
                 )
             }
 
-        case .toolCall, .commandExec:
+        case .toolCall, .commandExec, .fileDiff:
             ToolCallBlockView(block: block, isStreaming: isStreaming)
-
-
-        case .fileDiff:
-            if let path = block.path {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.text.fill")
-                            .font(.caption)
-                            .foregroundStyle(.indigo)
-                        Text(path)
-                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .lineLimit(1)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color(uiColor: .tertiarySystemFill))
-
-                    if let diff = block.patch ?? block.content {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            Text(diff)
-                                .font(.system(size: 11, design: .monospaced))
-                                .padding(12)
-                        }
-                    }
-                }
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .stroke(Theme.subtleBorder, lineWidth: 1)
-                )
-            }
 
         case .plan:
             if let content = block.content {
-                HStack(spacing: 8) {
-                    Image(systemName: "checklist")
-                        .foregroundStyle(.purple)
-                    Text(content)
-                        .font(.callout)
-                        .italic()
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.purple)
+                        Text("AGENT ACTION PLAN")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.purple)
+                    }
+                    MarkdownContentView(content: content, isStreaming: isStreaming)
                 }
                 .padding(12)
-                .background(Color.purple.opacity(0.08))
+                .background(Color.purple.opacity(0.06))
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .stroke(Color.purple.opacity(0.25), lineWidth: 1)
+                )
             }
         }
     }

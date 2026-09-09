@@ -11,6 +11,7 @@ import {
   FolderGit2,
   ChevronLeft,
   ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { useUiStore, useWorkspaceStore, useChatStore, EMPTY_MESSAGES, RightTabType } from "../../store/index.js";
 import { FileTreeView } from "./file-tree-view.js";
@@ -18,6 +19,7 @@ import { GitView } from "./git-view.js";
 import { DiffViewer } from "../chat/diff-viewer.js";
 import { Button } from "../ui/button.js";
 import { FileIcon } from "../ui/file-icon.js";
+import { FilePreviewPane } from "./file-preview-pane.js";
 import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
 
 export const RightSidebar: React.FC = () => {
@@ -104,6 +106,7 @@ export const RightSidebar: React.FC = () => {
       el.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
     }
   }, [activeTabId]);
+
 
   // Touch Swipe on Content Area
   const touchStartX = useRef<number | null>(null);
@@ -296,25 +299,30 @@ export const RightSidebar: React.FC = () => {
                       if (hasDragged.current) return;
                       setActiveTabId(tab.id);
                     }}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors shrink-0 text-xs ${
+                    className={`group relative flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer transition-colors shrink-0 text-xs ${
                       isActive
                         ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium border border-[var(--border)] shadow-xs"
                         : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]"
                     }`}
                     title={tab.data?.path || tab.title}
                   >
-                    <FileIcon fileName={tab.data?.path || tab.title} className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate max-w-[100px] font-mono text-[11px]">{tab.title}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeTab(tab.id);
-                      }}
-                      className="hover:text-[var(--foreground)] opacity-60 hover:opacity-100 p-0.5 rounded cursor-pointer"
-                      title="Close file preview"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+                    <div className="relative w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                      <FileIcon
+                        fileName={tab.data?.path || tab.title}
+                        className="w-3.5 h-3.5 shrink-0 transition-opacity duration-150 group-hover:opacity-0"
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeTab(tab.id);
+                        }}
+                        className="absolute inset-0 flex items-center justify-center rounded-xs opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] cursor-pointer"
+                        title="Close file preview"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <span className="truncate max-w-[110px] font-mono text-[11px]">{tab.title}</span>
                   </div>
                 );
               })}
@@ -416,47 +424,26 @@ export const RightSidebar: React.FC = () => {
         {/* 3. FILE PREVIEW TAB */}
         {activeTab.type === "filePreview" && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            {activeTab.data?.path ? (
-              <>
-                <div className="h-9 px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--secondary)]/30 font-mono text-xs shrink-0">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <FileIcon fileName={activeTab.data.path} className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate font-semibold text-[var(--foreground)]">
-                      {activeTab.data.path}
-                    </span>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    onClick={() => {
-                      navigator.clipboard.writeText(activeTab.data.content);
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 1500);
-                    }}
-                    className="gap-1 font-mono text-[10px]"
-                  >
-                    {copied ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                    <span>{copied ? "Copied" : "Copy"}</span>
-                  </Button>
-                </div>
-
-                <div className="flex-1 overflow-auto p-3 bg-[var(--code-bg)] font-mono text-xs leading-relaxed select-text no-scrollbar">
-                  <table className="w-full border-collapse">
-                    <tbody>
-                      {activeTab.data.content.split("\n").map((line: string, idx: number) => (
-                        <tr key={idx} className="hover:bg-[var(--accent)]/40 transition-colors">
-                          <td className="w-9 pr-3 text-right select-none text-[10px] text-[var(--muted-foreground)] opacity-50 align-top">
-                            {idx + 1}
-                          </td>
-                          <td className="whitespace-pre align-top text-[var(--foreground)]/90">
-                            {line || " "}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
+            {activeTab.data?.loading ? (
+              <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center">
+                <Loader2 className="w-6 h-6 animate-spin mb-2 text-sky-400" />
+                <p className="font-mono text-xs text-[var(--foreground)]">{activeTab.title}</p>
+                <p className="text-[11px] text-[var(--muted-foreground)] mt-1">Loading file preview...</p>
+              </div>
+            ) : activeTab.data?.error ? (
+              <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center">
+                <FileCode className="w-8 h-8 opacity-30 mb-2 text-rose-400" />
+                <p className="font-semibold text-rose-400 mb-1">Failed to open file</p>
+                <p className="font-mono text-[11px] text-[var(--muted-foreground)] max-w-xs break-all">
+                  {activeTab.data.error}
+                </p>
+              </div>
+            ) : activeTab.data?.path && typeof activeTab.data.content === "string" ? (
+              <FilePreviewPane
+                path={activeTab.data.path}
+                content={activeTab.data.content}
+                highlightLine={activeTab.data.highlightLine}
+              />
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center">
                 <FileIcon className="w-8 h-8 opacity-30 mb-2" />

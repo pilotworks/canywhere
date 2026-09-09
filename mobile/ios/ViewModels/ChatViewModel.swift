@@ -9,6 +9,7 @@ struct ChatGetResult: Decodable, Sendable {
     let chat: Chat
     let messages: [Message]
     let pendingApprovals: [ApprovalRequest]
+    let queuedMessages: [QueuedMessage]?
 }
 
 @Observable
@@ -22,8 +23,9 @@ final class ChatViewModel {
     var isRunning: Bool = false
     var selectedModel: String?
     var selectedEffort: String = "medium"
-
     var permissionMode: PermissionMode = .onRequest
+    var queuedMessages: [QueuedMessage] = []
+    var activeTurnId: String? = nil
 
     // Scoped active streaming state to prevent full-list re-renders
     var streamingMessageId: String? = nil
@@ -48,9 +50,12 @@ final class ChatViewModel {
             self.chat = result.chat
             self.permissionMode = result.chat.permissionMode ?? .onRequest
             self.messages = result.messages
+            self.queuedMessages = result.queuedMessages ?? []
             let hasStreamingMsg = result.messages.contains(where: { $0.streaming && $0.role == .agent })
             self.isRunning = (result.chat.status == .running || result.chat.status == .awaitingApproval || hasStreamingMsg)
-            self.streamingMessageId = result.messages.last(where: { $0.streaming && $0.role == .agent })?.id
+            let streamingMsg = result.messages.last(where: { $0.streaming && $0.role == .agent })
+            self.streamingMessageId = streamingMsg?.id
+            self.activeTurnId = streamingMsg?.turnID
             self.streamingText = ""
         } catch {
             print("⚠️ [ChatViewModel] Failed to get chat: \(error)")
@@ -112,13 +117,15 @@ final class ChatViewModel {
                 permissionMode: permissionMode
             )
 
-            let _: TurnSendResponseResult = try await connectionManager.sendRequest(
+            let res: TurnSendResponseResult = try await connectionManager.sendRequest(
                 method: "turn.send",
                 params: params
             )
+            self.activeTurnId = res.turnId
         } catch {
             print("❌ [ChatViewModel] Failed to send turn: \(error)")
             self.isRunning = false
+            self.activeTurnId = nil
         }
         self.isSending = false
     }
@@ -126,6 +133,7 @@ final class ChatViewModel {
     func interrupt() async {
         struct InterruptParams: Encodable, Sendable {
             let chatId: String
+            let turnId: String?
         }
         do {
             struct InterruptResult: Decodable, Sendable {
@@ -133,11 +141,212 @@ final class ChatViewModel {
             }
             let _: InterruptResult = try await connectionManager.sendRequest(
                 method: "turn.interrupt",
-                params: InterruptParams(chatId: chatId)
+                params: InterruptParams(chatId: chatId, turnId: activeTurnId)
             )
             self.isRunning = false
+            self.activeTurnId = nil
         } catch {
             print("⚠️ [ChatViewModel] Interrupt failed: \(error)")
+            self.isRunning = false
+            self.activeTurnId = nil
+        }
+    }
+
+    // MARK: - Message Queue & Steer
+
+    func enqueuePrompt(content: String) {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let tempItem = QueuedMessage(
+            chatId: chatId,
+            content: trimmed,
+            model: selectedModel,
+            reasoningEffort: selectedEffort,
+            permissionMode: permissionMode
+        )
+        queuedMessages.append(tempItem)
+
+        struct QueueAddParams: Encodable, Sendable {
+            let chatId: String
+            let content: String
+            let model: String?
+            let reasoningEffort: String?
+            let permissionMode: PermissionMode?
+        }
+
+        Task {
+            do {
+                let _: QueuedMessage = try await connectionManager.sendRequest(
+                    method: "queue.add",
+                    params: QueueAddParams(
+                        chatId: chatId,
+                        content: trimmed,
+                        model: selectedModel,
+                        reasoningEffort: selectedEffort,
+                        permissionMode: permissionMode
+                    )
+                )
+            } catch {
+                print("⚠️ [ChatViewModel] Failed to add message to queue: \(error)")
+            }
+        }
+    }
+
+    func removeQueuedPrompt(id: String) {
+        queuedMessages.removeAll(where: { $0.id == id })
+
+        struct QueueRemoveParams: Encodable, Sendable {
+            let chatId: String
+            let queueId: String
+        }
+
+        Task {
+            do {
+                struct RemoveResult: Decodable, Sendable { let success: Bool }
+                let _: RemoveResult = try await connectionManager.sendRequest(
+                    method: "queue.remove",
+                    params: QueueRemoveParams(chatId: chatId, queueId: id)
+                )
+            } catch {
+                print("⚠️ [ChatViewModel] Failed to remove message from queue: \(error)")
+            }
+        }
+    }
+
+    func updateQueuedPrompt(id: String, newContent: String) {
+        let trimmed = newContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            removeQueuedPrompt(id: id)
+            return
+        }
+        if let idx = queuedMessages.firstIndex(where: { $0.id == id }) {
+            queuedMessages[idx].content = trimmed
+        }
+
+        struct QueueUpdateParams: Encodable, Sendable {
+            let chatId: String
+            let queueId: String
+            let content: String
+        }
+
+        Task {
+            do {
+                struct UpdateResult: Decodable, Sendable { let success: Bool }
+                let _: UpdateResult = try await connectionManager.sendRequest(
+                    method: "queue.update",
+                    params: QueueUpdateParams(chatId: chatId, queueId: id, content: trimmed)
+                )
+            } catch {
+                print("⚠️ [ChatViewModel] Failed to update message in queue: \(error)")
+            }
+        }
+    }
+
+    func steerQueuedPrompt(id: String) async {
+        queuedMessages.removeAll(where: { $0.id == id })
+
+        struct QueueSteerParams: Encodable, Sendable {
+            let chatId: String
+            let queueId: String
+        }
+
+        do {
+            struct SteerResult: Decodable, Sendable {
+                let success: Bool
+                let turnId: String?
+                let status: String?
+            }
+            let res: SteerResult = try await connectionManager.sendRequest(
+                method: "queue.steer",
+                params: QueueSteerParams(chatId: chatId, queueId: id)
+            )
+            if let tId = res.turnId {
+                self.activeTurnId = tId
+            }
+            self.isRunning = true
+        } catch {
+            print("⚠️ [ChatViewModel] Failed to steer queued message: \(error)")
+        }
+    }
+
+    func steerTurn(turnId: String, content: String) async {
+        struct SteerParams: Encodable, Sendable {
+            let chatId: String
+            let turnId: String
+            let content: String
+        }
+        struct SteerResult: Decodable, Sendable {
+            let turnId: String
+            let status: String
+        }
+        do {
+            let res: SteerResult = try await connectionManager.sendRequest(
+                method: "turn.steer",
+                params: SteerParams(chatId: chatId, turnId: turnId, content: content)
+            )
+            self.activeTurnId = res.turnId
+            self.isRunning = true
+        } catch {
+            print("❌ [ChatViewModel] Failed to steer turn: \(error)")
+        }
+    }
+
+    func processNextQueuedItem() async {
+        // Host Server auto-dispatches queued messages on turn.completed autonomously
+    }
+
+    // MARK: - Workspace File Search & Slash Commands
+
+    func searchWorkspaceFiles(query: String) async -> [FuzzyFileMatchItem] {
+        guard let wsId = chat?.workspaceID else { return [] }
+        struct SearchParams: Encodable, Sendable {
+            let workspaceId: String
+            let query: String
+            let cancellationToken: String?
+        }
+        do {
+            let res: WorkspaceFileSearchResult = try await connectionManager.sendRequest(
+                method: "workspace.searchFiles",
+                params: SearchParams(workspaceId: wsId, query: query, cancellationToken: nil)
+            )
+            return res.files
+        } catch {
+            print("⚠️ [ChatViewModel] workspace.searchFiles failed: \(error)")
+            return []
+        }
+    }
+
+    func reviewChat() async {
+        struct ReviewParams: Encodable, Sendable {
+            let chatId: String
+        }
+        do {
+            struct ReviewResult: Decodable, Sendable {
+                let success: Bool?
+            }
+            let _: ReviewResult = try await connectionManager.sendRequest(
+                method: "chat.review",
+                params: ReviewParams(chatId: chatId)
+            )
+        } catch {
+            print("⚠️ [ChatViewModel] chat.review failed: \(error)")
+        }
+    }
+
+    func compactChat() async {
+        struct CompactParams: Encodable, Sendable {
+            let chatId: String
+        }
+        do {
+            struct CompactResult: Decodable, Sendable {
+                let success: Bool?
+            }
+            let _: CompactResult = try await connectionManager.sendRequest(
+                method: "chat.compact",
+                params: CompactParams(chatId: chatId)
+            )
+        } catch {
+            print("⚠️ [ChatViewModel] chat.compact failed: \(error)")
         }
     }
 
@@ -172,6 +381,7 @@ final class ChatViewModel {
                 }
                 if payload.message.role == .agent && payload.message.streaming {
                     self.streamingMessageId = payload.message.id
+                    self.activeTurnId = payload.message.turnID ?? self.activeTurnId
                     self.streamingText = ""
                     self.isRunning = true
                     self.scrollTrigger &+= 1
@@ -323,6 +533,7 @@ final class ChatViewModel {
                 self.streamingMessageId = nil
                 self.streamingText = ""
                 self.isRunning = false
+                self.activeTurnId = nil
                 for i in messages.indices {
                     if messages[i].streaming || i == messages.indices.last {
                         var blocks = messages[i].blocks
@@ -340,6 +551,16 @@ final class ChatViewModel {
                 scrollTrigger &+= 1
             } catch {
                 print("❌ [ChatViewModel] Failed to decode turn.completed: \(error)")
+            }
+
+        case "queue.updated":
+            do {
+                let payload = try data.decodeRPCParams(QueueUpdatedPayload.self)
+                guard payload.chatId == chatId else { return }
+                print("📋 [ChatViewModel] queue.updated received for \(chatId): \(payload.items.count) items")
+                self.queuedMessages = payload.items
+            } catch {
+                print("❌ [ChatViewModel] Failed to decode queue.updated: \(error)")
             }
 
         case "approval.requested":

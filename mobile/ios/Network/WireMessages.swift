@@ -129,6 +129,11 @@ struct WorkspaceDeletedPayload: Decodable, Sendable {
     let workspaceId: String
 }
 
+struct QueueUpdatedPayload: Decodable, Sendable {
+    let chatId: String
+    let items: [QueuedMessage]
+}
+
 // MARK: - RPC Data Decoding Helpers
 
 extension Data {

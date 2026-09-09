@@ -1,7 +1,8 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
-import { groupMessageBlocks, MessageBlocksRenderer } from "../src/components/chat/render-block.js";
+import { groupMessageBlocks, MessageBlocksRenderer, partitionMessageBlocks } from "../src/components/chat/render-block.js";
+import { extractReasoningHeader, ReasoningBlock } from "../src/components/chat/reasoning-block.js";
 import { formatToolAction, summarizeToolGroup, formatWorkedDuration } from "../src/components/chat/tool-formatting.js";
 import { ToolCallGroup } from "../src/components/chat/tool-call-group.js";
 import { MessageBlock } from "../src/types/index.js";
@@ -165,7 +166,6 @@ describe("Tool Call Formatting & Grouping", () => {
   });
 
   it("partitions message blocks into introBlocks, workBlocks and final response textBlocks", () => {
-    const { partitionMessageBlocks } = require("../src/components/chat/render-block.js");
     const blocks: MessageBlock[] = [
       { type: "text", content: "Let me inspect the files and run tests first." },
       { type: "reasoning", content: "Thinking through the plan...", completed: true },
@@ -226,7 +226,6 @@ describe("Tool Call Formatting & Grouping", () => {
   });
 
   it("extracts reasoning headers and formats reasoning block title cleanly", () => {
-    const { extractReasoningHeader, ReasoningBlock } = require("../src/components/chat/reasoning-block.js");
     expect(extractReasoningHeader("**Planning parallel command execution**\nChecking files")).toBe("Planning parallel command execution");
     expect(extractReasoningHeader("Planning targeted code inspection")).toBe("Planning targeted code inspection");
     expect(extractReasoningHeader("")).toBeNull();
@@ -244,4 +243,3 @@ describe("Tool Call Formatting & Grouping", () => {
     expect(htmlRunning).toContain("animate-pulse");
   });
 });
-

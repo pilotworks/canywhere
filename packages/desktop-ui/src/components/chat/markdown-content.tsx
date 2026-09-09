@@ -1,7 +1,9 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
+import { FileIcon } from "../ui/file-icon.js";
+import { parseFileLink, openFileInRightSidebar } from "../../lib/file-link.js";
 
 interface MarkdownContentProps {
   content: string;
@@ -74,10 +76,87 @@ const CodeBlock: React.FC<{
   );
 };
 
+const MarkdownLink: React.FC<{
+  href?: string;
+  children?: React.ReactNode;
+}> = ({ href, children }) => {
+  const fileLinkInfo = parseFileLink(href);
+
+  if (fileLinkInfo) {
+    const handleClick = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openFileInRightSidebar(fileLinkInfo);
+    };
+
+    const titleText = `Preview ${fileLinkInfo.cleanPath}${
+      fileLinkInfo.lineRange
+        ? ` (line ${fileLinkInfo.lineRange.start}${
+            fileLinkInfo.lineRange.end ? `-${fileLinkInfo.lineRange.end}` : ""
+          })`
+        : ""
+    } in right sidebar`;
+
+    const childrenStr = typeof children === "string" ? children : "";
+    const hasLineNumber =
+      Boolean(fileLinkInfo.lineRange) &&
+      (childrenStr.includes(":" + fileLinkInfo.lineRange?.start) ||
+        childrenStr.includes("#L" + fileLinkInfo.lineRange?.start));
+
+    return (
+      <a
+        href={href}
+        onClick={handleClick}
+        className="inline rounded px-1 py-0.5 font-mono text-[12.5px] text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10 transition-colors cursor-pointer group no-underline align-baseline"
+        title={titleText}
+      >
+        <FileIcon
+          fileName={fileLinkInfo.fileName}
+          className="w-3.5 h-3.5 inline-block mr-1 align-[-0.18em] shrink-0 pointer-events-none"
+        />
+        <span className="underline underline-offset-2 decoration-[var(--border)] group-hover:decoration-transparent">
+          {children}
+        </span>
+        {fileLinkInfo.lineRange && !hasLineNumber && (
+          <span className="text-[11px] text-[var(--muted-foreground)] opacity-75 font-mono">
+            :{fileLinkInfo.lineRange.start}
+            {fileLinkInfo.lineRange.end ? `-${fileLinkInfo.lineRange.end}` : ""}
+          </span>
+        )}
+      </a>
+    );
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-[var(--foreground)] underline underline-offset-4 hover:opacity-80 transition-opacity font-medium"
+    >
+      {children}
+    </a>
+  );
+};
+
+function autolinkFileUrls(text: string): string {
+  if (!text || !text.includes("file://")) return text;
+  const parts = text.split(/(```[\s\S]*?```|`[^`\n]+`)/g);
+  return parts
+    .map((part, i) => {
+      if (i % 2 === 1) return part;
+      return part.replace(/(?<![<(\]])(file:\/\/\/[^\s)<>]+)/g, "<$1>");
+    })
+    .join("");
+}
+
 export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, className = "" }) => {
+  const processedContent = useMemo(() => autolinkFileUrls(content), [content]);
+
   return (
     <div className={`prose-neutral text-[13px] leading-relaxed select-text space-y-2.5 ${className}`}>
       <Markdown
+        urlTransform={(url) => url}
         remarkPlugins={[remarkGfm]}
         components={{
           pre: PreBlock as any,
@@ -94,16 +173,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
               {children}
             </blockquote>
           ),
-          a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[var(--foreground)] underline underline-offset-4 hover:opacity-80 transition-opacity font-medium"
-            >
-              {children}
-            </a>
-          ),
+          a: MarkdownLink as any,
           table: ({ children }) => (
             <div className="overflow-x-auto my-2 rounded border border-[var(--border)]">
               <table className="min-w-full text-xs text-left divide-y divide-[var(--border)]">{children}</table>
@@ -126,7 +196,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
           },
         }}
       >
-        {content}
+        {processedContent}
       </Markdown>
     </div>
   );

@@ -4,8 +4,10 @@ import { MessageBlock } from "../../types/index.js";
 import { ToolCallBlock } from "./tool-call-block.js";
 import { formatToolAction, summarizeToolGroup } from "./tool-formatting.js";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../ui/collapsible.js";
+import { FileIcon } from "../ui/file-icon.js";
+import { DiffViewer } from "./diff-viewer.js";
 
-type ToolActionBlock = Extract<MessageBlock, { type: "tool_call" | "command_exec" }>;
+export type ToolActionBlock = Extract<MessageBlock, { type: "tool_call" | "command_exec" }>;
 
 export const CommandExecItem: React.FC<{
   block: Extract<MessageBlock, { type: "command_exec" }>;
@@ -114,6 +116,46 @@ export const CommandExecItem: React.FC<{
             Executing command...
           </div>
         ) : null}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+};
+
+export const FileDiffItem: React.FC<{
+  block: Extract<MessageBlock, { type: "file_diff" }>;
+}> = ({ block }) => {
+  const [open, setOpen] = useState(false);
+  const lines = (block.patch || "").split("\n");
+  const addedCount = lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
+  const removedCount = lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen} className="w-full my-0.5 text-xs">
+      <CollapsibleTrigger className="group flex items-center gap-1.5 py-0.5 w-full text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer select-none bg-transparent border-none p-0 text-left">
+        <ChevronRight
+          className={`w-3 h-3 shrink-0 transition-transform duration-150 ${
+            open ? "rotate-90" : ""
+          }`}
+        />
+        <span className="text-[12px] font-normal transition-colors shrink-0">
+          Edited
+        </span>
+        <FileIcon fileName={block.path} className="w-3.5 h-3.5 shrink-0" />
+        <span className="font-mono text-[11.5px] opacity-90 truncate">
+          {block.path}
+        </span>
+        {(addedCount > 0 || removedCount > 0) && (
+          <span className="flex items-center gap-1 font-mono text-[10.5px] font-semibold ml-1">
+            {addedCount > 0 && <span className="text-emerald-400">+{addedCount}</span>}
+            {removedCount > 0 && <span className="text-rose-400">-{removedCount}</span>}
+          </span>
+        )}
+      </CollapsibleTrigger>
+
+      <CollapsibleContent className="my-1.5 ml-2 pl-2 border-l border-[var(--border)]/50">
+        <div className="rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] font-mono text-xs overflow-hidden shadow-xs">
+          <DiffViewer patch={block.patch} />
+        </div>
       </CollapsibleContent>
     </Collapsible>
   );

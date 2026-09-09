@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import { GitView } from "../src/components/layout/git-view";

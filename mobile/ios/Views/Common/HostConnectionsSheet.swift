@@ -14,6 +14,16 @@ struct HostConnectionsSheet: View {
     @State private var switchErrorMessage: String? = nil
     @State private var showUnpairConfirm = false
     @State private var endpointToDelete: String? = nil
+    @State private var showDeleteConfirm = false
+
+    private var availableEndpoints: [String] {
+        if !session.allEndpoints.isEmpty {
+            return session.allEndpoints
+        } else if let single = session.pairedEndpoint {
+            return [single]
+        }
+        return []
+    }
 
     var body: some View {
         NavigationStack {
@@ -74,28 +84,50 @@ struct HostConnectionsSheet: View {
                                 .foregroundStyle(Color.accentColor)
                                 .clipShape(Capsule())
                             }
+                            .alert("Add Connection Endpoint", isPresented: $showAddSheet) {
+                                TextField("ws://192.168.1.x:7890/rpc", text: $newEndpointUrl)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled(true)
+                                Button("Add") {
+                                    Haptics.shared.notification(.success)
+                                    session.addCustomEndpoint(newEndpointUrl)
+                                    refreshHealth()
+                                }
+                                Button("Cancel", role: .cancel) {}
+                            } message: {
+                                Text("Enter the WebSocket address of your Canywhere host.")
+                            }
                         }
                         .padding(.horizontal, 4)
 
                         VStack(spacing: 10) {
-                            if session.allEndpoints.isEmpty {
-                                if let single = session.pairedEndpoint {
-                                    endpointRow(single)
-                                } else {
-                                    Text("No endpoints configured.")
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.vertical, 20)
-                                }
+                            if availableEndpoints.isEmpty {
+                                Text("No endpoints configured.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.vertical, 20)
                             } else {
-                                ForEach(session.allEndpoints, id: \.self) { ep in
+                                ForEach(availableEndpoints, id: \.self) { ep in
                                     let isActive = (session.pairedEndpoint == ep)
-                                    let canDelete = !isActive && session.allEndpoints.count > 1
 
-                                    SwipeToDeleteRow(canDelete: canDelete) {
-                                        endpointToDelete = ep
+                                    SwipeToDeleteRow(canDelete: true) {
+                                        confirmDelete(ep)
                                     } content: {
                                         endpointRow(ep)
+                                            .contextMenu {
+                                                if !isActive {
+                                                    Button {
+                                                        performSwitch(to: ep)
+                                                    } label: {
+                                                        Label("Connect to this Host", systemImage: "bolt.horizontal.fill")
+                                                    }
+                                                }
+                                                Button(role: .destructive) {
+                                                    confirmDelete(ep)
+                                                } label: {
+                                                    Label("Remove Connection", systemImage: "trash")
+                                                }
+                                            }
                                     }
                                 }
                             }
@@ -160,36 +192,20 @@ struct HostConnectionsSheet: View {
                     refreshHealth()
                 }
             }
-            .alert("Add Connection Endpoint", isPresented: $showAddSheet) {
-                TextField("ws://192.168.1.x:7890/rpc", text: $newEndpointUrl)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled(true)
-                Button("Add") {
-                    Haptics.shared.notification(.success)
-                    session.addCustomEndpoint(newEndpointUrl)
-                    refreshHealth()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Enter the WebSocket address of your Canywhere host.")
-            }
             .alert(
-                "Remove Connection?",
-                isPresented: Binding(
-                    get: { endpointToDelete != nil },
-                    set: { if !$0 { endpointToDelete = nil } }
-                ),
+                deleteAlertTitle,
+                isPresented: $showDeleteConfirm,
                 presenting: endpointToDelete
             ) { ep in
-                Button("Cancel", role: .cancel) {}
+                Button("Cancel", role: .cancel) {
+                    endpointToDelete = nil
+                }
                 Button("Remove", role: .destructive) {
                     Haptics.shared.notification(.warning)
-                    session.removeEndpoint(ep)
-                    refreshHealth()
+                    performDelete(ep)
                 }
             } message: { ep in
-                let info = EndpointInfo(rawUrl: ep)
-                Text("Are you sure you want to remove \(info.displayAddress) from your saved connections?")
+                Text(deleteAlertMessage(for: ep))
             }
             .confirmationDialog(
                 "Unpair Host Device?",
@@ -519,6 +535,44 @@ struct HostConnectionsSheet: View {
             }
         }
     }
+
+    private func confirmDelete(_ endpoint: String) {
+        endpointToDelete = endpoint
+        showDeleteConfirm = true
+    }
+
+    private func performDelete(_ endpoint: String) {
+        if availableEndpoints.count <= 1 {
+            session.unpair()
+            dismiss()
+        } else {
+            session.removeEndpoint(endpoint)
+            refreshHealth()
+        }
+        endpointToDelete = nil
+    }
+
+    private var deleteAlertTitle: String {
+        guard let ep = endpointToDelete else { return "Remove Connection?" }
+        if availableEndpoints.count <= 1 {
+            return "Remove Host Connection?"
+        } else if ep == session.pairedEndpoint {
+            return "Remove Active Connection?"
+        } else {
+            return "Remove Connection?"
+        }
+    }
+
+    private func deleteAlertMessage(for endpoint: String) -> String {
+        let info = EndpointInfo(rawUrl: endpoint)
+        if availableEndpoints.count <= 1 {
+            return "This is your only saved connection for \(session.pairedHostName ?? "this host"). Removing it will unpair your device."
+        } else if endpoint == session.pairedEndpoint {
+            return "Are you sure you want to remove \(info.displayAddress)? Canywhere will automatically switch to your next saved connection."
+        } else {
+            return "Are you sure you want to remove \(info.displayAddress) from your saved connections?"
+        }
+    }
 }
 
 // MARK: - Swipe To Delete Card Component
@@ -531,67 +585,109 @@ private struct SwipeToDeleteRow<Content: View>: View {
     @State private var offset: CGFloat = 0
     @State private var isSwiped: Bool = false
 
-    private let buttonWidth: CGFloat = 72
+    private let buttonWidth: CGFloat = 76
 
     var body: some View {
         ZStack(alignment: .trailing) {
-            // Background Delete Button
-            if canDelete {
-                HStack {
-                    Spacer()
-                    Button(role: .destructive) {
-                        Haptics.shared.impact(.medium)
+            // Foreground Content
+            content()
+                .offset(x: offset)
+
+            // Dismiss tap overlay over content when swiped open
+            if isSwiped {
+                Color.black.opacity(0.001)
+                    .padding(.trailing, buttonWidth)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             offset = 0
                             isSwiped = false
                         }
-                        onDelete()
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: "trash.fill")
-                                .font(.system(size: 16))
-                            Text("Delete")
-                                .font(.system(size: 11, weight: .bold))
-                        }
-                        .foregroundStyle(.white)
-                        .frame(width: buttonWidth)
-                        .frame(maxHeight: .infinity)
-                        .background(Color.red)
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
-                }
             }
 
-            // Foreground Card
-            content()
-                .offset(x: offset)
-                .contentShape(Rectangle())
-                .gesture(
-                    canDelete ?
-                    DragGesture(minimumDistance: 15, coordinateSpace: .local)
-                        .onChanged { value in
-                            if value.translation.width < 0 {
-                                // Swiping left
-                                let translation = value.translation.width
-                                offset = max(-buttonWidth, translation)
-                            } else if isSwiped && value.translation.width > 0 {
-                                // Swiping back right
-                                offset = min(0, -buttonWidth + value.translation.width)
-                            }
-                        }
-                        .onEnded { value in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                if value.translation.width < -30 {
-                                    offset = -buttonWidth
-                                    isSwiped = true
-                                } else {
-                                    offset = 0
-                                    isSwiped = false
-                                }
-                            }
-                        }
-                    : nil
-                )
+            // Delete Action Button (in front of content so it reliably receives taps)
+            if canDelete {
+                Button(role: .destructive) {
+                    Haptics.shared.impact(.medium)
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        offset = 0
+                        isSwiped = false
+                    }
+                    onDelete()
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                        Text("Delete")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: buttonWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Color.red)
+                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .frame(width: buttonWidth)
+                .offset(x: max(0, buttonWidth + offset))
+                .opacity(offset < -5 ? 1 : 0)
+                .allowsHitTesting(isSwiped || offset < -buttonWidth / 2)
+            }
         }
+        .fixedSize(horizontal: false, vertical: true)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .simultaneousGesture(
+            canDelete ?
+            DragGesture(minimumDistance: 10, coordinateSpace: .local)
+                .onChanged { value in
+                    let hTranslation = value.translation.width
+                    let vTranslation = value.translation.height
+                    // Ensure horizontal swipe is dominant over vertical scroll
+                    guard abs(hTranslation) > abs(vTranslation) else { return }
+
+                    if isSwiped {
+                        let newOffset = -buttonWidth + hTranslation
+                        offset = min(0, max(-buttonWidth - 30, newOffset))
+                    } else {
+                        if hTranslation < 0 {
+                            offset = max(-buttonWidth - 40, hTranslation)
+                        }
+                    }
+                }
+                .onEnded { value in
+                    let hTranslation = value.translation.width
+                    let vTranslation = value.translation.height
+                    guard abs(hTranslation) > abs(vTranslation) else {
+                        if !isSwiped && offset != 0 {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                offset = 0
+                            }
+                        }
+                        return
+                    }
+
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        if hTranslation < -150 {
+                            // Full swipe to delete
+                            offset = 0
+                            isSwiped = false
+                            Haptics.shared.impact(.medium)
+                            onDelete()
+                        } else if hTranslation < -30 {
+                            // Swiped open
+                            offset = -buttonWidth
+                            isSwiped = true
+                        } else if isSwiped && hTranslation > 20 {
+                            // Closed
+                            offset = 0
+                            isSwiped = false
+                        } else {
+                            // Revert back
+                            offset = isSwiped ? -buttonWidth : 0
+                        }
+                    }
+                }
+            : nil
+        )
     }
 }

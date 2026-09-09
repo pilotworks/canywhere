@@ -56,3 +56,19 @@ pub struct ChatCreateInput {
     #[serde(default)]
     pub permission_mode: Option<PermissionMode>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedMessage {
+    pub id: String,
+    pub chat_id: String,
+    pub content: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub permission_mode: Option<PermissionMode>,
+    pub sequence: i64,
+    pub created_at: i64,
+}

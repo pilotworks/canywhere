@@ -717,9 +717,6 @@ export const ChatView: React.FC = () => {
                 })}
               </DropdownMenuContent>
             </DropdownMenu>
-            <span className="hidden sm:inline-block font-mono text-[10px] text-[var(--muted-foreground)] opacity-75">
-              ⚡ Context: ~32k tokens
-            </span>
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -946,9 +943,10 @@ export const ChatView: React.FC = () => {
                   </div>
 
                   {isMsgStreaming && (
-                    <div className="flex items-center gap-2 text-[11px] font-mono text-[var(--muted-foreground)] py-1 select-none">
-                      <Loader2 className="w-3 h-3 animate-spin text-[var(--foreground)]" />
-                      <span>Generating...</span>
+                    <div className="py-1 select-none">
+                      <span className="text-[11px] font-mono font-medium shimmer-text tracking-wide">
+                        Working
+                      </span>
                     </div>
                   )}
 

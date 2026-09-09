@@ -74,6 +74,10 @@ pub enum AgentEvent {
     WorkspaceDeleted {
         workspace_id: String,
     },
+    QueueUpdated {
+        chat_id: String,
+        items: Vec<canywhere_protocol::models::QueuedMessage>,
+    },
 }
 
 pub struct CodexAdapter {

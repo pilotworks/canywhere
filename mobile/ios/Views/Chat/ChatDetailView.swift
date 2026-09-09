@@ -1,12 +1,54 @@
 import SwiftUI
 
+struct BottomAnchorPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) {
+        if let next = nextValue() {
+            value = next
+        }
+    }
+}
+
+struct ViewportHeightPreferenceKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct ChatDetailView: View {
+    @Environment(\.dismiss) private var dismiss
     @State private var viewModel: ChatViewModel
     @State private var inputText: String = ""
     @State private var activeApproval: ApprovalRequest?
 
+    @State private var isAtBottom: Bool = true
+    @State private var hasUnseenMessages: Bool = false
+
+    @State private var bottomAnchorMinY: CGFloat? = nil
+    @State private var viewportHeight: CGFloat = 0
+
     init(chatId: String) {
         _viewModel = State(initialValue: ChatViewModel(chatId: chatId))
+    }
+
+    private func checkScrollPosition() {
+        guard viewportHeight > 0 else { return }
+        let atBottom: Bool
+        if let minY = bottomAnchorMinY {
+            // When at bottom, bottom_anchor.minY aligns near viewportHeight
+            atBottom = minY <= viewportHeight + 60
+        } else {
+            // bottom_anchor was culled by LazyVStack because user scrolled up to older messages
+            atBottom = false
+        }
+
+        if atBottom != isAtBottom {
+            isAtBottom = atBottom
+        }
+        if atBottom && hasUnseenMessages {
+            hasUnseenMessages = false
+        }
     }
 
     var body: some View {
@@ -17,35 +59,138 @@ struct ChatDetailView: View {
             VStack(spacing: 0) {
                 // Messages Feed
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            if viewModel.messages.isEmpty {
-                                emptyChatGreeting
-                                    .padding(.top, 40)
-                            } else {
-                                ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { idx, message in
-                                    MessageBubbleView(
-                                        message: message,
-                                        durationSeconds: viewModel.durationFor(message: message, at: idx)
-                                    )
+                    ZStack(alignment: .bottomTrailing) {
+                        ScrollView {
+                            LazyVStack(spacing: 12) {
+                                if viewModel.messages.isEmpty {
+                                    emptyChatGreeting
+                                        .padding(.top, 40)
+                                } else {
+                                    ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { idx, message in
+                                        MessageBubbleView(
+                                            message: message,
+                                            durationSeconds: viewModel.durationFor(message: message, at: idx)
+                                        )
+                                    }
                                 }
+                                Color.clear
+                                    .frame(height: 1)
+                                    .id("bottom_anchor")
+                                    .allowsHitTesting(false)
+                                    .background(
+                                        GeometryReader { geo in
+                                            Color.clear.preference(
+                                                key: BottomAnchorPreferenceKey.self,
+                                                value: geo.frame(in: .named("ChatScrollViewSpace")).minY
+                                            )
+                                        }
+                                    )
                             }
-                            Color.clear
-                                .frame(height: 1)
-                                .id("bottom_anchor")
+                            .padding(.top, viewModel.pendingApprovals.first != nil ? 60 : 12)
+                            .padding(.bottom, 8)
                         }
-                        .padding(.top, viewModel.pendingApprovals.first != nil ? 60 : 12)
-                        .padding(.bottom, 8)
+                        .scrollDismissesKeyboard(.interactively)
+                        .defaultScrollAnchor(.bottom)
+                        .coordinateSpace(name: "ChatScrollViewSpace")
+                        .onTapGesture {
+                            hideKeyboard()
+                        }
+                        .background(
+                            GeometryReader { geo in
+                                Color.clear.preference(
+                                    key: ViewportHeightPreferenceKey.self,
+                                    value: geo.size.height
+                                )
+                            }
+                        )
+                        .onPreferenceChange(BottomAnchorPreferenceKey.self) { minY in
+                            bottomAnchorMinY = minY
+                            checkScrollPosition()
+                        }
+                        .onPreferenceChange(ViewportHeightPreferenceKey.self) { height in
+                            viewportHeight = height
+                            checkScrollPosition()
+                        }
+
+                        // Floating Jump to Bottom Button
+                        if !isAtBottom {
+                            Button {
+                                Haptics.shared.impact(.light)
+                                withAnimation(.easeOut(duration: 0.25)) {
+                                    proxy.scrollTo("bottom_anchor", anchor: .bottom)
+                                }
+                                isAtBottom = true
+                                hasUnseenMessages = false
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.down")
+                                        .font(.system(size: 11, weight: .semibold))
+                                        .foregroundStyle(.secondary)
+
+                                    Text(hasUnseenMessages ? "New messages below" : "Scroll to bottom")
+                                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                        .foregroundStyle(.primary)
+
+                                    if hasUnseenMessages {
+                                        PulsingDot(color: .green)
+                                    }
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                                .overlay(
+                                    Capsule().stroke(Color(uiColor: .separator).opacity(0.6), lineWidth: 1)
+                                )
+                                .shadow(color: .black.opacity(0.12), radius: 8, x: 0, y: 4)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 12)
+                            .transition(.opacity.combined(with: .scale(scale: 0.92)))
+                        }
                     }
-                    .onChange(of: viewModel.messages.count) { _, _ in
-                        withAnimation(.easeOut(duration: 0.2)) {
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isAtBottom)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.8), value: hasUnseenMessages)
+                    .onChange(of: viewModel.messages.count) { oldCount, newCount in
+                        if oldCount == 0 && newCount > 0 {
                             proxy.scrollTo("bottom_anchor", anchor: .bottom)
+                            isAtBottom = true
+                            hasUnseenMessages = false
+                        } else if isAtBottom {
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo("bottom_anchor", anchor: .bottom)
+                            }
+                        } else {
+                            hasUnseenMessages = true
                         }
                     }
                     .onChange(of: viewModel.scrollTrigger) { _, _ in
-                        proxy.scrollTo("bottom_anchor", anchor: .bottom)
+                        if isAtBottom {
+                            proxy.scrollTo("bottom_anchor", anchor: .bottom)
+                        } else {
+                            hasUnseenMessages = true
+                        }
                     }
                 }
+
+                // Floating Queue Tray
+                QueueTrayView(
+                    items: viewModel.queuedMessages,
+                    isRunning: viewModel.isRunning,
+                    activeTurnId: viewModel.activeTurnId,
+                    onSteer: { queueId in
+                        Task {
+                            await viewModel.steerQueuedPrompt(id: queueId)
+                        }
+                    },
+                    onEdit: { queueId, newText in
+                        viewModel.updateQueuedPrompt(id: queueId, newContent: newText)
+                    },
+                    onDelete: { queueId in
+                        viewModel.removeQueuedPrompt(id: queueId)
+                    }
+                )
 
                 // Bottom Composer
                 ComposerView(
@@ -56,11 +201,18 @@ struct ChatDetailView: View {
                     models: AppSessionState.shared.models,
                     isRunning: viewModel.isRunning,
                     isSending: viewModel.isSending,
+                    hasWorkspace: viewModel.chat?.workspaceID != nil,
                     onSend: {
                         let text = inputText
                         inputText = ""
-                        Task {
-                            await viewModel.submitTurn(content: text)
+                        isAtBottom = true
+                        hasUnseenMessages = false
+                        if viewModel.isRunning {
+                            viewModel.enqueuePrompt(content: text)
+                        } else {
+                            Task {
+                                await viewModel.submitTurn(content: text)
+                            }
                         }
                     },
                     onInterrupt: {
@@ -71,6 +223,32 @@ struct ChatDetailView: View {
                     onPermissionChange: { mode in
                         Task {
                             await viewModel.setPermissionMode(mode)
+                        }
+                    },
+                    onSearchFiles: { query in
+                        await viewModel.searchWorkspaceFiles(query: query)
+                    },
+                    onReview: {
+                        Task {
+                            await viewModel.reviewChat()
+                        }
+                    },
+                    onCompact: {
+                        Task {
+                            await viewModel.compactChat()
+                        }
+                    },
+                    onReset: {
+                        let wsId = viewModel.chat?.workspaceID
+                        Task {
+                            _ = try? await AppSessionState.shared.createChat(title: "New Chat", workspaceId: wsId)
+                            dismiss()
+                        }
+                    },
+                    onScratch: {
+                        Task {
+                            _ = try? await AppSessionState.shared.createChat(title: "Scratchpad", workspaceId: nil)
+                            dismiss()
                         }
                     }
                 )
@@ -304,5 +482,9 @@ struct ChatDetailView: View {
         case .auto:
             return .orange
         }
+    }
+
+    private func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
 }

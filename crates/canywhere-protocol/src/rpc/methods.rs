@@ -139,6 +139,8 @@ pub struct ChatGetResult {
     pub chat: Chat,
     pub messages: Vec<Message>,
     pub pending_approvals: Vec<ApprovalRequest>,
+    #[serde(default)]
+    pub queued_messages: Vec<crate::models::QueuedMessage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
@@ -297,4 +299,58 @@ pub struct WorkspaceUpdatedNotification {
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceDeletedNotification {
     pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueListParams {
+    pub chat_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueListResult {
+    pub items: Vec<crate::models::QueuedMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueAddParams {
+    pub chat_id: String,
+    pub content: String,
+    #[serde(default)]
+    pub model: Option<String>,
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub permission_mode: Option<crate::models::PermissionMode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueRemoveParams {
+    pub chat_id: String,
+    pub queue_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueUpdateParams {
+    pub chat_id: String,
+    pub queue_id: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueSteerParams {
+    pub chat_id: String,
+    pub queue_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueUpdatedNotification {
+    pub chat_id: String,
+    pub items: Vec<crate::models::QueuedMessage>,
 }

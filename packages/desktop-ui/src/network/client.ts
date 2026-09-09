@@ -147,6 +147,9 @@ export class CanywhereClient {
       );
       useChatStore.getState().setMessages(chatId, safeMessages);
       useApprovalStore.getState().setPendingApprovals(res.pendingApprovals || []);
+      if (res.queuedMessages) {
+        useChatStore.getState().setQueuedMessages(chatId, res.queuedMessages);
+      }
 
       // If there is an active streaming message with a turnId, restore active turn ID so steering and interrupt work immediately
       if (streamingMsg?.turnId) {
@@ -326,42 +329,52 @@ export class CanywhereClient {
     });
   }
 
-  enqueuePrompt(
+  async enqueuePrompt(
     chatId: string,
     content: string,
     model?: string | null,
     effort?: string | null,
     permissionMode?: import("../types/index.js").PermissionMode
-  ): import("../types/index.js").QueuedMessage {
-    return useChatStore.getState().enqueueMessage(chatId, content, model, effort, permissionMode);
+  ): Promise<import("../types/index.js").QueuedMessage> {
+    const res = await this.call("queue.add", {
+      chatId,
+      content,
+      model: model || undefined,
+      reasoningEffort: effort || undefined,
+      permissionMode,
+    });
+    return res;
   }
 
-  cancelQueuedPrompt(chatId: string, queueId: string): void {
+  async cancelQueuedPrompt(chatId: string, queueId: string): Promise<void> {
     useChatStore.getState().removeQueuedMessage(chatId, queueId);
+    try {
+      await this.call("queue.remove", { chatId, queueId });
+    } catch (err) {
+      console.error("[CanywhereClient] queue.remove failed", err);
+    }
   }
 
-  updateQueuedPrompt(chatId: string, queueId: string, newContent: string): void {
+  async updateQueuedPrompt(chatId: string, queueId: string, newContent: string): Promise<void> {
     useChatStore.getState().updateQueuedMessage(chatId, queueId, newContent);
+    try {
+      await this.call("queue.update", { chatId, queueId, content: newContent });
+    } catch (err) {
+      console.error("[CanywhereClient] queue.update failed", err);
+    }
   }
 
   async steerQueuedPrompt(chatId: string, queueId: string): Promise<void> {
-    const queueList = useChatStore.getState().queuedMessages[chatId] || [];
-    const item = queueList.find((q) => q.id === queueId);
-    if (!item) return;
-    const activeTurnId = useChatStore.getState().activeTurnId[chatId];
-    this.cancelQueuedPrompt(chatId, queueId);
-    if (activeTurnId) {
-      await this.steerTurn(chatId, activeTurnId, item.content);
-    } else {
-      await this.sendTurn(chatId, item.content, item.model || undefined, item.permissionMode);
+    useChatStore.getState().removeQueuedMessage(chatId, queueId);
+    try {
+      await this.call("queue.steer", { chatId, queueId });
+    } catch (err) {
+      console.error("[CanywhereClient] queue.steer failed", err);
     }
   }
 
-  async processNextQueuedItem(chatId: string): Promise<void> {
-    const nextItem = useChatStore.getState().shiftNextQueuedMessage(chatId);
-    if (nextItem) {
-      await this.sendTurn(nextItem.chatId, nextItem.content, nextItem.model || undefined, nextItem.permissionMode);
-    }
+  async processNextQueuedItem(_chatId: string): Promise<void> {
+    // Handled autonomously by Host Server on turn.completed
   }
 
   async interruptTurn(chatId: string, turnId?: string): Promise<void> {
@@ -577,6 +590,14 @@ export class CanywhereClient {
           if (!activeExists) {
             useChatStore.getState().setActiveChatId(chats[0]?.id || null);
           }
+        }
+        break;
+      }
+
+      case "queue.updated": {
+        console.log("📋 [DesktopClient] queue.updated received:", params);
+        if (params.chatId && Array.isArray(params.items)) {
+          useChatStore.getState().setQueuedMessages(params.chatId, params.items);
         }
         break;
       }

@@ -501,6 +501,169 @@ impl RepositoryManager {
         )?;
         Ok(())
     }
+
+    // Message Queue
+    pub fn list_queued_messages(&self, chat_id: &str) -> Result<Vec<QueuedMessage>> {
+        let conn = self.db.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, chat_id, content, model, reasoning_effort, permission_mode, sequence, created_at
+             FROM queued_messages WHERE chat_id = ?1 ORDER BY sequence ASC, created_at ASC"
+        )?;
+        let rows = stmt.query_map(params![chat_id], |r| {
+            let perm_str: Option<String> = r.get(5)?;
+            let permission_mode = perm_str.map(|s| match s.as_str() {
+                "readOnly" => PermissionMode::ReadOnly,
+                "auto" => PermissionMode::Auto,
+                _ => PermissionMode::OnRequest,
+            });
+            Ok(QueuedMessage {
+                id: r.get(0)?,
+                chat_id: r.get(1)?,
+                content: r.get(2)?,
+                model: r.get(3)?,
+                reasoning_effort: r.get(4)?,
+                permission_mode,
+                sequence: r.get(6)?,
+                created_at: r.get(7)?,
+            })
+        })?;
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn get_queued_message(&self, queue_id: &str) -> Result<Option<QueuedMessage>> {
+        let conn = self.db.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, chat_id, content, model, reasoning_effort, permission_mode, sequence, created_at
+             FROM queued_messages WHERE id = ?1"
+        )?;
+        let mut rows = stmt.query_map(params![queue_id], |r| {
+            let perm_str: Option<String> = r.get(5)?;
+            let permission_mode = perm_str.map(|s| match s.as_str() {
+                "readOnly" => PermissionMode::ReadOnly,
+                "auto" => PermissionMode::Auto,
+                _ => PermissionMode::OnRequest,
+            });
+            Ok(QueuedMessage {
+                id: r.get(0)?,
+                chat_id: r.get(1)?,
+                content: r.get(2)?,
+                model: r.get(3)?,
+                reasoning_effort: r.get(4)?,
+                permission_mode,
+                sequence: r.get(6)?,
+                created_at: r.get(7)?,
+            })
+        })?;
+        if let Some(r) = rows.next() {
+            Ok(Some(r?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn add_queued_message(
+        &self,
+        chat_id: &str,
+        content: &str,
+        model: Option<&str>,
+        reasoning_effort: Option<&str>,
+        permission_mode: Option<PermissionMode>,
+    ) -> Result<QueuedMessage> {
+        let conn = self.db.conn();
+        let id = nanoid::nanoid!(16);
+        let now = chrono_now();
+        let max_seq: i64 = conn
+            .query_row(
+                "SELECT COALESCE(MAX(sequence), 0) FROM queued_messages WHERE chat_id = ?1",
+                params![chat_id],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        let sequence = max_seq + 1;
+        let perm_str = permission_mode.map(|p| match p {
+            PermissionMode::ReadOnly => "readOnly",
+            PermissionMode::Auto => "auto",
+            PermissionMode::OnRequest => "onRequest",
+        });
+
+        conn.execute(
+            "INSERT INTO queued_messages (id, chat_id, content, model, reasoning_effort, permission_mode, sequence, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, chat_id, content, model, reasoning_effort, perm_str, sequence, now],
+        )?;
+
+        Ok(QueuedMessage {
+            id,
+            chat_id: chat_id.to_string(),
+            content: content.to_string(),
+            model: model.map(String::from),
+            reasoning_effort: reasoning_effort.map(String::from),
+            permission_mode,
+            sequence,
+            created_at: now,
+        })
+    }
+
+    pub fn remove_queued_message(&self, queue_id: &str) -> Result<bool> {
+        let conn = self.db.conn();
+        let rows = conn.execute(
+            "DELETE FROM queued_messages WHERE id = ?1",
+            params![queue_id],
+        )?;
+        Ok(rows > 0)
+    }
+
+    pub fn update_queued_message(&self, queue_id: &str, content: &str) -> Result<bool> {
+        let conn = self.db.conn();
+        let rows = conn.execute(
+            "UPDATE queued_messages SET content = ?1 WHERE id = ?2",
+            params![content, queue_id],
+        )?;
+        Ok(rows > 0)
+    }
+
+    pub fn pop_next_queued_message(&self, chat_id: &str) -> Result<Option<QueuedMessage>> {
+        let conn = self.db.conn();
+        let next_item = {
+            let mut stmt = conn.prepare(
+                "SELECT id, chat_id, content, model, reasoning_effort, permission_mode, sequence, created_at
+                 FROM queued_messages WHERE chat_id = ?1 ORDER BY sequence ASC, created_at ASC LIMIT 1"
+            )?;
+            let mut rows = stmt.query_map(params![chat_id], |r| {
+                let perm_str: Option<String> = r.get(5)?;
+                let permission_mode = perm_str.map(|s| match s.as_str() {
+                    "readOnly" => PermissionMode::ReadOnly,
+                    "auto" => PermissionMode::Auto,
+                    _ => PermissionMode::OnRequest,
+                });
+                Ok(QueuedMessage {
+                    id: r.get(0)?,
+                    chat_id: r.get(1)?,
+                    content: r.get(2)?,
+                    model: r.get(3)?,
+                    reasoning_effort: r.get(4)?,
+                    permission_mode,
+                    sequence: r.get(6)?,
+                    created_at: r.get(7)?,
+                })
+            })?;
+            if let Some(r) = rows.next() {
+                Some(r?)
+            } else {
+                None
+            }
+        };
+
+        if let Some(ref item) = next_item {
+            conn.execute("DELETE FROM queued_messages WHERE id = ?1", params![item.id])?;
+        }
+
+        Ok(next_item)
+    }
 }
 
 fn map_chat_row(r: &rusqlite::Row) -> rusqlite::Result<Chat> {

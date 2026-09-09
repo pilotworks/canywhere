@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { Zap, Pencil, X, Check, Clock } from "lucide-react";
+import { Zap, Pencil, X, Check, Clock, ChevronDown, ChevronUp } from "lucide-react";
 import { QueuedMessage } from "../../types/index.js";
 
 export interface QueueTrayProps {
@@ -20,6 +20,7 @@ export const QueueTray: React.FC<QueueTrayProps> = ({
   onEdit,
   onDelete,
 }) => {
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
   const editInputRef = useRef<HTMLInputElement>(null);
@@ -56,21 +57,33 @@ export const QueueTray: React.FC<QueueTrayProps> = ({
 
   return (
     <div className="mb-2 w-full rounded-xl border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-md shadow-lg overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-150 select-none">
-      {/* Tray Header */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--secondary)]/40 text-[11px] font-mono text-[var(--muted-foreground)]">
+      {/* Tray Header: click to collapse/expand */}
+      <button
+        type="button"
+        onClick={() => setIsCollapsed(!isCollapsed)}
+        className="w-full flex items-center justify-between px-3 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--secondary)]/40 text-[11px] font-mono text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60 transition-colors cursor-pointer text-left"
+      >
         <div className="flex items-center gap-1.5">
           <Clock className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
           <span className="font-semibold text-[var(--foreground)]">
             In Queue ({items.length})
           </span>
         </div>
-        <span className="text-[10px] opacity-70 hidden sm:inline">
-          Executes sequentially when turn completes
-        </span>
-      </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] opacity-70 hidden sm:inline">
+            {isCollapsed ? "Click to expand" : "Executes sequentially"}
+          </span>
+          {isCollapsed ? (
+            <ChevronDown className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
+          ) : (
+            <ChevronUp className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
+          )}
+        </div>
+      </button>
 
       {/* Queue Items List */}
-      <div className="max-h-40 overflow-y-auto divide-y divide-[var(--border-subtle)]">
+      {!isCollapsed && (
+        <div className="max-h-40 overflow-y-auto divide-y divide-[var(--border-subtle)]">
         {items.map((item, idx) => {
           const isEditing = editingId === item.id;
 
@@ -170,6 +183,7 @@ export const QueueTray: React.FC<QueueTrayProps> = ({
           );
         })}
       </div>
+      )}
     </div>
   );
 };

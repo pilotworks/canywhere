@@ -409,10 +409,12 @@ end try"#;
                     messages.push(s_msg);
                 }
                 let pending_approvals = self.adapter.get_pending_approvals(chat_id).await;
+                let queued_messages = self.repo.list_queued_messages(chat_id)?;
                 Ok(serde_json::to_value(ChatGetResult {
                     chat,
                     messages,
                     pending_approvals,
+                    queued_messages,
                 })?)
             }
 
@@ -747,6 +749,106 @@ end try"#;
                 });
 
                 Ok(serde_json::json!({ "status": "interrupted" }))
+            }
+
+            "queue.list" => {
+                let params: QueueListParams = serde_json::from_value(p)?;
+                let items = self.repo.list_queued_messages(&params.chat_id)?;
+                Ok(serde_json::to_value(QueueListResult { items })?)
+            }
+
+            "queue.add" => {
+                let params: QueueAddParams = serde_json::from_value(p)?;
+                let item = self.repo.add_queued_message(
+                    &params.chat_id,
+                    &params.content,
+                    params.model.as_deref(),
+                    params.reasoning_effort.as_deref(),
+                    params.permission_mode,
+                )?;
+                let items = self.repo.list_queued_messages(&params.chat_id)?;
+                let _ = self.adapter.event_tx().send(AgentEvent::QueueUpdated {
+                    chat_id: params.chat_id,
+                    items,
+                });
+                Ok(serde_json::to_value(item)?)
+            }
+
+            "queue.remove" => {
+                let params: QueueRemoveParams = serde_json::from_value(p)?;
+                let success = self.repo.remove_queued_message(&params.queue_id)?;
+                let items = self.repo.list_queued_messages(&params.chat_id)?;
+                let _ = self.adapter.event_tx().send(AgentEvent::QueueUpdated {
+                    chat_id: params.chat_id,
+                    items,
+                });
+                Ok(serde_json::json!({ "success": success }))
+            }
+
+            "queue.update" => {
+                let params: QueueUpdateParams = serde_json::from_value(p)?;
+                let success = self.repo.update_queued_message(&params.queue_id, &params.content)?;
+                let items = self.repo.list_queued_messages(&params.chat_id)?;
+                let _ = self.adapter.event_tx().send(AgentEvent::QueueUpdated {
+                    chat_id: params.chat_id,
+                    items,
+                });
+                Ok(serde_json::json!({ "success": success }))
+            }
+
+            "queue.steer" => {
+                let params: QueueSteerParams = serde_json::from_value(p)?;
+                let item = self.repo.get_queued_message(&params.queue_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Queued message not found"))?;
+                self.repo.remove_queued_message(&params.queue_id)?;
+                let items = self.repo.list_queued_messages(&params.chat_id)?;
+                let _ = self.adapter.event_tx().send(AgentEvent::QueueUpdated {
+                    chat_id: params.chat_id.clone(),
+                    items,
+                });
+
+                let chat = match self.repo.get_chat(&params.chat_id)? {
+                    Some(c) => c,
+                    None => anyhow::bail!("Chat not found"),
+                };
+                let thread_id = chat.external_thread_id.unwrap_or_default();
+                let active_turn = self.adapter.get_active_turn(&params.chat_id).await;
+
+                if let Some(turn_id) = active_turn {
+                    let message_id = nanoid::nanoid!(16);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64;
+
+                    let user_msg = Message {
+                        id: message_id,
+                        chat_id: chat.id.clone(),
+                        turn_id: Some(turn_id.clone()),
+                        role: MessageRole::User,
+                        blocks: vec![MessageBlock::Text {
+                            content: item.content.clone(),
+                        }],
+                        created_at: now,
+                        streaming: false,
+                    };
+                    let _ = self.repo.record_message(&user_msg);
+                    let _ = self.adapter.event_tx().send(AgentEvent::MessageCreated {
+                        message: user_msg.clone(),
+                    });
+
+                    let steered_turn_id = self
+                        .adapter
+                        .steer_turn(&thread_id, &turn_id, &item.content)
+                        .await?;
+                    Ok(serde_json::json!({
+                        "success": true,
+                        "turnId": steered_turn_id,
+                        "status": ChatStatus::Running,
+                    }))
+                } else {
+                    anyhow::bail!("No active turn to steer");
+                }
             }
 
             "approval.respond" => {

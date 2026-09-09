@@ -13,16 +13,22 @@ interface ThemeState {
 const STORAGE_KEY = "canywhere-theme";
 
 function getInitialTheme(): ThemeMode {
-  const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
-  if (saved === "light" || saved === "dark" || saved === "system") {
-    return saved;
-  }
+  if (typeof localStorage === "undefined") return "dark";
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+    if (saved === "light" || saved === "dark" || saved === "system") {
+      return saved;
+    }
+  } catch {}
   return "system";
 }
 
 function resolveTheme(theme: ThemeMode): "light" | "dark" {
   if (theme === "system") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    if (typeof window !== "undefined" && window.matchMedia) {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    return "dark";
   }
   return theme;
 }
@@ -48,6 +54,7 @@ async function syncTauriNativeBackground(isDark: boolean) {
 }
 
 function applyThemeToDocument(resolved: "light" | "dark") {
+  if (typeof document === "undefined") return;
   const root = document.documentElement;
   const isDark = resolved === "dark";
   if (isDark) {
@@ -69,7 +76,7 @@ export const useThemeStore = create<ThemeState>((set, get) => {
   applyThemeToDocument(resolved);
 
   // Listen to system changes
-  if (typeof window !== "undefined") {
+  if (typeof window !== "undefined" && window.matchMedia) {
     window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
       if (get().theme === "system") {
         const nextResolved = e.matches ? "dark" : "light";
@@ -83,7 +90,11 @@ export const useThemeStore = create<ThemeState>((set, get) => {
     theme: initial,
     resolvedTheme: resolved,
     setTheme: (theme: ThemeMode) => {
-      localStorage.setItem(STORAGE_KEY, theme);
+      if (typeof localStorage !== "undefined") {
+        try {
+          localStorage.setItem(STORAGE_KEY, theme);
+        } catch {}
+      }
       const nextResolved = resolveTheme(theme);
       applyThemeToDocument(nextResolved);
       set({ theme, resolvedTheme: nextResolved });

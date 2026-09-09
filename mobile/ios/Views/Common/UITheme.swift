@@ -125,3 +125,46 @@ struct PulsingDot: View {
         }
     }
 }
+
+// MARK: - Shimmer / Shining Text Indicator
+
+struct ShimmerText: View {
+    let text: String
+    var font: Font = .subheadline
+    var baseColor: Color = .secondary
+    var highlightColor: Color = .white
+
+    @State private var phase: CGFloat = -1.0
+
+    var body: some View {
+        Text(text)
+            .font(font)
+            .foregroundStyle(baseColor)
+            .overlay {
+                GeometryReader { geo in
+                    let width = geo.size.width
+                    LinearGradient(
+                        colors: [
+                            .clear,
+                            highlightColor.opacity(0.85),
+                            .clear
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: max(width * 0.8, 30))
+                    .offset(x: phase * (width + 40) - 20)
+                    .mask {
+                        Text(text)
+                            .font(font)
+                    }
+                }
+            }
+            .onAppear {
+                withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) {
+                    phase = 1.2
+                }
+            }
+    }
+}
+

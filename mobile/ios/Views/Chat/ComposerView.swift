@@ -8,9 +8,25 @@ struct ComposerView: View {
     let models: [ModelInfo]
     let isRunning: Bool
     let isSending: Bool
+    var hasWorkspace: Bool = false
     let onSend: () -> Void
     let onInterrupt: () -> Void
     let onPermissionChange: ((PermissionMode) -> Void)?
+    var onSearchFiles: ((String) async -> [FuzzyFileMatchItem])? = nil
+    var onReview: (() -> Void)? = nil
+    var onCompact: (() -> Void)? = nil
+    var onReset: (() -> Void)? = nil
+    var onScratch: (() -> Void)? = nil
+
+    @State private var showFileMenu = false
+    @State private var fileQuery = ""
+    @State private var fileResults: [FuzzyFileMatchItem] = []
+    @State private var isSearchingFiles = false
+    @State private var searchTask: Task<Void, Never>? = nil
+    @State private var atTokenRange: NSRange? = nil
+
+    @State private var showSlashMenu = false
+    @State private var slashFilter = ""
 
     static let fallbackModels: [ModelInfo] = [
         ModelInfo(
@@ -60,9 +76,15 @@ struct ComposerView: View {
         models: [ModelInfo] = [],
         isRunning: Bool,
         isSending: Bool,
+        hasWorkspace: Bool = false,
         onSend: @escaping () -> Void,
         onInterrupt: @escaping () -> Void,
-        onPermissionChange: ((PermissionMode) -> Void)? = nil
+        onPermissionChange: ((PermissionMode) -> Void)? = nil,
+        onSearchFiles: ((String) async -> [FuzzyFileMatchItem])? = nil,
+        onReview: (() -> Void)? = nil,
+        onCompact: (() -> Void)? = nil,
+        onReset: (() -> Void)? = nil,
+        onScratch: (() -> Void)? = nil
     ) {
         self._text = text
         self._selectedModel = selectedModel
@@ -71,13 +93,48 @@ struct ComposerView: View {
         self.models = models
         self.isRunning = isRunning
         self.isSending = isSending
+        self.hasWorkspace = hasWorkspace
         self.onSend = onSend
         self.onInterrupt = onInterrupt
         self.onPermissionChange = onPermissionChange
+        self.onSearchFiles = onSearchFiles
+        self.onReview = onReview
+        self.onCompact = onCompact
+        self.onReset = onReset
+        self.onScratch = onScratch
     }
 
     var body: some View {
         VStack(spacing: 8) {
+            // File search popover (@)
+            if showFileMenu {
+                FileSearchPopupView(
+                    files: fileResults,
+                    query: fileQuery,
+                    isLoading: isSearchingFiles,
+                    onSelect: handleSelectFile,
+                    onDismiss: {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            showFileMenu = false
+                        }
+                    }
+                )
+            }
+
+            // Slash command popover (/)
+            if showSlashMenu {
+                SlashCommandPopupView(
+                    commands: SlashCommandItem.availableCommands,
+                    filter: slashFilter,
+                    onSelect: handleSelectSlash,
+                    onDismiss: {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            showSlashMenu = false
+                        }
+                    }
+                )
+            }
+
             // Controls bar: Model & Reasoning effort selectors
             HStack(spacing: 8) {
                 // Unified Model & Reasoning Effort Combo
@@ -172,7 +229,7 @@ struct ComposerView: View {
 
             // Input bar
             HStack(alignment: .bottom, spacing: 10) {
-                TextField("Ask Codex anything...", text: $text, axis: .vertical)
+                TextField(isRunning ? "Add to queue..." : "Ask Codex anything... (@ file, / command)", text: $text, axis: .vertical)
                     .lineLimit(1...6)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -191,6 +248,9 @@ struct ComposerView: View {
                         if isSending {
                             ProgressView()
                                 .tint(.white)
+                        } else if isRunning {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 15, weight: .bold))
                         } else {
                             Image(systemName: "arrow.up")
                                 .font(.system(size: 16, weight: .bold))
@@ -200,12 +260,12 @@ struct ComposerView: View {
                     .background(
                         text.trimmingCharacters(in: .whitespaces).isEmpty
                         ? LinearGradient(colors: [Color.gray.opacity(0.25), Color.gray.opacity(0.35)], startPoint: .top, endPoint: .bottom)
-                        : Theme.primaryGradient
+                        : (isRunning ? Theme.purpleGradient : Theme.primaryGradient)
                     )
                     .foregroundStyle(.white)
                     .clipShape(Circle())
                     .shadow(
-                        color: text.trimmingCharacters(in: .whitespaces).isEmpty ? .clear : Color.blue.opacity(0.35),
+                        color: text.trimmingCharacters(in: .whitespaces).isEmpty ? .clear : (isRunning ? Color.purple.opacity(0.35) : Color.blue.opacity(0.35)),
                         radius: 8,
                         y: 3
                     )
@@ -225,6 +285,116 @@ struct ComposerView: View {
                 .foregroundStyle(Theme.subtleBorder),
             alignment: .top
         )
+        .onChange(of: text) { _, newText in
+            handleTextChange(newText)
+        }
+    }
+
+    private func handleTextChange(_ val: String) {
+        // 1. Check for / slash command on first line
+        let lines = val.components(separatedBy: "\n")
+        let firstLine = lines.first ?? ""
+        if firstLine.hasPrefix("/") && !firstLine.contains(" ") {
+            let filter = String(firstLine.dropFirst()).lowercased()
+            slashFilter = filter
+            withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                showSlashMenu = true
+                showFileMenu = false
+            }
+            return
+        } else {
+            if showSlashMenu {
+                withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                    showSlashMenu = false
+                }
+            }
+        }
+
+        // 2. Check for @ file mention
+        if hasWorkspace {
+            let pattern = #"(?:^|\s)@([^\s]*)$"#
+            if let regex = try? NSRegularExpression(pattern: pattern),
+               let match = regex.firstMatch(in: val, range: NSRange(location: 0, length: val.utf16.count)) {
+                let queryRange = match.range(at: 1)
+                if let swiftRange = Range(queryRange, in: val) {
+                    let query = String(val[swiftRange])
+                    fileQuery = query
+                    atTokenRange = match.range
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        showFileMenu = true
+                    }
+
+                    // Debounced search
+                    searchTask?.cancel()
+                    searchTask = Task {
+                        try? await Task.sleep(nanoseconds: 120_000_000)
+                        if Task.isCancelled { return }
+                        if let searcher = onSearchFiles {
+                            await MainActor.run { isSearchingFiles = true }
+                            let results = await searcher(query)
+                            if !Task.isCancelled {
+                                await MainActor.run {
+                                    fileResults = results
+                                    isSearchingFiles = false
+                                }
+                            }
+                        }
+                    }
+                    return
+                }
+            }
+        }
+
+        if showFileMenu {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+                showFileMenu = false
+            }
+        }
+    }
+
+    private func handleSelectFile(_ file: FuzzyFileMatchItem) {
+        Haptics.shared.selection()
+        let path = file.path
+        let formatted = path.contains(" ") ? "\"\(path)\"" : path
+
+        if let range = atTokenRange,
+           let swiftRange = Range(range, in: text) {
+            let matchedStr = String(text[swiftRange])
+            let prefix = matchedStr.hasPrefix(" ") ? " " : ""
+            text.replaceSubrange(swiftRange, with: "\(prefix)@\(formatted) ")
+        } else {
+            text += "@\(formatted) "
+        }
+
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+            showFileMenu = false
+            atTokenRange = nil
+            fileResults = []
+        }
+    }
+
+    private func handleSelectSlash(_ cmd: SlashCommandItem) {
+        Haptics.shared.selection()
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.8)) {
+            showSlashMenu = false
+        }
+
+        switch cmd.cmd {
+        case "/review":
+            text = ""
+            onReview?()
+        case "/compact":
+            text = ""
+            onCompact?()
+        case "/reset":
+            text = ""
+            onReset?()
+        case "/scratch":
+            text = ""
+            onScratch?()
+        default:
+            text = "\(cmd.cmd) "
+        }
     }
 
     private func permissionLabel(_ mode: PermissionMode) -> String {
@@ -579,5 +749,244 @@ private struct SteppedEffortSlider: View {
                     }
             )
         }
+    }
+}
+
+// MARK: - File Search Popup View (@)
+
+struct FileSearchPopupView: View {
+    let files: [FuzzyFileMatchItem]
+    let query: String
+    let isLoading: Bool
+    let onSelect: (FuzzyFileMatchItem) -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header bar
+            HStack(spacing: 6) {
+                Image(systemName: "folder.badge.gearshape")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+
+                Text(query.isEmpty ? "Workspace Files" : "Files matching @\(query)")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                }
+
+                Button {
+                    onDismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(uiColor: .tertiarySystemGroupedBackground))
+
+            Divider()
+
+            // List
+            if files.isEmpty {
+                VStack(spacing: 4) {
+                    if isLoading {
+                        Text("Searching workspace files...")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(query.isEmpty ? "Type to search files..." : "No files found for \"@\(query)\"")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(files) { file in
+                            let isDir = file.matchType == "directory"
+                            Button {
+                                onSelect(file)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: isDir ? "folder.fill" : "doc.text")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(isDir ? .orange : .indigo)
+                                        .frame(width: 16)
+
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text(file.fileName)
+                                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                            .foregroundStyle(.primary)
+                                            .lineLimit(1)
+
+                                        if file.path != file.fileName {
+                                            Text(file.path)
+                                                .font(.system(size: 9.5, design: .monospaced))
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                                .truncationMode(.middle)
+                                        }
+                                    }
+
+                                    Spacer()
+
+                                    Text(isDir ? "dir" : "file")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1.5)
+                                        .background(Color(uiColor: .tertiarySystemFill))
+                                        .clipShape(Capsule())
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider()
+                                .padding(.leading, 36)
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+            }
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Theme.subtleBorder, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.15), radius: 10, y: -4)
+        .padding(.horizontal, 14)
+        .transition(.asymmetric(
+            insertion: .opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.95))),
+            removal: .opacity.combined(with: .scale(scale: 0.95))
+        ))
+    }
+}
+
+// MARK: - Slash Command Popup View (/)
+
+struct SlashCommandPopupView: View {
+    let commands: [SlashCommandItem]
+    let filter: String
+    let onSelect: (SlashCommandItem) -> Void
+    let onDismiss: () -> Void
+
+    private var filteredCommands: [SlashCommandItem] {
+        if filter.isEmpty { return commands }
+        return commands.filter {
+            $0.cmd.lowercased().contains(filter) || $0.desc.lowercased().contains(filter)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header bar
+            HStack(spacing: 6) {
+                Image(systemName: "command")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+
+                Text(filter.isEmpty ? "Commands" : "Commands (/\(filter))")
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                Button {
+                    onDismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color(uiColor: .tertiarySystemGroupedBackground))
+
+            Divider()
+
+            if filteredCommands.isEmpty {
+                Text("No slash command matching \"/\(filter)\"")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 14)
+                    .frame(maxWidth: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredCommands) { cmd in
+                            Button {
+                                onSelect(cmd)
+                            } label: {
+                                HStack(spacing: 10) {
+                                    Image(systemName: cmd.iconSystemName)
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(Color.accentColor)
+                                        .frame(width: 20)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(cmd.cmd)
+                                            .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                                            .foregroundStyle(.primary)
+
+                                        Text(cmd.desc)
+                                            .font(.system(size: 10.5))
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+
+                                    Spacer()
+
+                                    Text(cmd.category)
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 5)
+                                        .padding(.vertical, 1.5)
+                                        .background(Color(uiColor: .tertiarySystemFill))
+                                        .clipShape(Capsule())
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 9)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+
+                            Divider()
+                                .padding(.leading, 42)
+                        }
+                    }
+                }
+                .frame(maxHeight: 220)
+            }
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Theme.subtleBorder, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.15), radius: 10, y: -4)
+        .padding(.horizontal, 14)
+        .transition(.asymmetric(
+            insertion: .opacity.combined(with: .move(edge: .bottom).combined(with: .scale(scale: 0.95))),
+            removal: .opacity.combined(with: .scale(scale: 0.95))
+        ))
     }
 }

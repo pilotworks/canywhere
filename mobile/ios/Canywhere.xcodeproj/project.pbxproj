@@ -35,6 +35,9 @@
 		E1A0000129FEA2D390354001 /* EndpointInfo.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A0000229FEA2D390354002 /* EndpointInfo.swift */; };
 		E1A0000529FEA2D390354005 /* HostConnectionsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A0000629FEA2D390354006 /* HostConnectionsSheet.swift */; };
 		E1A0000729FEA2D390354007 /* ConnectionDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A0000829FEA2D390354008 /* ConnectionDiagnostics.swift */; };
+		E1A0000929FEA2D390354009 /* MarkdownContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1A0000A29FEA2D39035400A /* MarkdownContentView.swift */; };
+		Q000000129FEA2D390354001 /* QueueModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q000000229FEA2D390354002 /* QueueModels.swift */; };
+		Q000000329FEA2D390354003 /* QueueTrayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q000000429FEA2D390354004 /* QueueTrayView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -67,6 +70,9 @@
 		E1A0000229FEA2D390354002 /* EndpointInfo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EndpointInfo.swift; sourceTree = "<group>"; };
 		E1A0000629FEA2D390354006 /* HostConnectionsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostConnectionsSheet.swift; sourceTree = "<group>"; };
 		E1A0000829FEA2D390354008 /* ConnectionDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConnectionDiagnostics.swift; sourceTree = "<group>"; };
+		E1A0000A29FEA2D39035400A /* MarkdownContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownContentView.swift; sourceTree = "<group>"; };
+		Q000000229FEA2D390354002 /* QueueModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueModels.swift; sourceTree = "<group>"; };
+		Q000000429FEA2D390354004 /* QueueTrayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QueueTrayView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +170,7 @@
 			isa = PBXGroup;
 			children = (
 				615D978A3D436E62F92F14F7 /* ModelExtensions.swift */,
+				Q000000229FEA2D390354002 /* QueueModels.swift */,
 				106306F0A080414E1DB7EE2B /* Generated */,
 			);
 			path = Models;
@@ -218,6 +225,8 @@
 				4DDED80E5EB27AB152014B8C /* MessageBubbleView.swift */,
 				D441C1F2B98EF0704A42796E /* ReasoningBlockView.swift */,
 				D453DEFA6CEF1232E726E16F /* ToolCallBlockView.swift */,
+				E1A0000A29FEA2D39035400A /* MarkdownContentView.swift */,
+				Q000000429FEA2D390354004 /* QueueTrayView.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -312,6 +321,9 @@
 				E1A0000129FEA2D390354001 /* EndpointInfo.swift in Sources */,
 				E1A0000529FEA2D390354005 /* HostConnectionsSheet.swift in Sources */,
 				E1A0000729FEA2D390354007 /* ConnectionDiagnostics.swift in Sources */,
+				E1A0000929FEA2D390354009 /* MarkdownContentView.swift in Sources */,
+				Q000000129FEA2D390354001 /* QueueModels.swift in Sources */,
+				Q000000329FEA2D390354003 /* QueueTrayView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

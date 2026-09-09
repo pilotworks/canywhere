@@ -6,6 +6,15 @@ struct ReasoningBlockView: View {
 
     @State private var isExpanded: Bool
     @State private var isCopied: Bool = false
+    @State private var contentHeight: CGFloat = 0
+    private let maxHeight: CGFloat = 260
+
+    private struct ContentHeightPreferenceKey: PreferenceKey {
+        static let defaultValue: CGFloat = 0
+        static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+            value = max(value, nextValue())
+        }
+    }
 
     init(content: String, isCompleted: Bool) {
         self.content = content
@@ -120,24 +129,34 @@ struct ReasoningBlockView: View {
             }
 
             if isExpanded {
-                HStack(alignment: .top, spacing: 8) {
+                ScrollView(.vertical, showsIndicators: contentHeight > maxHeight) {
+                    MarkdownContentView(
+                        content: content,
+                        isStreaming: !isCompleted,
+                        isReasoning: true
+                    )
+                    .padding(.vertical, 4)
+                    .padding(.trailing, 4)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(
+                                key: ContentHeightPreferenceKey.self,
+                                value: geo.size.height
+                            )
+                        }
+                    )
+                }
+                .padding(.leading, 12)
+                .overlay(alignment: .leading) {
                     Rectangle()
                         .fill(Color(uiColor: .separator).opacity(0.6))
                         .frame(width: 2)
-                        .padding(.leading, 8)
                         .padding(.vertical, 2)
-
-                    ScrollView(.vertical, showsIndicators: true) {
-                        Text(content)
-                            .font(.system(size: 11, design: .monospaced))
-                            .lineSpacing(2)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                            .padding(.vertical, 4)
-                            .padding(.trailing, 8)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 240)
+                }
+                .frame(height: contentHeight > 0 ? min(contentHeight, maxHeight) : nil)
+                .scrollDisabled(contentHeight <= maxHeight)
+                .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
+                    contentHeight = height
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }

@@ -9,6 +9,8 @@ import { ToolCallBlock } from "./tool-call-block.js";
 import {
   ToolCallGroup,
   CommandExecItem,
+  FileDiffItem,
+  ToolActionBlock,
 } from "./tool-call-group.js";
 import { WorkedForBlock } from "./worked-for-block.js";
 
@@ -16,14 +18,12 @@ export type RenderableBlockGroup =
   | { type: "single"; block: MessageBlock }
   | {
       type: "tool_group";
-      blocks: Array<Extract<MessageBlock, { type: "tool_call" | "command_exec" }>>;
+      blocks: ToolActionBlock[];
     };
 
 export function groupMessageBlocks(blocks: MessageBlock[]): RenderableBlockGroup[] {
   const result: RenderableBlockGroup[] = [];
-  let currentToolGroup: Array<
-    Extract<MessageBlock, { type: "tool_call" | "command_exec" }>
-  > = [];
+  let currentToolGroup: ToolActionBlock[] = [];
 
   for (const block of blocks) {
     if (block.type === "tool_call" || block.type === "command_exec") {
@@ -82,31 +82,8 @@ export const RenderBlock: React.FC<{ block: MessageBlock }> = ({ block }) => {
     case "command_exec":
       return <CommandExecItem block={block} />;
 
-    case "file_diff": {
-      const isApplied = block.status === "applied";
-      const isRejected = block.status === "rejected";
-
-      let statusStyle = "text-sky-400 border-sky-500/30 bg-sky-500/10";
-      if (isApplied) statusStyle = "text-emerald-400 border-emerald-500/30 bg-emerald-500/10";
-      if (isRejected) statusStyle = "text-rose-400 border-rose-500/30 bg-rose-500/10";
-
-      return (
-        <div className="my-2.5 rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] font-mono text-xs overflow-hidden shadow-xs">
-          <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--secondary)]/60 border-b border-[var(--code-border)] text-[var(--muted-foreground)] select-none">
-            <div className="flex items-center gap-2 truncate pr-2">
-              <FileIcon fileName={block.path} className="w-3.5 h-3.5 shrink-0" />
-              <span className="text-[11px] font-semibold text-[var(--foreground)] truncate select-text">
-                {block.path}
-              </span>
-            </div>
-            <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${statusStyle}`}>
-              {block.status}
-            </span>
-          </div>
-          <DiffViewer patch={block.patch} />
-        </div>
-      );
-    }
+    case "file_diff":
+      return <FileDiffItem block={block} />;
 
     default:
       return null;
