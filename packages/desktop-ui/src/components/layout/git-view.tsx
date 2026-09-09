@@ -479,15 +479,15 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
 
                       {/* Hover action (unstage) + Permanent status indicator on the right */}
                       <div className="flex items-center gap-1 shrink-0">
-                        {/* Hover action: unstage */}
+                        {/* Hover action: unstage (takes 0 space when hidden) */}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleUnstage([file.path]);
                           }}
                           disabled={isBusy}
-                          className={`p-0.5 rounded cursor-pointer transition-opacity hover:text-[var(--foreground)] ${
-                            isBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                          className={`p-0.5 rounded cursor-pointer hover:text-[var(--foreground)] ${
+                            isBusy ? "flex" : "hidden group-hover:flex"
                           }`}
                           title="Unstage change"
                         >
@@ -577,9 +577,9 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
 
                       {/* Hover actions (discard & stage) + Permanent status indicator on the right */}
                       <div className="flex items-center gap-1 shrink-0">
-                        {/* Hover actions: discard & stage */}
-                        <div className={`flex items-center gap-0.5 transition-opacity ${
-                          isBusy ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                        {/* Hover actions: discard & stage (takes 0 space when hidden) */}
+                        <div className={`items-center gap-0.5 ${
+                          isBusy ? "flex" : "hidden group-hover:flex"
                         }`}>
                           <button
                             onClick={(e) => {
