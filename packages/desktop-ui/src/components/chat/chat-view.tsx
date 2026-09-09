@@ -22,10 +22,13 @@ import {
   Loader2,
   RotateCcw,
   Zap,
+  Shield,
+  Eye,
+  Flame,
 } from "lucide-react";
 import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore, useUiStore, EMPTY_MESSAGES } from "../../store/index.js";
 import { client } from "../../network/client.js";
-import { Message } from "../../types/index.js";
+import { Message, PermissionMode } from "../../types/index.js";
 import { Button } from "../ui/button.js";
 import { Badge } from "../ui/badge.js";
 import {
@@ -70,6 +73,36 @@ const QUICK_STARTERS = [
     icon: <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />,
   },
 ];
+
+const PERMISSION_CONFIG: Record<
+  PermissionMode,
+  { label: string; shortLabel: string; desc: string; icon: React.ReactNode; colorClass: string; badgeBorder: string }
+> = {
+  onRequest: {
+    label: "Ask for Approval",
+    shortLabel: "Safe",
+    desc: "Requires explicit user confirmation for shell commands and write actions",
+    icon: <Shield className="w-3.5 h-3.5 text-emerald-400" />,
+    colorClass: "text-emerald-400",
+    badgeBorder: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10",
+  },
+  readOnly: {
+    label: "Plan Only (Read-Only)",
+    shortLabel: "Plan Only",
+    desc: "Disallows modifying files or executing state-altering shell commands",
+    icon: <Eye className="w-3.5 h-3.5 text-sky-400" />,
+    colorClass: "text-sky-400",
+    badgeBorder: "border-sky-500/30 text-sky-400 bg-sky-500/10",
+  },
+  auto: {
+    label: "Full Auto (YOLO)",
+    shortLabel: "Full Auto",
+    desc: "Autonomously executes all commands and applies edits without prompt",
+    icon: <Flame className="w-3.5 h-3.5 text-amber-400" />,
+    colorClass: "text-amber-400",
+    badgeBorder: "border-amber-500/30 text-amber-400 bg-amber-500/10",
+  },
+};
 
 export const ChatView: React.FC = () => {
   const activeChatId = useChatStore((s) => s.activeChatId);
@@ -314,6 +347,41 @@ export const ChatView: React.FC = () => {
                     {selectedEffort === eff && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                   </DropdownMenuItem>
                 ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Permission Mode Selector Dropdown */}
+          {activeChat && (
+            <DropdownMenu>
+              <DropdownMenuTrigger className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--secondary)] border border-[var(--border)] font-mono text-[11px] text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors cursor-pointer select-none">
+                {PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.icon}
+                <span>{PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.shortLabel || "Safe"}</span>
+                <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
+                  const cfg = PERMISSION_CONFIG[mode];
+                  const isSelected = (activeChat.permissionMode || "onRequest") === mode;
+                  return (
+                    <DropdownMenuItem
+                      key={mode}
+                      onClick={() => client.setChatPermission(activeChat.id, mode)}
+                      className="flex items-start justify-between font-mono text-xs cursor-pointer py-1.5"
+                    >
+                      <div className="flex items-start gap-2 truncate pr-2">
+                        <div className="mt-0.5">{cfg.icon}</div>
+                        <div className="flex flex-col">
+                          <span className={`font-medium ${cfg.colorClass}`}>{cfg.label}</span>
+                          <span className="text-[10px] text-[var(--muted-foreground)] line-clamp-2">
+                            {cfg.desc}
+                          </span>
+                        </div>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />}
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -577,6 +645,33 @@ export const ChatView: React.FC = () => {
                 {activeModelInfo?.displayName || selectedModel}
                 {selectedEffort && ` · ${selectedEffort}`}
               </span>
+              {activeChat && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger className={`font-mono text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 cursor-pointer transition-colors hover:opacity-80 select-none ${PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.badgeBorder}`}>
+                    {PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.icon}
+                    <span>{PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.shortLabel}</span>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-52">
+                    {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
+                      const cfg = PERMISSION_CONFIG[mode];
+                      const isSelected = (activeChat.permissionMode || "onRequest") === mode;
+                      return (
+                        <DropdownMenuItem
+                          key={mode}
+                          onClick={() => client.setChatPermission(activeChat.id, mode)}
+                          className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                        >
+                          <div className="flex items-center gap-2">
+                            {cfg.icon}
+                            <span className={cfg.colorClass}>{cfg.shortLabel}</span>
+                          </div>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500" />}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
               <span className="font-mono text-[10px] text-[var(--muted-foreground)] opacity-75">
                 ⚡ Context: ~32k tokens
               </span>

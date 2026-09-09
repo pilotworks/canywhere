@@ -20,6 +20,7 @@ export * from "./generated/RpcNotificationEnvelope.js";
 export * from "./generated/RpcRequestEnvelope.js";
 export * from "./generated/RpcResponseEnvelope.js";
 export * from "./generated/ModelInfo.js";
+export * from "./generated/PermissionMode.js";
 export * from "./generated/Provider.js";
 export * from "./generated/ToolCallStatus.js";
 export * from "./generated/Workspace.js";

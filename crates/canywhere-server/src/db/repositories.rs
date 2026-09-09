@@ -144,13 +144,13 @@ impl RepositoryManager {
         let mut list = Vec::new();
 
         if let Some(ws_id) = workspace_id {
-            let mut stmt = conn.prepare("SELECT id, workspace_id, title, provider_id, kind, status, thread_id, created_at, updated_at FROM chats WHERE workspace_id = ?1 ORDER BY updated_at DESC")?;
+            let mut stmt = conn.prepare("SELECT id, workspace_id, title, provider_id, kind, status, thread_id, created_at, updated_at, permission_mode FROM chats WHERE workspace_id = ?1 ORDER BY updated_at DESC")?;
             let rows = stmt.query_map(params![ws_id], map_chat_row)?;
             for r in rows {
                 list.push(r?);
             }
         } else {
-            let mut stmt = conn.prepare("SELECT id, workspace_id, title, provider_id, kind, status, thread_id, created_at, updated_at FROM chats ORDER BY updated_at DESC")?;
+            let mut stmt = conn.prepare("SELECT id, workspace_id, title, provider_id, kind, status, thread_id, created_at, updated_at, permission_mode FROM chats ORDER BY updated_at DESC")?;
             let rows = stmt.query_map([], map_chat_row)?;
             for r in rows {
                 list.push(r?);
@@ -162,7 +162,7 @@ impl RepositoryManager {
 
     pub fn get_chat(&self, id: &str) -> Result<Option<Chat>> {
         let conn = self.db.conn();
-        let mut stmt = conn.prepare("SELECT id, workspace_id, title, provider_id, kind, status, thread_id, created_at, updated_at FROM chats WHERE id = ?1")?;
+        let mut stmt = conn.prepare("SELECT id, workspace_id, title, provider_id, kind, status, thread_id, created_at, updated_at, permission_mode FROM chats WHERE id = ?1")?;
         let mut rows = stmt.query_map(params![id], map_chat_row)?;
         if let Some(res) = rows.next() {
             Ok(Some(res?))
@@ -180,11 +180,17 @@ impl RepositoryManager {
             ChatKind::Standalone => "standalone",
         };
         let title = input.title.unwrap_or_else(|| "New Chat".to_string());
+        let perm_mode = input.permission_mode.unwrap_or(PermissionMode::OnRequest);
+        let perm_str = match perm_mode {
+            PermissionMode::ReadOnly => "readOnly",
+            PermissionMode::Auto => "auto",
+            PermissionMode::OnRequest => "onRequest",
+        };
 
         conn.execute(
-            "INSERT INTO chats (id, workspace_id, title, provider_id, kind, status, thread_id, scratch_dir, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'idle', NULL, ?6, ?7, ?8)",
-            params![id, input.workspace_id, title, input.provider_id, kind_str, scratch_dir, now, now],
+            "INSERT INTO chats (id, workspace_id, title, provider_id, kind, status, permission_mode, thread_id, scratch_dir, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'idle', ?6, NULL, ?7, ?8, ?9)",
+            params![id, input.workspace_id, title, input.provider_id, kind_str, perm_str, scratch_dir, now, now],
         )?;
 
         Ok(Chat {
@@ -195,6 +201,7 @@ impl RepositoryManager {
             title,
             external_thread_id: None,
             status: ChatStatus::Idle,
+            permission_mode: perm_mode,
             created_at: now,
             updated_at: now,
         })
@@ -235,6 +242,21 @@ impl RepositoryManager {
         conn.execute(
             "UPDATE chats SET title = ?1, updated_at = ?2 WHERE id = ?3",
             params![title, now, id],
+        )?;
+        Ok(())
+    }
+
+    pub fn update_chat_permission_mode(&self, id: &str, mode: PermissionMode) -> Result<()> {
+        let conn = self.db.conn();
+        let now = chrono_now();
+        let mode_str = match mode {
+            PermissionMode::ReadOnly => "readOnly",
+            PermissionMode::Auto => "auto",
+            PermissionMode::OnRequest => "onRequest",
+        };
+        conn.execute(
+            "UPDATE chats SET permission_mode = ?1, updated_at = ?2 WHERE id = ?3",
+            params![mode_str, now, id],
         )?;
         Ok(())
     }
@@ -495,6 +517,13 @@ fn map_chat_row(r: &rusqlite::Row) -> rusqlite::Result<Chat> {
         _ => ChatStatus::Idle,
     };
 
+    let perm_str: String = r.get(9).unwrap_or_else(|_| "onRequest".to_string());
+    let permission_mode = match perm_str.as_str() {
+        "readOnly" => PermissionMode::ReadOnly,
+        "auto" => PermissionMode::Auto,
+        _ => PermissionMode::OnRequest,
+    };
+
     Ok(Chat {
         id: r.get(0)?,
         workspace_id: r.get(1)?,
@@ -502,6 +531,7 @@ fn map_chat_row(r: &rusqlite::Row) -> rusqlite::Result<Chat> {
         provider_id: r.get(3)?,
         kind,
         status,
+        permission_mode,
         external_thread_id: r.get(6)?,
         created_at: r.get(7)?,
         updated_at: r.get(8)?,

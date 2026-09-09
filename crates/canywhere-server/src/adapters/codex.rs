@@ -380,13 +380,16 @@ impl CodexAdapter {
         prompt: &str,
         model: Option<&str>,
         effort: Option<&str>,
+        permission_mode: Option<PermissionMode>,
+        cwd: Option<&str>,
     ) -> Result<String> {
         tracing::info!(
-            "[CodexAdapter] submit_turn starting: chat={}, thread={}, model={:?}, effort={:?}",
+            "[CodexAdapter] submit_turn starting: chat={}, thread={}, model={:?}, effort={:?}, permission={:?}",
             chat_id,
             thread_id,
             model,
-            effort
+            effort,
+            permission_mode
         );
 
         let mut turn_params = serde_json::json!({
@@ -406,6 +409,35 @@ impl CodexAdapter {
             let eff_trimmed = eff.trim();
             if !eff_trimmed.is_empty() && eff_trimmed != "default" {
                 turn_params["effort"] = serde_json::Value::String(eff_trimmed.to_string());
+            }
+        }
+
+        match permission_mode.unwrap_or(PermissionMode::OnRequest) {
+            PermissionMode::Auto => {
+                turn_params["approvalPolicy"] = serde_json::json!("never");
+                if let Some(dir) = cwd {
+                    turn_params["sandboxPolicy"] = serde_json::json!({
+                        "type": "workspaceWrite",
+                        "writableRoots": [dir],
+                        "networkAccess": true
+                    });
+                }
+            }
+            PermissionMode::ReadOnly => {
+                turn_params["approvalPolicy"] = serde_json::json!("on-request");
+                turn_params["sandboxPolicy"] = serde_json::json!({
+                    "type": "readOnly"
+                });
+            }
+            PermissionMode::OnRequest => {
+                turn_params["approvalPolicy"] = serde_json::json!("on-request");
+                if let Some(dir) = cwd {
+                    turn_params["sandboxPolicy"] = serde_json::json!({
+                        "type": "workspaceWrite",
+                        "writableRoots": [dir],
+                        "networkAccess": true
+                    });
+                }
             }
         }
 

@@ -297,6 +297,7 @@ struct Chat: Codable, Sendable {
     let externalThreadID: String?
     let id: String
     let kind: ChatKind
+    let permissionMode: PermissionMode?
     let providerID: String
     let status: ChatStatus
     let title: String
@@ -306,7 +307,7 @@ struct Chat: Codable, Sendable {
     enum CodingKeys: String, CodingKey {
         case createdAt
         case externalThreadID = "externalThreadId"
-        case id, kind
+        case id, kind, permissionMode
         case providerID = "providerId"
         case status, title, updatedAt
         case workspaceID = "workspaceId"
@@ -336,6 +337,7 @@ extension Chat {
         externalThreadID: String?? = nil,
         id: String? = nil,
         kind: ChatKind? = nil,
+        permissionMode: PermissionMode?? = nil,
         providerID: String? = nil,
         status: ChatStatus? = nil,
         title: String? = nil,
@@ -347,6 +349,7 @@ extension Chat {
             externalThreadID: externalThreadID ?? self.externalThreadID,
             id: id ?? self.id,
             kind: kind ?? self.kind,
+            permissionMode: permissionMode ?? self.permissionMode,
             providerID: providerID ?? self.providerID,
             status: status ?? self.status,
             title: title ?? self.title,
@@ -367,6 +370,12 @@ extension Chat {
 enum ChatKind: String, Codable, Sendable {
     case standalone = "standalone"
     case workspace = "workspace"
+}
+
+enum PermissionMode: String, Codable, Sendable {
+    case auto = "auto"
+    case onRequest = "onRequest"
+    case readOnly = "readOnly"
 }
 
 enum ChatStatus: String, Codable, Sendable {

@@ -4,11 +4,13 @@ struct ComposerView: View {
     @Binding var text: String
     @Binding var selectedModel: String?
     @Binding var effort: String
+    @Binding var permissionMode: PermissionMode
     let models: [ModelInfo]
     let isRunning: Bool
     let isSending: Bool
     let onSend: () -> Void
     let onInterrupt: () -> Void
+    let onPermissionChange: ((PermissionMode) -> Void)?
 
     static let fallbackModels: [ModelInfo] = [
         ModelInfo(
@@ -54,20 +56,24 @@ struct ComposerView: View {
         text: Binding<String>,
         selectedModel: Binding<String?>,
         effort: Binding<String>,
+        permissionMode: Binding<PermissionMode>,
         models: [ModelInfo] = [],
         isRunning: Bool,
         isSending: Bool,
         onSend: @escaping () -> Void,
-        onInterrupt: @escaping () -> Void
+        onInterrupt: @escaping () -> Void,
+        onPermissionChange: ((PermissionMode) -> Void)? = nil
     ) {
         self._text = text
         self._selectedModel = selectedModel
         self._effort = effort
+        self._permissionMode = permissionMode
         self.models = models
         self.isRunning = isRunning
         self.isSending = isSending
         self.onSend = onSend
         self.onInterrupt = onInterrupt
+        self.onPermissionChange = onPermissionChange
     }
 
     var body: some View {
@@ -146,6 +152,65 @@ struct ComposerView: View {
                         .overlay(Capsule().stroke(Theme.subtleBorder, lineWidth: 1))
                     }
                     .foregroundStyle(.primary)
+                }
+
+                // Permission Mode Selector Menu
+                Menu {
+                    Button {
+                        Haptics.shared.selection()
+                        permissionMode = .onRequest
+                        onPermissionChange?(.onRequest)
+                    } label: {
+                        HStack {
+                            Label("Ask for Approval", systemImage: "shield.checkered")
+                            if permissionMode == .onRequest {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+
+                    Button {
+                        Haptics.shared.selection()
+                        permissionMode = .readOnly
+                        onPermissionChange?(.readOnly)
+                    } label: {
+                        HStack {
+                            Label("Plan Only (Read-Only)", systemImage: "eye")
+                            if permissionMode == .readOnly {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+
+                    Button {
+                        Haptics.shared.selection()
+                        permissionMode = .auto
+                        onPermissionChange?(.auto)
+                    } label: {
+                        HStack {
+                            Label("Full Auto (YOLO)", systemImage: "flame.fill")
+                            if permissionMode == .auto {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: permissionIconName(permissionMode))
+                            .font(.system(size: 11))
+                            .foregroundStyle(permissionColor(permissionMode))
+                        Text(permissionLabel(permissionMode))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(permissionColor(permissionMode))
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 5)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground))
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(permissionColor(permissionMode).opacity(0.35), lineWidth: 1))
                 }
 
                 Spacer()
@@ -227,5 +292,38 @@ struct ComposerView: View {
                 .foregroundStyle(Theme.subtleBorder),
             alignment: .top
         )
+    }
+
+    private func permissionLabel(_ mode: PermissionMode) -> String {
+        switch mode {
+        case .onRequest:
+            return "Safe"
+        case .readOnly:
+            return "Plan Only"
+        case .auto:
+            return "Full Auto"
+        }
+    }
+
+    private func permissionIconName(_ mode: PermissionMode) -> String {
+        switch mode {
+        case .onRequest:
+            return "shield.checkered"
+        case .readOnly:
+            return "eye"
+        case .auto:
+            return "flame.fill"
+        }
+    }
+
+    private func permissionColor(_ mode: PermissionMode) -> Color {
+        switch mode {
+        case .onRequest:
+            return .green
+        case .readOnly:
+            return .blue
+        case .auto:
+            return .orange
+        }
     }
 }

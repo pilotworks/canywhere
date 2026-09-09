@@ -194,6 +194,8 @@ async fn test_real_codex_thread_start() {
             "Please reply with just the word 'HELLO'",
             None,
             None,
+            None,
+            Some(cwd),
         )
         .await
     {
@@ -341,6 +343,7 @@ async fn test_turn_blocks_persistence() {
                 provider_id: "codex".to_string(),
                 title: Some("Test Persistence".to_string()),
                 initial_prompt: None,
+                permission_mode: None,
             },
             None,
         )

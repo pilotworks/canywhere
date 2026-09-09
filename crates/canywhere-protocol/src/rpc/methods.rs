@@ -115,12 +115,27 @@ pub struct ChatDeleteResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct ChatSetPermissionParams {
+    pub chat_id: String,
+    pub permission_mode: crate::models::PermissionMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatSetPermissionResult {
+    pub success: bool,
+    pub permission_mode: crate::models::PermissionMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct TurnSendParams {
     pub chat_id: String,
     pub content: String,
     pub client_message_id: Option<String>,
     pub model: Option<String>,
     pub reasoning_effort: Option<String>,
+    pub permission_mode: Option<crate::models::PermissionMode>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]

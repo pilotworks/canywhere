@@ -23,6 +23,8 @@ final class ChatViewModel {
     var selectedModel: String?
     var selectedEffort: String = "medium"
 
+    var permissionMode: PermissionMode = .onRequest
+
     // Scoped active streaming state to prevent full-list re-renders
     var streamingMessageId: String? = nil
     var streamingText: String = ""
@@ -44,6 +46,7 @@ final class ChatViewModel {
                 params: ChatGetParams(chatId: chatId)
             )
             self.chat = result.chat
+            self.permissionMode = result.chat.permissionMode ?? .onRequest
             self.messages = result.messages
             let hasStreamingMsg = result.messages.contains(where: { $0.streaming && $0.role == .agent })
             self.isRunning = (result.chat.status == .running || result.chat.status == .awaitingApproval || hasStreamingMsg)
@@ -51,6 +54,31 @@ final class ChatViewModel {
             self.streamingText = ""
         } catch {
             print("⚠️ [ChatViewModel] Failed to get chat: \(error)")
+        }
+    }
+
+    func setPermissionMode(_ mode: PermissionMode) async {
+        self.permissionMode = mode
+        if let currentChat = self.chat {
+            self.chat = currentChat.with(permissionMode: .some(mode))
+        }
+
+        struct SetPermissionParams: Encodable, Sendable {
+            let chatId: String
+            let permissionMode: PermissionMode
+        }
+        struct SetPermissionResult: Decodable, Sendable {
+            let success: Bool
+            let permissionMode: PermissionMode
+        }
+
+        do {
+            let _: SetPermissionResult = try await connectionManager.sendRequest(
+                method: "chat.setPermission",
+                params: SetPermissionParams(chatId: chatId, permissionMode: mode)
+            )
+        } catch {
+            print("⚠️ [ChatViewModel] Failed to set permission mode: \(error)")
         }
     }
 
@@ -67,6 +95,7 @@ final class ChatViewModel {
                 let clientMessageId: String?
                 let model: String?
                 let reasoningEffort: String?
+                let permissionMode: PermissionMode?
             }
 
             struct TurnSendResponseResult: Decodable, Sendable {
@@ -79,7 +108,8 @@ final class ChatViewModel {
                 content: content,
                 clientMessageId: nil,
                 model: selectedModel,
-                reasoningEffort: selectedEffort
+                reasoningEffort: selectedEffort,
+                permissionMode: permissionMode
             )
 
             let _: TurnSendResponseResult = try await connectionManager.sendRequest(

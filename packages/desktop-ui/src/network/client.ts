@@ -227,7 +227,16 @@ export class CanywhereClient {
     return res.chat;
   }
 
-  async sendTurn(chatId: string, content: string, model?: string): Promise<void> {
+  async setChatPermission(chatId: string, permissionMode: import("../types/index.js").PermissionMode): Promise<void> {
+    useChatStore.getState().updateChat(chatId, { permissionMode });
+    try {
+      await this.call("chat.setPermission", { chatId, permissionMode });
+    } catch (err) {
+      console.error("[CanywhereClient] Failed to update chat permission mode", err);
+    }
+  }
+
+  async sendTurn(chatId: string, content: string, model?: string, permissionMode?: import("../types/index.js").PermissionMode): Promise<void> {
     try {
       const activeModel = model || useModelStore.getState().selectedModel || null;
       const activeEffort = useModelStore.getState().selectedEffort || null;
@@ -236,6 +245,7 @@ export class CanywhereClient {
         content,
         model: activeModel,
         reasoningEffort: activeEffort,
+        permissionMode,
       });
 
       useChatStore.getState().setActiveTurn(chatId, res.turnId);

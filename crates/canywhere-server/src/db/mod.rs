@@ -61,6 +61,7 @@ impl Database {
                 provider_id TEXT NOT NULL,
                 kind TEXT NOT NULL,
                 status TEXT NOT NULL,
+                permission_mode TEXT NOT NULL DEFAULT 'onRequest',
                 thread_id TEXT,
                 scratch_dir TEXT,
                 created_at INTEGER NOT NULL,
@@ -131,6 +132,13 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_dev_key ON devices(public_key);
             ",
         )?;
+
+        // Safe idempotent column addition for existing databases
+        let _ = conn.execute(
+            "ALTER TABLE chats ADD COLUMN permission_mode TEXT NOT NULL DEFAULT 'onRequest'",
+            [],
+        );
+
         Ok(())
     }
 

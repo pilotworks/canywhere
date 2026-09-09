@@ -52,6 +52,7 @@ struct ChatDetailView: View {
                     text: $inputText,
                     selectedModel: $viewModel.selectedModel,
                     effort: $viewModel.selectedEffort,
+                    permissionMode: $viewModel.permissionMode,
                     models: AppSessionState.shared.models,
                     isRunning: viewModel.isRunning,
                     isSending: viewModel.isSending,
@@ -65,6 +66,11 @@ struct ChatDetailView: View {
                     onInterrupt: {
                         Task {
                             await viewModel.interrupt()
+                        }
+                    },
+                    onPermissionChange: { mode in
+                        Task {
+                            await viewModel.setPermissionMode(mode)
                         }
                     }
                 )
@@ -134,17 +140,70 @@ struct ChatDetailView: View {
             }
 
             ToolbarItem(placement: .topBarTrailing) {
-                if viewModel.isRunning {
-                    HStack(spacing: 4) {
-                        PulsingDot(color: .orange)
-                        Text("Running")
-                            .font(.caption2.bold())
-                            .foregroundStyle(.orange)
+                HStack(spacing: 8) {
+                    if viewModel.isRunning {
+                        HStack(spacing: 4) {
+                            PulsingDot(color: .orange)
+                            Text("Running")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.orange)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.orange.opacity(0.12))
+                        .clipShape(Capsule())
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.orange.opacity(0.12))
-                    .clipShape(Capsule())
+
+                    Menu {
+                        Button {
+                            Haptics.shared.selection()
+                            Task {
+                                await viewModel.setPermissionMode(.onRequest)
+                            }
+                        } label: {
+                            HStack {
+                                Label("Ask for Approval", systemImage: "shield.checkered")
+                                if viewModel.permissionMode == .onRequest {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+
+                        Button {
+                            Haptics.shared.selection()
+                            Task {
+                                await viewModel.setPermissionMode(.readOnly)
+                            }
+                        } label: {
+                            HStack {
+                                Label("Plan Only (Read-Only)", systemImage: "eye")
+                                if viewModel.permissionMode == .readOnly {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+
+                        Button {
+                            Haptics.shared.selection()
+                            Task {
+                                await viewModel.setPermissionMode(.auto)
+                            }
+                        } label: {
+                            HStack {
+                                Label("Full Auto (YOLO)", systemImage: "flame.fill")
+                                if viewModel.permissionMode == .auto {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    } label: {
+                        Image(systemName: permissionIconName(viewModel.permissionMode))
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(permissionColor(viewModel.permissionMode))
+                            .frame(width: 28, height: 28)
+                            .background(permissionColor(viewModel.permissionMode).opacity(0.12))
+                            .clipShape(Circle())
+                    }
                 }
             }
         }
@@ -222,6 +281,28 @@ struct ChatDetailView: View {
             .clipShape(Capsule())
             .overlay(Capsule().stroke(Theme.subtleBorder, lineWidth: 1))
             .foregroundStyle(.primary)
+        }
+    }
+
+    private func permissionIconName(_ mode: PermissionMode) -> String {
+        switch mode {
+        case .onRequest:
+            return "shield.checkered"
+        case .readOnly:
+            return "eye"
+        case .auto:
+            return "flame.fill"
+        }
+    }
+
+    private func permissionColor(_ mode: PermissionMode) -> Color {
+        switch mode {
+        case .onRequest:
+            return .green
+        case .readOnly:
+            return .blue
+        case .auto:
+            return .orange
         }
     }
 }

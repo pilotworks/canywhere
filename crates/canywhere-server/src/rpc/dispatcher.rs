@@ -283,6 +283,16 @@ end try"#;
                 Ok(serde_json::to_value(ChatDeleteResult { success })?)
             }
 
+            "chat.setPermission" => {
+                let params: ChatSetPermissionParams = serde_json::from_value(p)?;
+                self.repo
+                    .update_chat_permission_mode(&params.chat_id, params.permission_mode)?;
+                Ok(serde_json::to_value(ChatSetPermissionResult {
+                    success: true,
+                    permission_mode: params.permission_mode,
+                })?)
+            }
+
             "turn.send" => {
                 let params: TurnSendParams = serde_json::from_value(p)?;
                 let mut chat = match self.repo.get_chat(&params.chat_id)? {
@@ -388,6 +398,12 @@ end try"#;
                     }
                 }
 
+                let resolved_perm_mode = params.permission_mode.unwrap_or(chat.permission_mode);
+                if params.permission_mode.is_some() && params.permission_mode != Some(chat.permission_mode) {
+                    let _ = self.repo.update_chat_permission_mode(&chat.id, resolved_perm_mode);
+                    chat.permission_mode = resolved_perm_mode;
+                }
+
                 let turn_id = self
                     .adapter
                     .submit_turn(
@@ -397,6 +413,8 @@ end try"#;
                         &params.content,
                         params.model.as_deref(),
                         params.reasoning_effort.as_deref(),
+                        Some(resolved_perm_mode),
+                        if cwd.is_empty() { None } else { Some(&cwd) },
                     )
                     .await?;
 

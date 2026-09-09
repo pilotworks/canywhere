@@ -16,6 +16,14 @@
         "error"
       ],
       "type": "string"
+    },
+    "PermissionMode": {
+      "enum": [
+        "onRequest",
+        "readOnly",
+        "auto"
+      ],
+      "type": "string"
     }
   },
   "properties": {
@@ -34,6 +42,14 @@
     },
     "kind": {
       "$ref": "#/definitions/ChatKind"
+    },
+    "permissionMode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/PermissionMode"
+        }
+      ],
+      "default": "onRequest"
     },
     "providerId": {
       "type": "string"
