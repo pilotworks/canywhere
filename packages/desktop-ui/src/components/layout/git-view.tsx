@@ -21,6 +21,13 @@ import { useUiStore, useWorkspaceStore } from "../../store/index.js";
 import { GitStatusResult, GitFileChange, GitCommitItem } from "../../types/index.js";
 import { FileIcon } from "../ui/file-icon.js";
 import { Button } from "../ui/button.js";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "../ui/dropdown-menu.js";
 
 interface GitViewProps {
   workspaceId?: string | null;
@@ -301,85 +308,93 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
     <div className="flex-1 flex flex-col overflow-hidden select-none font-mono text-xs">
       {/* Top Toolbar: Branch + Controls */}
       <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--secondary)]/40 flex items-center justify-between gap-2 shrink-0">
-        {/* Branch selector button */}
-        <div className="relative">
-          <button
-            onClick={() => setShowBranchDropdown(!showBranchDropdown)}
-            className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--secondary)] text-[var(--foreground)] font-medium text-[11px] cursor-pointer transition-colors border border-transparent hover:border-[var(--border)]"
-            title="Switch branch"
-          >
-            <GitBranch className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0" />
-            <span className="truncate max-w-[120px]">{status?.branch || "main"}</span>
-            {Boolean(status?.ahead || status?.behind) && (
-              <span className="text-[9px] px-1 py-0.2 rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--muted-foreground)] font-mono font-bold">
-                {status?.ahead ? `↑${status.ahead}` : ""}
-                {status?.behind ? `↓${status.behind}` : ""}
-              </span>
-            )}
-            <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
-          </button>
-
-          {/* Branch dropdown popup */}
-          {showBranchDropdown && (
-            <div className="absolute top-full left-0 mt-1 w-52 rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg z-30 p-1.5 text-[11px] animate-in fade-in-0 duration-100">
-              <div className="px-1.5 py-1 text-[10px] uppercase font-bold text-[var(--muted-foreground)] tracking-wider flex items-center justify-between">
-                <span>Branches</span>
-                <button
-                  onClick={() => setIsCreatingBranch(!isCreatingBranch)}
-                  className="text-[var(--foreground)] hover:text-[var(--muted-foreground)] cursor-pointer"
-                  title="Create new branch"
-                >
-                  <Plus className="w-3 h-3" />
-                </button>
-              </div>
-
-              {isCreatingBranch && (
-                <div className="my-1.5 px-1 flex gap-1">
-                  <input
-                    type="text"
-                    value={newBranchName}
-                    onChange={(e) => setNewBranchName(e.target.value)}
-                    placeholder="new-branch-name"
-                    className="flex-1 bg-[var(--code-bg)] border border-[var(--border)] px-1.5 py-0.5 rounded text-[10px] text-[var(--foreground)] outline-hidden focus:border-[var(--ring)]"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && newBranchName.trim()) {
-                        handleCheckoutBranch(newBranchName.trim(), true);
-                      }
-                    }}
-                  />
-                  <Button
-                    size="xs"
-                    className="px-1.5 py-0.5 text-[10px]"
-                    disabled={!newBranchName.trim()}
-                    onClick={() => handleCheckoutBranch(newBranchName.trim(), true)}
-                  >
-                    Create
-                  </Button>
-                </div>
+        {/* Branch selector dropdown */}
+        <DropdownMenu open={showBranchDropdown} onOpenChange={setShowBranchDropdown}>
+          <DropdownMenuTrigger asChild>
+            <button
+              className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-[var(--secondary)] text-[var(--foreground)] font-medium text-[11px] cursor-pointer transition-colors border border-transparent hover:border-[var(--border)] outline-none select-none"
+              title="Switch branch"
+            >
+              <GitBranch className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0" />
+              <span className="truncate max-w-[120px]">{status?.branch || "main"}</span>
+              {Boolean(status?.ahead || status?.behind) && (
+                <span className="text-[9px] px-1 py-0.2 rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--muted-foreground)] font-mono font-bold">
+                  {status?.ahead ? `↑${status.ahead}` : ""}
+                  {status?.behind ? `↓${status.behind}` : ""}
+                </span>
               )}
+              <ChevronDown className="w-3 h-3 opacity-60 shrink-0" />
+            </button>
+          </DropdownMenuTrigger>
 
-              <div className="max-h-40 overflow-y-auto space-y-0.5 no-scrollbar">
-                {branches.map((b) => {
-                  const isCurrent = b === status?.branch;
-                  return (
-                    <div
-                      key={b}
-                      onClick={() => !isCurrent && handleCheckoutBranch(b, false)}
-                      className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer transition-colors ${
-                        isCurrent
-                          ? "bg-[var(--secondary)] font-semibold text-[var(--foreground)]"
-                          : "hover:bg-[var(--secondary)]/60 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                      }`}
-                    >
-                      <span className="truncate">{b}</span>
-                      {isCurrent && <Check className="w-3 h-3 text-[var(--foreground)] shrink-0" />}
-                    </div>
-                  );
-                })}
-              </div>
+          <DropdownMenuContent align="start" className="w-56 p-1.5 text-[11px] font-mono">
+            <div className="px-1.5 py-1 text-[10px] uppercase font-bold text-[var(--muted-foreground)] tracking-wider flex items-center justify-between">
+              <span>Branches</span>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsCreatingBranch(!isCreatingBranch);
+                }}
+                className="text-[var(--foreground)] hover:text-[var(--muted-foreground)] cursor-pointer p-0.5 rounded hover:bg-[var(--secondary)]"
+                title="Create new branch"
+              >
+                <Plus className="w-3 h-3" />
+              </button>
             </div>
-          )}
-        </div>
+
+            {isCreatingBranch && (
+              <div
+                className="my-1.5 px-1 flex gap-1"
+                onClick={(e) => e.stopPropagation()}
+                onKeyDown={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="text"
+                  autoFocus
+                  value={newBranchName}
+                  onChange={(e) => setNewBranchName(e.target.value)}
+                  placeholder="new-branch-name"
+                  className="flex-1 bg-[var(--code-bg)] border border-[var(--border)] px-1.5 py-0.5 rounded text-[10px] text-[var(--foreground)] outline-hidden focus:border-[var(--ring)]"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && newBranchName.trim()) {
+                      e.preventDefault();
+                      handleCheckoutBranch(newBranchName.trim(), true);
+                    }
+                  }}
+                />
+                <Button
+                  size="xs"
+                  className="px-1.5 py-0.5 text-[10px]"
+                  disabled={!newBranchName.trim()}
+                  onClick={() => handleCheckoutBranch(newBranchName.trim(), true)}
+                >
+                  Create
+                </Button>
+              </div>
+            )}
+
+            <div className="max-h-48 overflow-y-auto space-y-0.5 no-scrollbar">
+              {branches.map((b) => {
+                const isCurrent = b === status?.branch;
+                return (
+                  <DropdownMenuItem
+                    key={b}
+                    onClick={() => !isCurrent && handleCheckoutBranch(b, false)}
+                    className={`flex items-center justify-between px-2 py-1 rounded cursor-pointer transition-colors text-xs ${
+                      isCurrent
+                        ? "bg-[var(--secondary)] font-semibold text-[var(--foreground)]"
+                        : "hover:bg-[var(--secondary)]/60 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                    }`}
+                  >
+                    <span className="truncate">{b}</span>
+                    {isCurrent && <Check className="w-3 h-3 text-[var(--foreground)] shrink-0 ml-2" />}
+                  </DropdownMenuItem>
+                );
+              })}
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Right Toolbar buttons */}
         <div className="flex items-center gap-1">
