@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { AlertTriangle, Terminal, FileCode, Check, X, ShieldAlert } from "lucide-react";
+import { AlertTriangle, Terminal, Check, X, ShieldAlert } from "lucide-react";
 import { useApprovalStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
+import { FileIcon } from "../ui/file-icon.js";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -59,8 +60,18 @@ export const ApprovalModal: React.FC = () => {
         {/* Command / Patch Terminal Preview */}
         <div className="my-1 rounded-lg border border-[var(--border)] bg-[var(--code-bg)] font-mono text-xs overflow-hidden">
           <div className="px-3 py-1.5 bg-[var(--secondary)]/70 border-b border-[var(--border)] text-[11px] text-[var(--muted-foreground)] flex items-center justify-between">
-            <span className="font-semibold uppercase tracking-wider text-[10px]">
-              {isCommand ? "Command to execute" : "Target File"}
+            <span className="font-semibold uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+              {isCommand ? (
+                <>
+                  <Terminal className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>Command to execute</span>
+                </>
+              ) : (
+                <>
+                  <FileIcon fileName={current.payload.path} className="w-3.5 h-3.5 shrink-0" />
+                  <span>Target File: {current.payload.path}</span>
+                </>
+              )}
             </span>
             {current.payload.cwd && (
               <span className="truncate max-w-[200px] text-[10px]">dir: {current.payload.cwd}</span>

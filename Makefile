@@ -8,6 +8,9 @@ codegen: ## Generate TypeScript types and Swift models from Rust protocol
 	cargo test -p canywhere-protocol --test export_types
 	bun run scripts/codegen-swift.ts
 
+icons: ## Download official vscode-icons assets and generate theme manifest
+	bun run scripts/download-vscode-icons.ts
+
 # --- BUILD ---
 ui-build: ## Build Desktop UI with Bun + Vite
 	cd packages/desktop-ui && bun install && bun run build

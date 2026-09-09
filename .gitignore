@@ -3,6 +3,8 @@
 .AppleDouble
 .LSOverride
 Icon?
+!**/icons/
+!**/icons/**
 ._*
 .Spotlight-V100
 .Trashes

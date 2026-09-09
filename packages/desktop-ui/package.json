@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "update-icons": "bun run ../../scripts/download-vscode-icons.ts"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.6",

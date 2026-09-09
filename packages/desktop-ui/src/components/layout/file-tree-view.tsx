@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Folder, FolderOpen, FileCode, ChevronRight, ChevronDown, Loader2 } from "lucide-react";
+import { ChevronRight, ChevronDown, Loader2 } from "lucide-react";
+import { FileIcon } from "../ui/file-icon.js";
 import { FileTreeNode } from "../../types/index.js";
 import { client } from "../../network/client.js";
 import { useWorkspaceStore, useUiStore } from "../../store/index.js";
@@ -54,19 +55,24 @@ export const FileTreeNodeItem: React.FC<FileTreeNodeItemProps> = ({ node, worksp
             ) : (
               <ChevronRight className="w-3 h-3 text-[var(--muted-foreground)] shrink-0" />
             )}
-            {isOpen ? (
-              <FolderOpen className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            ) : (
-              <Folder className="w-3.5 h-3.5 text-amber-400/80 shrink-0" />
-            )}
+            <FileIcon
+              fileName={node.name}
+              isDirectory={true}
+              isOpen={isOpen}
+              className="w-4 h-4 shrink-0"
+            />
           </>
         ) : (
           <>
             <span className="w-3" />
             {loading ? (
-              <Loader2 className="w-3.5 h-3.5 text-sky-400 animate-spin shrink-0" />
+              <Loader2 className="w-4 h-4 text-sky-400 animate-spin shrink-0" />
             ) : (
-              <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <FileIcon
+                fileName={node.name}
+                isDirectory={false}
+                className="w-4 h-4 shrink-0"
+              />
             )}
           </>
         )}

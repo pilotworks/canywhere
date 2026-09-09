@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { X, FileCode, Copy, Check } from "lucide-react";
+import { X, Copy, Check } from "lucide-react";
 import { useWorkspaceStore } from "../../store/index.js";
 import { Button } from "../ui/button.js";
+import { FileIcon } from "../ui/file-icon.js";
 
 export const FileViewerModal: React.FC = () => {
   const activeFile = useWorkspaceStore((s) => s.activeFile);
@@ -24,7 +25,7 @@ export const FileViewerModal: React.FC = () => {
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--secondary)]/70 border-b border-[var(--border)] select-none">
           <div className="flex items-center gap-2 truncate">
-            <FileCode className="w-4 h-4 text-sky-400 shrink-0" />
+            <FileIcon fileName={activeFile.path} className="w-4 h-4 shrink-0" />
             <span className="font-mono text-xs font-semibold text-[var(--foreground)] truncate">
               {activeFile.path}
             </span>

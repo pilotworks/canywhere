@@ -4,6 +4,7 @@ import { ApprovalRequest, ApprovalDecision } from "../../types/index.js";
 import { client } from "../../network/client.js";
 import { Button } from "../ui/button.js";
 import { DiffViewer } from "./diff-viewer.js";
+import { FileIcon } from "../ui/file-icon.js";
 
 interface InlineApprovalCardProps {
   approval: ApprovalRequest;
@@ -68,9 +69,9 @@ export const InlineApprovalCard: React.FC<InlineApprovalCardProps> = ({ approval
         ) : (
           <div>
             <p className="text-[11px] text-[var(--muted-foreground)] mb-1 font-mono">Target File:</p>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--code-bg)] border border-[var(--code-border)] font-mono text-sky-400 select-text">
-              <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-              <span className="font-semibold text-xs">{approval.payload.path}</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[var(--code-bg)] border border-[var(--code-border)] font-mono text-[var(--foreground)] select-text">
+              <FileIcon fileName={approval.payload.path} className="w-4 h-4 shrink-0" />
+              <span className="font-semibold text-xs text-sky-400">{approval.payload.path}</span>
             </div>
             {approval.payload.diff && (
               <div className="mt-2 rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] overflow-hidden max-h-56 overflow-y-auto">

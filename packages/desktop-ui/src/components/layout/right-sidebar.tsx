@@ -15,6 +15,7 @@ import { useUiStore, useWorkspaceStore, useChatStore, EMPTY_MESSAGES, RightTabTy
 import { FileTreeView } from "./file-tree-view.js";
 import { DiffViewer } from "../chat/diff-viewer.js";
 import { Button } from "../ui/button.js";
+import { FileIcon } from "../ui/file-icon.js";
 import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
 
 export const RightSidebar: React.FC = () => {
@@ -283,7 +284,7 @@ export const RightSidebar: React.FC = () => {
                     }`}
                     title={tab.data?.path || tab.title}
                   >
-                    <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <FileIcon fileName={tab.data?.path || tab.title} className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate max-w-[100px] font-mono text-[11px]">{tab.title}</span>
                     <button
                       onClick={(e) => {
@@ -386,7 +387,7 @@ export const RightSidebar: React.FC = () => {
               <>
                 <div className="h-9 px-3 flex items-center justify-between border-b border-[var(--border)] bg-[var(--secondary)]/30 font-mono text-xs shrink-0">
                   <div className="flex items-center gap-1.5 truncate">
-                    <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <FileIcon fileName={activeTab.data.path} className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate font-semibold text-[var(--foreground)]">
                       {activeTab.data.path}
                     </span>
@@ -425,7 +426,7 @@ export const RightSidebar: React.FC = () => {
               </>
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center">
-                <FileCode className="w-8 h-8 opacity-30 mb-2 text-sky-400" />
+                <FileIcon className="w-8 h-8 opacity-30 mb-2" />
                 <p>Select any file from the Files tab to inspect its contents here.</p>
               </div>
             )}

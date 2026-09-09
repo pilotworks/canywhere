@@ -14,6 +14,7 @@ import {
 import { ApprovalRequest, ApprovalDecision } from "../../types/index.js";
 import { client } from "../../network/client.js";
 import { DiffViewer } from "./diff-viewer.js";
+import { FileIcon } from "../ui/file-icon.js";
 
 export interface ApprovalTrayProps {
   chatId: string;
@@ -101,7 +102,7 @@ export const ApprovalTray: React.FC<ApprovalTrayProps> = ({ chatId, approvals })
                     </div>
                   ) : isFile ? (
                     <div className="p-1 rounded bg-[var(--secondary)] text-[var(--muted-foreground)] shrink-0">
-                      <FileCode className="w-3.5 h-3.5" />
+                      <FileIcon fileName={approval.payload.path} className="w-3.5 h-3.5" />
                     </div>
                   ) : (
                     <div className="p-1 rounded bg-[var(--secondary)] text-[var(--muted-foreground)] shrink-0">

@@ -1,8 +1,9 @@
 import React, { useMemo } from "react";
-import { FileCode, ListTodo } from "lucide-react";
+import { ListTodo } from "lucide-react";
 import { MessageBlock } from "../../types/index.js";
 import { MarkdownContent } from "./markdown-content.js";
 import { DiffViewer } from "./diff-viewer.js";
+import { FileIcon } from "../ui/file-icon.js";
 import { ReasoningBlock } from "./reasoning-block.js";
 import { ToolCallBlock } from "./tool-call-block.js";
 import {
@@ -93,7 +94,7 @@ export const RenderBlock: React.FC<{ block: MessageBlock }> = ({ block }) => {
         <div className="my-2.5 rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] font-mono text-xs overflow-hidden shadow-xs">
           <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--secondary)]/60 border-b border-[var(--code-border)] text-[var(--muted-foreground)] select-none">
             <div className="flex items-center gap-2 truncate pr-2">
-              <FileCode className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+              <FileIcon fileName={block.path} className="w-3.5 h-3.5 shrink-0" />
               <span className="text-[11px] font-semibold text-[var(--foreground)] truncate select-text">
                 {block.path}
               </span>
