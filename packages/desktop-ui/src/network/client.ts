@@ -268,6 +268,10 @@ export class CanywhereClient {
     return await this.call("git.init", { workspaceId });
   }
 
+  async gitGenerateCommitMessage(workspaceId: string): Promise<import("../types/index.js").GitGenerateCommitMessageResult> {
+    return await this.call("git.generateCommitMessage", { workspaceId });
+  }
+
   openDraftChat(workspaceId?: string | null): void {
     useChatStore.getState().openDraftChat(workspaceId);
   }

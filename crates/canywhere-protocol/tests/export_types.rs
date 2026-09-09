@@ -30,6 +30,8 @@ fn export_typescript_and_json_schema() {
     GitBranchesResult::export_all_to(out_dir).unwrap();
     GitCommitItem::export_all_to(out_dir).unwrap();
     GitLogResult::export_all_to(out_dir).unwrap();
+    GitGenerateCommitMessageParams::export_all_to(out_dir).unwrap();
+    GitGenerateCommitMessageResult::export_all_to(out_dir).unwrap();
 
     // Export JSON Schema for Swift Codegen
     let schema_dir = Path::new("../../schemas");

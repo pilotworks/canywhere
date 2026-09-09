@@ -308,6 +308,17 @@ end try"#;
                 Ok(serde_json::to_value(status)?)
             }
 
+            "git.generateCommitMessage" => {
+                let params: GitGenerateCommitMessageParams = serde_json::from_value(p)?;
+                let ws = self
+                    .repo
+                    .get_workspace(&params.workspace_id)?
+                    .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
+                let root = std::path::Path::new(&ws.root_path);
+                let message = crate::git::GitService::generate_commit_message(root, self.adapter.codex_bin()).await?;
+                Ok(serde_json::to_value(GitGenerateCommitMessageResult { message })?)
+            }
+
             "chat.list" => {
                 let ws_id = p["workspaceId"].as_str();
                 let chats = self.repo.list_chats(ws_id)?;

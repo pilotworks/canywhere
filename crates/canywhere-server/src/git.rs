@@ -398,4 +398,138 @@ impl GitService {
         }
         Ok(())
     }
+
+    pub async fn generate_commit_message(root: &Path, codex_bin: &str) -> Result<String> {
+        // 1. Get staged diff first. If empty, fallback to working tree diff.
+        let mut diff = Self::diff(root, None, true).await.unwrap_or_default();
+        if diff.trim().is_empty() {
+            diff = Self::diff(root, None, false).await.unwrap_or_default();
+        }
+
+        // If diff is still empty, check for untracked files
+        let status = Self::status(root).await?;
+        if diff.trim().is_empty() {
+            if status.unstaged.is_empty() && status.staged.is_empty() {
+                anyhow::bail!("No changes detected to generate commit message");
+            }
+            // List changed / untracked files as summary diff
+            let mut summary = String::from("Changed files:\n");
+            for f in status.staged.iter().chain(status.unstaged.iter()) {
+                summary.push_str(&format!("- {} ({})\n", f.path, f.status));
+            }
+            diff = summary;
+        }
+
+        // 2. Fetch last 10 commit messages for style and format reference
+        let recent_commits = Self::log(root, 10).await.unwrap_or_default();
+        let mut sample_commits = String::new();
+        for (idx, c) in recent_commits.iter().enumerate() {
+            sample_commits.push_str(&format!("{}. {}\n", idx + 1, c.message.trim()));
+        }
+
+        // 3. Truncate diff if it's too large (cap at 12,000 characters)
+        let truncated_diff = if diff.len() > 12000 {
+            format!("{}\n...[diff truncated]", &diff[..12000])
+        } else {
+            diff
+        };
+
+        // 4. Construct prompt with 10 recent commit messages
+        let prompt = format!(
+            "You are an expert software developer writing a Git commit message for this repository.\n\
+             Below are up to 10 recent commit messages from this repository for style, casing, and prefix convention:\n\
+             <recent_commits>\n\
+             {}\
+             </recent_commits>\n\n\
+             Analyze the following git diff and write a concise, meaningful commit message.\n\
+             IMPORTANT INSTRUCTIONS:\n\
+             1. Closely follow the style, casing, prefixes (e.g. Conventional Commits like feat:, fix:, refactor:), and scopes of the recent commits.\n\
+             2. Output ONLY the commit message itself. Do NOT enclose in markdown code blocks, do NOT add quotes, do NOT add explanations or preamble.\n\
+             3. The first line must be 72 characters or fewer.\n\n\
+             <git_diff>\n\
+             {}\n\
+             </git_diff>",
+            if sample_commits.is_empty() { "None (new repository)\n" } else { &sample_commits },
+            truncated_diff
+        );
+
+        // 5. Attempt codex exec
+        let mut cmd = Command::new(codex_bin);
+        cmd.args([
+            "exec",
+            "-C",
+            &root.to_string_lossy(),
+            "--ephemeral",
+            "-s",
+            "read-only",
+            "-",
+        ]);
+        cmd.stdin(std::process::Stdio::piped());
+        cmd.stdout(std::process::Stdio::piped());
+        cmd.stderr(std::process::Stdio::piped());
+
+        if let Ok(mut child) = cmd.spawn() {
+            if let Some(mut stdin) = child.stdin.take() {
+                use tokio::io::AsyncWriteExt;
+                let _ = stdin.write_all(prompt.as_bytes()).await;
+                let _ = stdin.flush().await;
+                drop(stdin);
+            }
+
+            if let Ok(output) = child.wait_with_output().await {
+                if output.status.success() {
+                    let raw = String::from_utf8_lossy(&output.stdout);
+                    let cleaned = raw
+                        .trim()
+                        .trim_matches('`')
+                        .trim_matches('"')
+                        .trim()
+                        .to_string();
+                    if !cleaned.is_empty() {
+                        return Ok(cleaned);
+                    }
+                }
+            }
+        }
+
+        // 6. Heuristic Fallback if codex exec failed or returned empty
+        let changed_files: Vec<&str> = status
+            .staged
+            .iter()
+            .chain(status.unstaged.iter())
+            .map(|f| f.path.as_str())
+            .collect();
+
+        let prefix = if changed_files.iter().all(|p| p.contains("test") || p.ends_with("_test.rs")) {
+            "test"
+        } else if changed_files.iter().all(|p| p.ends_with(".md") || p.contains("docs/")) {
+            "docs"
+        } else if changed_files.iter().any(|p| p.contains("fix")) {
+            "fix"
+        } else {
+            "refactor"
+        };
+
+        let scope = if changed_files.iter().all(|p| p.contains("desktop-ui")) {
+            "(desktop-ui)"
+        } else if changed_files.iter().all(|p| p.contains("canywhere-server")) {
+            "(canywhere-server)"
+        } else if changed_files.iter().all(|p| p.contains("canywhere-protocol")) {
+            "(canywhere-protocol)"
+        } else {
+            ""
+        };
+
+        let summary = if changed_files.len() == 1 {
+            let filename = std::path::Path::new(changed_files[0])
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| changed_files[0].to_string());
+            format!("{prefix}{scope}: update {filename}")
+        } else {
+            format!("{prefix}{scope}: update {} files", changed_files.len())
+        };
+
+        Ok(summary)
+    }
 }

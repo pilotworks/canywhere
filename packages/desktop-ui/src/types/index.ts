@@ -33,6 +33,8 @@ export * from "./generated/GitDiffResult.js";
 export * from "./generated/GitBranchesResult.js";
 export * from "./generated/GitCommitItem.js";
 export * from "./generated/GitLogResult.js";
+export * from "./generated/GitGenerateCommitMessageParams.js";
+export * from "./generated/GitGenerateCommitMessageResult.js";
 
 export type ApprovalDecision = "accept" | "accept_for_session" | "decline" | "cancel";
 

@@ -125,3 +125,15 @@ pub struct GitLogResult {
 pub struct GitInitParams {
     pub workspace_id: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GitGenerateCommitMessageParams {
+    pub workspace_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct GitGenerateCommitMessageResult {
+    pub message: String,
+}

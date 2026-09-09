@@ -14,6 +14,7 @@ import {
   Loader2,
   AlertCircle,
   Eye,
+  Sparkles,
 } from "lucide-react";
 import { client } from "../../network/client.js";
 import { useUiStore, useWorkspaceStore } from "../../store/index.js";
@@ -33,6 +34,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
   const [loading, setLoading] = useState(false);
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
+  const [generatingCommitMsg, setGeneratingCommitMsg] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   // Branch switcher state
@@ -166,6 +168,23 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
       setErrorMsg(err.message || "Commit failed");
     } finally {
       setCommitting(false);
+    }
+  };
+
+  // Generate Commit Message
+  const handleGenerateCommitMsg = async () => {
+    if (!currentWsId || generatingCommitMsg) return;
+    setGeneratingCommitMsg(true);
+    setErrorMsg(null);
+    try {
+      const res = await client.gitGenerateCommitMessage(currentWsId);
+      if (res?.message) {
+        setCommitMessage(res.message);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to generate commit message");
+    } finally {
+      setGeneratingCommitMsg(false);
     }
   };
 
@@ -393,18 +412,33 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
       <div className="flex-1 overflow-y-auto p-2.5 space-y-3 no-scrollbar">
         {/* Commit Composer Box */}
         <div className="space-y-1.5 bg-[var(--secondary)]/30 p-2 rounded-lg border border-[var(--border)]">
-          <textarea
-            value={commitMessage}
-            onChange={(e) => setCommitMessage(e.target.value)}
-            placeholder="Commit message (Cmd+Enter)..."
-            rows={2}
-            className="w-full bg-[var(--code-bg)] border border-[var(--border)] rounded p-2 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-hidden focus:border-[var(--ring)] resize-none font-mono leading-relaxed"
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && commitMessage.trim()) {
-                handleCommit();
-              }
-            }}
-          />
+          <div className="relative">
+            <textarea
+              value={commitMessage}
+              onChange={(e) => setCommitMessage(e.target.value)}
+              placeholder="Commit message (Cmd+Enter)..."
+              rows={2}
+              className="w-full bg-[var(--code-bg)] border border-[var(--border)] rounded p-2 pr-7 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-hidden focus:border-[var(--ring)] resize-none font-mono leading-relaxed"
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && commitMessage.trim()) {
+                  handleCommit();
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={handleGenerateCommitMsg}
+              disabled={generatingCommitMsg || totalChanges === 0}
+              className="absolute top-1.5 right-1.5 p-1 rounded hover:bg-[var(--secondary)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] disabled:opacity-30 disabled:pointer-events-none transition-colors"
+              title="Generate commit message using Codex (matches recent commit format)"
+            >
+              {generatingCommitMsg ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Sparkles className="w-3 h-3" />
+              )}
+            </button>
+          </div>
 
           <Button
             size="xs"

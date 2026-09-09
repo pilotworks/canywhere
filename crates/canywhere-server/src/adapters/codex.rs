@@ -109,6 +109,10 @@ impl CodexAdapter {
         self.event_tx.clone()
     }
 
+    pub fn codex_bin(&self) -> &str {
+        &self.codex_bin
+    }
+
     pub async fn initialize(&self) -> Result<()> {
         let mut child = Command::new(&self.codex_bin)
             .args(["app-server", "--stdio"])
