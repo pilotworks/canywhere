@@ -144,11 +144,11 @@ export function ModelEffortCombo({
       <DropdownMenuContent
         align={align}
         sideOffset={6}
-        className="w-[260px] p-2 bg-[var(--popover)] text-[var(--popover-foreground)] border border-[var(--border)] rounded-2xl shadow-xl backdrop-blur-md z-50 select-none outline-none font-sans"
+        className="w-[240px] p-1.5 bg-[var(--card)] text-[var(--foreground)] border border-[var(--border)] rounded-md shadow-lg z-50 select-none outline-none font-mono"
       >
         {view === "main" ? (
           /* Main Card View: Header with Effort > and Model, Reset button, and Stepped Slider */
-          <div className="p-1 space-y-3">
+          <div className="p-1 space-y-2.5">
             {/* Header row */}
             <div className="flex items-start justify-between">
               <button
@@ -156,11 +156,11 @@ export function ModelEffortCombo({
                 onClick={() => setView("select_model")}
                 className="flex flex-col text-left group/btn cursor-pointer outline-none"
               >
-                <div className="flex items-center gap-1 text-[15px] font-medium text-[var(--foreground)] transition-colors">
+                <div className="flex items-center gap-1 text-xs font-semibold text-[var(--foreground)] transition-colors">
                   <span>{formattedEffort}</span>
-                  <ChevronRight className="w-4 h-4 mt-0.5 text-[var(--muted-foreground)] group-hover/btn:translate-x-0.5 transition-transform" />
+                  <ChevronRight className="w-3.5 h-3.5 text-[var(--muted-foreground)] group-hover/btn:translate-x-0.5 transition-transform" />
                 </div>
-                <div className="text-[13px] text-[var(--muted-foreground)] font-normal mt-0.5 group-hover/btn:text-[var(--foreground)] transition-colors">
+                <div className="text-[11px] text-[var(--muted-foreground)] font-normal mt-0.5 group-hover/btn:text-[var(--foreground)] transition-colors">
                   {activeModelDisplayName}
                 </div>
               </button>
@@ -169,27 +169,27 @@ export function ModelEffortCombo({
               <button
                 type="button"
                 onClick={handleResetDefault}
-                className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--accent)] rounded-lg transition-colors cursor-pointer"
+                className="p-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)] rounded transition-colors cursor-pointer"
                 title="Reset to default effort"
               >
-                <RotateCcw className="w-4 h-4" />
+                <RotateCcw className="w-3.5 h-3.5" />
               </button>
             </div>
 
             {/* Stepped Slider with filled progress track and circular thumb */}
-            <div className="py-1">
+            <div className="py-0.5">
               {supportedEfforts.length > 0 ? (
-                <div className="relative flex items-center h-8">
+                <div className="relative flex items-center h-7">
                   {/* Track container with rounded pill ends */}
-                  <div className="relative w-full h-[22px] bg-[var(--secondary)] border border-[var(--border)]/70 rounded-full flex items-center px-2.5">
+                  <div className="relative w-full h-[20px] bg-[var(--secondary)] border border-[var(--border)]/70 rounded-full flex items-center px-2">
                     {/* Active Progress Fill */}
                     <div
-                      className="absolute left-0 top-0 bottom-0 bg-[var(--foreground)]/30 dark:bg-white/30 rounded-full transition-all duration-150"
+                      className="absolute left-0 top-0 bottom-0 bg-[var(--foreground)]/25 dark:bg-white/25 rounded-full transition-all duration-150"
                       style={{
                         width:
                           steps.length <= 1
                             ? "100%"
-                            : `calc(${(currentIndex / (steps.length - 1)) * 100}% + 11px)`,
+                            : `calc(${(currentIndex / (steps.length - 1)) * 100}% + 10px)`,
                       }}
                     />
 
@@ -198,23 +198,23 @@ export function ModelEffortCombo({
                       {steps.map((step, idx) => (
                         <div
                           key={step}
-                          className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                          className={`w-1 h-1 rounded-full transition-colors ${
                             idx <= currentIndex
-                              ? "bg-white/50"
+                              ? "bg-white/60"
                               : "bg-[var(--muted-foreground)]/40"
                           }`}
                         />
                       ))}
                     </div>
 
-                    {/* Circular Thumb with drop shadow (NOT clipped by overflow) */}
+                    {/* Circular Thumb with drop shadow */}
                     <div
-                      className="absolute top-1/2 -translate-y-1/2 w-[22px] h-[22px] bg-white rounded-full shadow-[0_2px_8px_rgba(0,0,0,0.35)] pointer-events-none transition-all duration-150 z-20"
+                      className="absolute top-1/2 -translate-y-1/2 w-[20px] h-[20px] bg-white rounded-full shadow-[0_1px_4px_rgba(0,0,0,0.3)] pointer-events-none transition-all duration-150 z-20"
                       style={{
                         left:
                           steps.length <= 1
                             ? "50%"
-                            : `calc(${(currentIndex / (steps.length - 1)) * (100 - (22 / 240) * 100)}%)`,
+                            : `calc(${(currentIndex / (steps.length - 1)) * (100 - (20 / 220) * 100)}%)`,
                       }}
                     />
 
@@ -237,7 +237,7 @@ export function ModelEffortCombo({
                   </div>
                 </div>
               ) : (
-                <div className="text-center py-1 text-[11px] text-[var(--muted-foreground)]">
+                <div className="text-center py-1 text-[10px] text-[var(--muted-foreground)]">
                   Reasoning effort not adjustable for this model
                 </div>
               )}
@@ -247,21 +247,19 @@ export function ModelEffortCombo({
           /* Select Model View: Clean vertical list matching system tokens */
           <div className="space-y-1">
             {/* Header */}
-            <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-[var(--border)]">
+            <div className="flex items-center gap-1.5 px-1 py-1 border-b border-[var(--border)]">
               <button
                 type="button"
                 onClick={() => setView("main")}
-                className="p-1 -ml-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded-md transition-colors cursor-pointer"
+                className="p-1 -ml-0.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] rounded hover:bg-[var(--secondary)] transition-colors cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-3.5 h-3.5" />
               </button>
-              <div className="flex flex-col">
-                <span className="text-[12px] font-medium text-[var(--muted-foreground)]">Select model</span>
-              </div>
+              <span className="text-[11px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">Select model</span>
             </div>
 
             {/* Models list */}
-            <div className="space-y-0.5 pt-1">
+            <div className="max-h-56 overflow-y-auto space-y-0.5 pt-0.5 no-scrollbar">
               {modelList.map((m) => {
                 const isSelected =
                   selectedModel === m.model ||
@@ -275,17 +273,17 @@ export function ModelEffortCombo({
                       onSelectModel(m.model);
                       setView("main");
                     }}
-                    className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-left transition-colors cursor-pointer ${
+                    className={`w-full flex items-center justify-between px-2 py-1 rounded text-left transition-colors cursor-pointer text-xs ${
                       isSelected
-                        ? "bg-[var(--accent)] text-[var(--foreground)] font-medium"
-                        : "hover:bg-[var(--accent)]/60 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                        ? "bg-[var(--secondary)] text-[var(--foreground)] font-semibold"
+                        : "hover:bg-[var(--secondary)]/60 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                     }`}
                   >
-                    <span className="text-[13.5px]">
+                    <span className="truncate">
                       {m.displayName || m.model}
                     </span>
                     {isSelected && (
-                      <Check className="w-4 h-4 text-[var(--foreground)] shrink-0" />
+                      <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 ml-2" />
                     )}
                   </button>
                 );
