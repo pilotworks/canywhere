@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   GitBranch,
   RotateCw,
@@ -36,6 +36,16 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
   const [committing, setCommitting] = useState(false);
   const [generatingCommitMsg, setGeneratingCommitMsg] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  // Auto-resize commit textarea (initial height fits 1 text line)
+  const commitTextareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = commitTextareaRef.current;
+    if (el) {
+      el.style.height = "auto";
+      el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+    }
+  }, [commitMessage]);
 
   // Branch switcher state
   const [branches, setBranches] = useState<string[]>([]);
@@ -414,11 +424,12 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
         <div className="space-y-1.5 bg-[var(--secondary)]/30 p-2 rounded-lg border border-[var(--border)]">
           <div className="relative">
             <textarea
+              ref={commitTextareaRef}
               value={commitMessage}
               onChange={(e) => setCommitMessage(e.target.value)}
               placeholder="Commit message (Cmd+Enter)..."
-              rows={2}
-              className="w-full bg-[var(--code-bg)] border border-[var(--border)] rounded p-2 pr-7 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-hidden focus:border-[var(--ring)] resize-none font-mono leading-relaxed"
+              rows={1}
+              className="w-full bg-[var(--code-bg)] border border-[var(--border)] rounded px-2 py-1.5 pr-7 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-hidden focus:border-[var(--ring)] resize-none font-mono leading-normal min-h-[32px] max-h-[160px]"
               onKeyDown={(e) => {
                 if ((e.metaKey || e.ctrlKey) && e.key === "Enter" && commitMessage.trim()) {
                   handleCommit();
