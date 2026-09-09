@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { createContext, useContext, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
@@ -8,31 +8,38 @@ interface MarkdownContentProps {
   className?: string;
 }
 
+const PreContext = createContext(false);
+
+const PreBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
+  return <PreContext.Provider value={true}>{children}</PreContext.Provider>;
+};
+
 const CodeBlock: React.FC<{
-  inline?: boolean;
   className?: string;
   children?: React.ReactNode;
-}> = ({ inline, className, children, ...props }) => {
+  node?: any;
+}> = ({ className, children, node, ...props }) => {
+  const isBlock = useContext(PreContext);
   const [copied, setCopied] = useState(false);
   const match = /language-(\w+)/.exec(className || "");
   const codeString = String(children).replace(/\n$/, "");
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(codeString);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  if (inline) {
+  if (!isBlock) {
     return (
       <code
-        className="rounded px-1 py-0.5 font-mono text-[11px] bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)]"
+        className="rounded px-1.5 py-0.5 font-mono text-[11px] bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)] inline-block align-baseline"
         {...props}
       >
         {children}
       </code>
     );
   }
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(codeString);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   const lang = match ? match[1] : "";
 
@@ -73,6 +80,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
       <Markdown
         remarkPlugins={[remarkGfm]}
         components={{
+          pre: PreBlock as any,
           code: CodeBlock as any,
           p: ({ children }) => <p className="mb-2 last:mb-0 leading-relaxed">{children}</p>,
           ul: ({ children }) => <ul className="list-disc list-outside pl-4 space-y-1 my-1.5">{children}</ul>,

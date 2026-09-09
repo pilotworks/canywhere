@@ -23,8 +23,11 @@ struct ChatDetailView: View {
                                 emptyChatGreeting
                                     .padding(.top, 40)
                             } else {
-                                ForEach(viewModel.messages) { message in
-                                    MessageBubbleView(message: message)
+                                ForEach(Array(viewModel.messages.enumerated()), id: \.element.id) { idx, message in
+                                    MessageBubbleView(
+                                        message: message,
+                                        durationSeconds: viewModel.durationFor(message: message, at: idx)
+                                    )
                                 }
                             }
                             Color.clear

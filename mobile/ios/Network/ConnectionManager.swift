@@ -28,7 +28,13 @@ actor ConnectionManager {
     private let maxReconnectBackoffSeconds: Double = 16.0
 
     // Token delta buffering (batch to ~40fps / 24ms to prevent flooding MainActor)
-    private var deltaBuffer: [String: (chatId: String, text: String)] = [:]
+    private struct BufferedDelta {
+        let chatId: String
+        let messageId: String
+        let type: String
+        var text: String
+    }
+    private var deltaBuffer: [BufferedDelta] = []
     private var deltaFlushTask: Task<Void, Never>?
 
     private(set) var status: ConnectionStatus = .disconnected {
@@ -180,7 +186,7 @@ actor ConnectionManager {
                 if method == "message.delta" {
                     if let payload = try? payloadData.decodeRPCParams(MessageDeltaPayload.self),
                        let text = payload.delta.text, !text.isEmpty {
-                        bufferDelta(chatId: payload.chatId, messageId: payload.messageId, text: text)
+                        bufferDelta(chatId: payload.chatId, messageId: payload.messageId, type: payload.delta.type, text: text)
                         return
                     }
                 }
@@ -192,11 +198,14 @@ actor ConnectionManager {
         }
     }
 
-    private func bufferDelta(chatId: String, messageId: String, text: String) {
-        if let existing = deltaBuffer[messageId] {
-            deltaBuffer[messageId] = (chatId: chatId, text: existing.text + text)
+    private func bufferDelta(chatId: String, messageId: String, type: String, text: String) {
+        if let lastIdx = deltaBuffer.indices.last,
+           deltaBuffer[lastIdx].chatId == chatId,
+           deltaBuffer[lastIdx].messageId == messageId,
+           deltaBuffer[lastIdx].type == type {
+            deltaBuffer[lastIdx].text += text
         } else {
-            deltaBuffer[messageId] = (chatId: chatId, text: text)
+            deltaBuffer.append(BufferedDelta(chatId: chatId, messageId: messageId, type: type, text: text))
         }
 
         if deltaFlushTask == nil {
@@ -216,11 +225,11 @@ actor ConnectionManager {
         let buffered = deltaBuffer
         deltaBuffer.removeAll()
 
-        for (messageId, item) in buffered {
+        for item in buffered {
             let payload = MessageDeltaPayload(
                 chatId: item.chatId,
-                messageId: messageId,
-                delta: MessageDeltaPayload.DeltaContent(type: "text", text: item.text)
+                messageId: item.messageId,
+                delta: MessageDeltaPayload.DeltaContent(type: item.type, text: item.text)
             )
             if let data = try? JSONEncoder().encode(payload) {
                 notificationHandler?("message.delta", data)

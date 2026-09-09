@@ -34,7 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu.js";
-import { RenderBlock } from "./render-block.js";
+import { RenderBlock, MessageBlocksRenderer } from "./render-block.js";
 import { InlineApprovalCard } from "./inline-approval-card.js";
 import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
 
@@ -388,7 +388,7 @@ export const ChatView: React.FC = () => {
             </div>
           </div>
         ) : (
-          messages.map((msg) => {
+          messages.map((msg, idx) => {
             const isUser = msg.role === "user";
             const textContent = msg.blocks
               .filter((b) => b.type === "text")
@@ -399,9 +399,7 @@ export const ChatView: React.FC = () => {
               return (
                 <div key={msg.id} className="group max-w-3xl mx-auto flex flex-col items-end space-y-1">
                   <div className="rounded-2xl px-4 py-3 text-[13px] leading-relaxed select-text bg-[var(--secondary)]/80 border border-[var(--border)] text-[var(--foreground)] max-w-[85%] shadow-xs">
-                    {msg.blocks.map((block, idx) => (
-                      <RenderBlock key={idx} block={block} />
-                    ))}
+                    <MessageBlocksRenderer blocks={msg.blocks} />
                   </div>
                   <div className="flex items-center gap-2 text-[10px] text-[var(--muted-foreground)] font-mono opacity-0 group-hover:opacity-100 transition-opacity pr-1 select-none">
                     {textContent && (
@@ -432,13 +430,25 @@ export const ChatView: React.FC = () => {
               );
             }
 
+            const isMsgStreaming = isRunning && msg.streaming;
+            let userTurnTime = Number(msg.createdAt);
+            for (let i = idx - 1; i >= 0; i--) {
+              if (messages[i].role === "user") {
+                userTurnTime = Number(messages[i].createdAt);
+                break;
+              }
+            }
+            const durationSeconds = Math.max(1, Math.round((Number(msg.createdAt) - userTurnTime) / 1000));
+
             return (
               <div key={msg.id} className="group max-w-3xl mx-auto space-y-1.5">
                 {/* Assistant Message Body */}
                 <div className="text-[13px] leading-relaxed select-text text-[var(--foreground)]">
-                  {msg.blocks.map((block, idx) => (
-                    <RenderBlock key={idx} block={block} />
-                  ))}
+                  <MessageBlocksRenderer
+                    blocks={msg.blocks}
+                    isStreaming={isMsgStreaming}
+                    durationSeconds={durationSeconds}
+                  />
 
                   {isRunning && msg.streaming && msg.blocks.length === 0 && (
                     <div className="inline-flex items-center gap-2 text-[var(--muted-foreground)] text-xs font-mono py-1">

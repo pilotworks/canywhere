@@ -327,3 +327,117 @@ async fn test_real_codex_turn_send_via_dispatcher() {
 
     assert!(received_event || !turn_id.is_empty());
 }
+
+#[tokio::test]
+async fn test_turn_blocks_persistence() {
+    let db = Database::open_in_memory().unwrap();
+    let repo = Arc::new(RepositoryManager::new(db));
+
+    let chat = repo
+        .create_chat(
+            canywhere_protocol::models::ChatCreateInput {
+                kind: canywhere_protocol::models::ChatKind::Standalone,
+                workspace_id: None,
+                provider_id: "codex".to_string(),
+                title: Some("Test Persistence".to_string()),
+                initial_prompt: None,
+            },
+            None,
+        )
+        .unwrap();
+
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    let msg_id = "agent_msg_123".to_string();
+    let blocks = vec![
+        canywhere_protocol::models::MessageBlock::Reasoning {
+            content: "Planning to inspect codebase".to_string(),
+            completed: true,
+        },
+        canywhere_protocol::models::MessageBlock::CommandExec {
+            command: "cargo check".to_string(),
+            cwd: "/tmp".to_string(),
+            output: Some("Finished dev profile".to_string()),
+            exit_code: Some(0),
+            status: canywhere_protocol::models::CommandExecStatus::Completed,
+        },
+        canywhere_protocol::models::MessageBlock::ToolCall {
+            call_id: "call_abc".to_string(),
+            name: "read_file".to_string(),
+            args: serde_json::json!({ "path": "src/main.rs" }),
+            output: Some("fn main() {}".to_string()),
+            status: canywhere_protocol::models::ToolCallStatus::Completed,
+        },
+        canywhere_protocol::models::MessageBlock::Text {
+            content: "Everything compiles cleanly!".to_string(),
+        },
+    ];
+
+    let message = canywhere_protocol::models::Message {
+        id: msg_id.clone(),
+        chat_id: chat.id.clone(),
+        turn_id: Some("turn_1".to_string()),
+        role: canywhere_protocol::models::MessageRole::Agent,
+        blocks,
+        created_at: now,
+        streaming: false,
+    };
+
+    repo.record_message(&message).unwrap();
+
+    let history = repo.get_chat_history(&chat.id).unwrap();
+    assert_eq!(history.len(), 1);
+    let retrieved = &history[0];
+    assert_eq!(retrieved.id, msg_id);
+    assert_eq!(retrieved.blocks.len(), 4);
+
+    match &retrieved.blocks[0] {
+        canywhere_protocol::models::MessageBlock::Reasoning { content, completed } => {
+            assert_eq!(content, "Planning to inspect codebase");
+            assert!(completed);
+        }
+        b => panic!("Expected Reasoning block, got {:?}", b),
+    }
+
+    match &retrieved.blocks[1] {
+        canywhere_protocol::models::MessageBlock::CommandExec {
+            command,
+            output,
+            exit_code,
+            status,
+            ..
+        } => {
+            assert_eq!(command, "cargo check");
+            assert_eq!(output.as_deref(), Some("Finished dev profile"));
+            assert_eq!(*exit_code, Some(0));
+            assert_eq!(*status, canywhere_protocol::models::CommandExecStatus::Completed);
+        }
+        b => panic!("Expected CommandExec block, got {:?}", b),
+    }
+
+    match &retrieved.blocks[2] {
+        canywhere_protocol::models::MessageBlock::ToolCall {
+            call_id,
+            name,
+            output,
+            status,
+            ..
+        } => {
+            assert_eq!(call_id, "call_abc");
+            assert_eq!(name, "read_file");
+            assert_eq!(output.as_deref(), Some("fn main() {}"));
+            assert_eq!(*status, canywhere_protocol::models::ToolCallStatus::Completed);
+        }
+        b => panic!("Expected ToolCall block, got {:?}", b),
+    }
+
+    match &retrieved.blocks[3] {
+        canywhere_protocol::models::MessageBlock::Text { content } => {
+            assert_eq!(content, "Everything compiles cleanly!");
+        }
+        b => panic!("Expected Text block, got {:?}", b),
+    }
+}

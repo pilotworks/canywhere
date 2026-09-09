@@ -48,34 +48,37 @@ pub async fn run_server(
             match event {
                 AgentEvent::TurnCompleted {
                     chat_id,
+                    message_id,
                     turn_id,
                     status,
-                    text_content,
+                    blocks,
+                    ..
                 } => {
                     let _ = repo_persist.update_chat_status(&chat_id, status, None);
-                    if let Some(text) = text_content {
-                        if !text.trim().is_empty() {
-                            let now = std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as i64;
-                            let agent_msg = canywhere_protocol::models::Message {
-                                id: nanoid::nanoid!(16),
-                                chat_id: chat_id.clone(),
-                                turn_id: Some(turn_id),
-                                role: canywhere_protocol::models::MessageRole::Agent,
-                                blocks: vec![canywhere_protocol::models::MessageBlock::Text {
-                                    content: text,
-                                }],
-                                created_at: now,
-                                streaming: false,
-                            };
-                            if let Err(e) = repo_persist.record_message(&agent_msg) {
-                                tracing::error!(
-                                    "[HostServer] Failed to record completed agent message: {}",
-                                    e
-                                );
-                            }
+                    if !blocks.is_empty() {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as i64;
+                        let msg_id = if message_id.is_empty() {
+                            nanoid::nanoid!(16)
+                        } else {
+                            message_id
+                        };
+                        let agent_msg = canywhere_protocol::models::Message {
+                            id: msg_id,
+                            chat_id: chat_id.clone(),
+                            turn_id: Some(turn_id),
+                            role: canywhere_protocol::models::MessageRole::Agent,
+                            blocks,
+                            created_at: now,
+                            streaming: false,
+                        };
+                        if let Err(e) = repo_persist.record_message(&agent_msg) {
+                            tracing::error!(
+                                "[HostServer] Failed to record completed agent message: {}",
+                                e
+                            );
                         }
                     }
                 }
@@ -163,18 +166,39 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
+                AgentEvent::ReasoningDelta {
+                    chat_id,
+                    message_id,
+                    delta,
+                } => {
+                    serde_json::json!({
+                        "method": "message.delta",
+                        "params": {
+                            "chatId": chat_id,
+                            "messageId": message_id,
+                            "delta": { "type": "reasoning", "text": delta }
+                        }
+                    })
+                }
                 AgentEvent::BlockStarted {
                     chat_id,
                     message_id,
+                    block_id,
                     block,
                 } => {
                     info!("🛠️  [HostServer] Tool block started for chat {}", chat_id);
+                    let mut block_payload = serde_json::to_value(&block).unwrap_or_default();
+                    if let Some(obj) = block_payload.as_object_mut() {
+                        if !block_id.is_empty() {
+                            obj.insert("id".to_string(), serde_json::Value::String(block_id.clone()));
+                        }
+                    }
                     serde_json::json!({
                         "method": "tool.started",
                         "params": {
                             "chatId": chat_id,
                             "messageId": message_id,
-                            "block": block
+                            "block": block_payload
                         }
                     })
                 }
@@ -182,14 +206,30 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     chat_id,
                     message_id,
                     block_id,
+                    block,
                 } => {
                     info!("✅ [HostServer] Tool block completed: {}", block_id);
+                    let mut block_payload = match block {
+                        Some(b) => serde_json::to_value(b)
+                            .unwrap_or_else(|_| serde_json::json!({ "id": block_id })),
+                        None => serde_json::json!({ "id": block_id }),
+                    };
+                    if let Some(obj) = block_payload.as_object_mut() {
+                        if !block_id.is_empty() {
+                            if !obj.contains_key("id") {
+                                obj.insert("id".to_string(), serde_json::Value::String(block_id.clone()));
+                            }
+                            if !obj.contains_key("callId") {
+                                obj.insert("callId".to_string(), serde_json::Value::String(block_id.clone()));
+                            }
+                        }
+                    }
                     serde_json::json!({
                         "method": "tool.completed",
                         "params": {
                             "chatId": chat_id,
                             "messageId": message_id,
-                            "block": { "id": block_id }
+                            "block": block_payload
                         }
                     })
                 }

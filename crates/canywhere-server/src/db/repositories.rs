@@ -363,8 +363,13 @@ impl RepositoryManager {
         conn.execute(
             "INSERT INTO messages (id, chat_id, role, turn_id, sequence, created_at)
              VALUES (?1, ?2, ?3, ?4, 0, ?5)
-             ON CONFLICT(id) DO NOTHING",
+             ON CONFLICT(id) DO UPDATE SET turn_id = excluded.turn_id",
             params![msg.id, msg.chat_id, role_str, msg.turn_id, msg.created_at],
+        )?;
+
+        conn.execute(
+            "DELETE FROM message_blocks WHERE message_id = ?1",
+            params![msg.id],
         )?;
 
         for (idx, block) in msg.blocks.iter().enumerate() {

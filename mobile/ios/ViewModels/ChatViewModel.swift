@@ -45,9 +45,9 @@ final class ChatViewModel {
             )
             self.chat = result.chat
             self.messages = result.messages
-            self.pendingApprovals = result.pendingApprovals
-            self.isRunning = (result.chat.status == .running || result.chat.status == .awaitingApproval)
-            self.streamingMessageId = nil
+            let hasStreamingMsg = result.messages.contains(where: { $0.streaming && $0.role == .agent })
+            self.isRunning = (result.chat.status == .running || result.chat.status == .awaitingApproval || hasStreamingMsg)
+            self.streamingMessageId = result.messages.last(where: { $0.streaming && $0.role == .agent })?.id
             self.streamingText = ""
         } catch {
             print("⚠️ [ChatViewModel] Failed to get chat: \(error)")
@@ -152,11 +152,31 @@ final class ChatViewModel {
 
                 if let idx = targetIndex {
                     var blocks = messages[idx].blocks
-                    if let lastIdx = blocks.indices.last, blocks[lastIdx].type == .text {
-                        let existing = blocks[lastIdx].content ?? ""
-                        blocks[lastIdx] = .text(existing + text)
+                    if payload.delta.type == "reasoning" {
+                        if let lastIdx = blocks.indices.last, blocks[lastIdx].type == .reasoning && !(blocks[lastIdx].completed ?? true) {
+                            let existing = blocks[lastIdx].content ?? ""
+                            blocks[lastIdx] = .reasoning(existing + text, completed: false)
+                        } else {
+                            // Finalize any earlier uncompleted reasoning blocks
+                            for bIdx in blocks.indices {
+                                if blocks[bIdx].type == .reasoning && !(blocks[bIdx].completed ?? true) {
+                                    blocks[bIdx] = .reasoning(blocks[bIdx].content ?? "", completed: true)
+                                }
+                            }
+                            blocks.append(.reasoning(text, completed: false))
+                        }
                     } else {
-                        blocks.append(.text(text))
+                        // text delta: finalize any in-progress reasoning block
+                        if let lastIdx = blocks.indices.last, blocks[lastIdx].type == .reasoning, !(blocks[lastIdx].completed ?? true) {
+                            let existing = blocks[lastIdx].content ?? ""
+                            blocks[lastIdx] = .reasoning(existing, completed: true)
+                        }
+                        if let lastIdx = blocks.indices.last, blocks[lastIdx].type == .text {
+                            let existing = blocks[lastIdx].content ?? ""
+                            blocks[lastIdx] = .text(existing + text)
+                        } else {
+                            blocks.append(.text(text))
+                        }
                     }
                     messages[idx] = messages[idx].with(blocks: blocks)
                     self.streamingMessageId = messages[idx].id
@@ -178,6 +198,12 @@ final class ChatViewModel {
                 guard payload.chatId == chatId else { return }
                 if let idx = messages.firstIndex(where: { $0.id == payload.messageId }) {
                     var blocks = messages[idx].blocks
+                    // Finalize any in-progress reasoning blocks
+                    for bIdx in blocks.indices {
+                        if blocks[bIdx].type == .reasoning && !(blocks[bIdx].completed ?? true) {
+                            blocks[bIdx] = .reasoning(blocks[bIdx].content ?? "", completed: true)
+                        }
+                    }
                     blocks.append(payload.block)
                     messages[idx] = messages[idx].with(blocks: blocks)
                 }
@@ -190,13 +216,54 @@ final class ChatViewModel {
             do {
                 let payload = try data.decodeRPCParams(ToolCompletedPayload.self)
                 guard payload.chatId == chatId else { return }
-                if let msgIdx = messages.firstIndex(where: { $0.id == payload.messageId }) {
+                let targetMsgIdx: Int?
+                if let idx = messages.firstIndex(where: { $0.id == payload.messageId }) {
+                    targetMsgIdx = idx
+                } else if let sId = streamingMessageId, let idx = messages.firstIndex(where: { $0.id == sId }) {
+                    targetMsgIdx = idx
+                } else {
+                    targetMsgIdx = messages.indices.last
+                }
+
+                if let msgIdx = targetMsgIdx {
                     var blocks = messages[msgIdx].blocks
-                    for bIdx in blocks.indices {
-                        if blocks[bIdx].callID == payload.block.id {
-                            blocks[bIdx] = blocks[bIdx].with(status: .completed)
+                    var matched = false
+                    let blockId = payload.block?.id ?? payload.block?.callId
+
+                    if let bId = blockId, !bId.isEmpty {
+                        for bIdx in blocks.indices {
+                            if blocks[bIdx].callID == bId {
+                                let newStatus = payload.block?.status ?? .completed
+                                blocks[bIdx] = blocks[bIdx].with(
+                                    output: payload.block?.output ?? blocks[bIdx].output,
+                                    status: newStatus
+                                )
+                                matched = true
+                                break
+                            }
                         }
                     }
+
+                    if !matched {
+                        // Fallback: match the last running block of matching type or any running tool/command block
+                        let targetType = payload.block?.type
+                        for bIdx in blocks.indices.reversed() {
+                            let b = blocks[bIdx]
+                            if b.status == .running {
+                                if targetType == nil || b.type.rawValue == targetType {
+                                    let newStatus = payload.block?.status ?? .completed
+                                    blocks[bIdx] = blocks[bIdx].with(
+                                        output: payload.block?.output ?? blocks[bIdx].output,
+                                        status: newStatus,
+                                        exitCode: payload.block?.exitCode ?? blocks[bIdx].exitCode
+                                    )
+                                    matched = true
+                                    break
+                                }
+                            }
+                        }
+                    }
+
                     messages[msgIdx] = messages[msgIdx].with(blocks: blocks)
                 }
             } catch {
@@ -211,8 +278,17 @@ final class ChatViewModel {
                 self.streamingText = ""
                 self.isRunning = false
                 for i in messages.indices {
-                    if messages[i].streaming {
-                        messages[i] = messages[i].with(streaming: false)
+                    if messages[i].streaming || i == messages.indices.last {
+                        var blocks = messages[i].blocks
+                        for bIdx in blocks.indices {
+                            if blocks[bIdx].type == .reasoning && !(blocks[bIdx].completed ?? true) {
+                                blocks[bIdx] = blocks[bIdx].with(completed: true)
+                            }
+                            if blocks[bIdx].status == .running {
+                                blocks[bIdx] = blocks[bIdx].with(status: .completed)
+                            }
+                        }
+                        messages[i] = messages[i].with(blocks: blocks, streaming: false)
                     }
                 }
                 scrollTrigger &+= 1
@@ -234,5 +310,16 @@ final class ChatViewModel {
         default:
             break
         }
+    }
+
+    func durationFor(message: Message, at index: Int) -> Int {
+        guard index < messages.count else { return 1 }
+        for i in stride(from: index - 1, through: 0, by: -1) {
+            if messages[i].role == .user {
+                let diff = (message.createdAt - messages[i].createdAt) / 1000
+                return max(1, diff)
+            }
+        }
+        return 1
     }
 }

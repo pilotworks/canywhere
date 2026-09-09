@@ -74,7 +74,7 @@ export interface ChatState {
   setChatStatus: (chatId: string, status: Chat["status"]) => void;
   setMessages: (chatId: string, messages: Message[]) => void;
   addMessage: (chatId: string, message: Message) => void;
-  appendTokenDelta: (chatId: string, messageId: string, blockId: string, text: string) => void;
+  appendTokenDelta: (chatId: string, messageId: string, blockId: string, text: string, type?: "text" | "reasoning") => void;
   addBlock: (chatId: string, messageId: string, block: MessageBlock) => void;
   updateBlock: (chatId: string, messageId: string, blockId: string, update: Partial<MessageBlock>) => void;
   setActiveTurn: (chatId: string, turnId: string | null) => void;
@@ -94,7 +94,7 @@ export const useChatStore = create<ChatState>((set) => ({
   addChat: (chat) => set((s) => ({ chats: [chat, ...s.chats] })),
   updateChat: (chatId, update) =>
     set((s) => ({
-      chats: s.chats.map((c) => (c.id === chatId ? { ...c, ...update } : c)),
+      chats: s.chats.map((c) => (c.id === chatId ? { ...c, ...update } : c))
     })),
   removeChat: (chatId) =>
     set((s) => {
@@ -116,7 +116,29 @@ export const useChatStore = create<ChatState>((set) => ({
       const isCompleted = status === "idle" || status === "error";
       const list = s.messages[chatId];
       const updatedMessages = isCompleted && list
-        ? { ...s.messages, [chatId]: list.map((m) => m.streaming ? { ...m, streaming: false } : m) }
+        ? {
+            ...s.messages,
+            [chatId]: list.map((m, idx) =>
+              m.streaming || idx === list.length - 1
+                ? {
+                    ...m,
+                    streaming: false,
+                    blocks: m.blocks.map((b) => {
+                      if (b.type === "reasoning" && !("completed" in b && b.completed)) {
+                        return { ...b, completed: true };
+                      }
+                      if (b.type === "tool_call" && (b as any).status === "running") {
+                        return { ...b, status: "completed" as const };
+                      }
+                      if (b.type === "command_exec" && (b as any).status === "running") {
+                        return { ...b, status: "completed" as const };
+                      }
+                      return b;
+                    })
+                  }
+                : m
+            )
+          }
         : s.messages;
       return {
         chats: s.chats.map((c) => (c.id === chatId ? { ...c, status } : c)),
@@ -137,26 +159,58 @@ export const useChatStore = create<ChatState>((set) => ({
       };
     }),
 
-  appendTokenDelta: (chatId, messageId, _blockId, text) =>
+  appendTokenDelta: (chatId, messageId, _blockId, text, type = "text") =>
     set((s) => {
       const list = s.messages[chatId] || [];
       const hasExactMatch = list.some((m) => m.id === messageId);
       const updated = list.map((m) => {
         const matches = hasExactMatch ? m.id === messageId : (m.streaming && m.role === "agent");
         if (!matches) return m;
-        // Find existing text block or append to last
+
         const blocks = [...m.blocks];
-        const lastBlock = blocks[blocks.length - 1];
-        if (lastBlock && lastBlock.type === "text") {
-          blocks[blocks.length - 1] = {
-            ...lastBlock,
-            content: lastBlock.content + text
-          };
+        if (type === "reasoning") {
+          const lastBlock = blocks[blocks.length - 1];
+          if (lastBlock && lastBlock.type === "reasoning" && !(lastBlock as any).completed) {
+            blocks[blocks.length - 1] = {
+              ...lastBlock,
+              content: (lastBlock.content || "") + text,
+              completed: false,
+            };
+          } else {
+            // Finalize any earlier uncompleted reasoning blocks
+            for (let i = 0; i < blocks.length; i++) {
+              const b = blocks[i];
+              if (b.type === "reasoning" && !(b as any).completed) {
+                blocks[i] = { ...b, completed: true };
+              }
+            }
+            blocks.push({
+              type: "reasoning",
+              content: text,
+              completed: false,
+            });
+          }
         } else {
-          blocks.push({
-            type: "text",
-            content: text
-          });
+          // type === "text"
+          const lastBlock = blocks[blocks.length - 1];
+          if (lastBlock && lastBlock.type === "reasoning" && !(lastBlock as any).completed) {
+            blocks[blocks.length - 1] = {
+              ...lastBlock,
+              completed: true,
+            };
+          }
+          const currentLast = blocks[blocks.length - 1];
+          if (currentLast && currentLast.type === "text") {
+            blocks[blocks.length - 1] = {
+              ...currentLast,
+              content: currentLast.content + text,
+            };
+          } else {
+            blocks.push({
+              type: "text",
+              content: text,
+            });
+          }
         }
         return { ...m, blocks };
       });
@@ -171,7 +225,13 @@ export const useChatStore = create<ChatState>((set) => ({
       const list = s.messages[chatId] || [];
       const updated = list.map((m) => {
         if (m.id !== messageId) return m;
-        return { ...m, blocks: [...m.blocks, block] };
+        // Finalize any in-progress reasoning blocks before adding the new block
+        const blocks = m.blocks.map((b) =>
+          b.type === "reasoning" && !(b as any).completed
+            ? { ...b, completed: true }
+            : b
+        );
+        return { ...m, blocks: [...blocks, block] };
       });
       return {
         messages: { ...s.messages, [chatId]: updated }
@@ -181,14 +241,31 @@ export const useChatStore = create<ChatState>((set) => ({
   updateBlock: (chatId, messageId, blockId, update) =>
     set((s) => {
       const list = s.messages[chatId] || [];
+      const targetMessageId = messageId || list[list.length - 1]?.id;
       const updated = list.map((m) => {
-        if (m.id !== messageId) return m;
-        const blocks = m.blocks.map((b) => {
-          if ((b as any).id === blockId || (b as any).callId === blockId) {
+        if (m.id !== targetMessageId) return m;
+        let matched = false;
+        let blocks = m.blocks.map((b) => {
+          if (blockId && ((b as any).id === blockId || (b as any).callId === blockId)) {
+            matched = true;
             return { ...b, ...update } as MessageBlock;
           }
           return b;
         });
+        if (!matched && update) {
+          const targetType = (update as any).type;
+          for (let i = blocks.length - 1; i >= 0; i--) {
+            const b = blocks[i] as any;
+            if (b.status === "running") {
+              if (!targetType || b.type === targetType) {
+                blocks = [...blocks];
+                blocks[i] = { ...b, ...update } as MessageBlock;
+                matched = true;
+                break;
+              }
+            }
+          }
+        }
         return { ...m, blocks };
       });
       return {

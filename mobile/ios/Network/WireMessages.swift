@@ -58,10 +58,15 @@ struct ToolStartedPayload: Decodable, Sendable {
 struct ToolCompletedPayload: Decodable, Sendable {
     let chatId: String
     let messageId: String
-    let block: CompletedBlockRef
+    let block: CompletedBlockRef?
 
     struct CompletedBlockRef: Decodable, Sendable {
-        let id: String
+        let id: String?
+        let callId: String?
+        let type: String?
+        let status: Status?
+        let output: String?
+        let exitCode: Int?
     }
 }
 

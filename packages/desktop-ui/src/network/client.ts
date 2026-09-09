@@ -28,7 +28,7 @@ export class CanywhereClient {
     this.tokenBuffer = new TokenStreamBuffer((flushed) => {
       const append = useChatStore.getState().appendTokenDelta;
       for (const item of flushed) {
-        append(item.chatId, item.messageId, item.blockId, item.text);
+        append(item.chatId, item.messageId, item.blockId, item.text, item.type);
       }
     }, 24);
 
@@ -123,19 +123,32 @@ export class CanywhereClient {
     useChatStore.getState().setActiveChatId(chatId);
     try {
       const res = await this.call("chat.get", { chatId });
+      const streamingMsg = (res.messages || []).find(
+        (m: any) => m.streaming && m.role === "agent"
+      );
+      const isStillRunning =
+        res.chat?.status === "running" ||
+        res.chat?.status === "awaitingApproval" ||
+        Boolean(streamingMsg);
+
       if (res.chat) {
-        useChatStore.getState().updateChat(chatId, { status: res.chat.status });
-        if (res.chat.status === "idle" || res.chat.status === "error") {
+        const resolvedStatus = isStillRunning ? (res.chat.status === "awaitingApproval" ? "awaitingApproval" : "running") : res.chat.status;
+        useChatStore.getState().updateChat(chatId, { status: resolvedStatus });
+        if (!isStillRunning) {
           useChatStore.getState().setActiveTurn(chatId, null);
         }
       }
+
       const safeMessages = (res.messages || []).map((m: any) =>
-        res.chat?.status === "idle" || res.chat?.status === "error"
-          ? { ...m, streaming: false }
-          : m
+        !isStillRunning ? { ...m, streaming: false } : m
       );
       useChatStore.getState().setMessages(chatId, safeMessages);
-      useApprovalStore.getState().setPendingApprovals(res.pendingApprovals);
+      useApprovalStore.getState().setPendingApprovals(res.pendingApprovals || []);
+
+      // If there is an active streaming message with a turnId, restore active turn ID so steering and interrupt work immediately
+      if (streamingMsg?.turnId) {
+        useChatStore.getState().setActiveTurn(chatId, streamingMsg.turnId);
+      }
     } catch (err) {
       console.error("[CanywhereClient] Failed to load chat history", err);
     }
@@ -340,11 +353,13 @@ export class CanywhereClient {
       }
 
       case "message.delta": {
+        const deltaType = params.delta?.type === "reasoning" ? "reasoning" : "text";
         this.tokenBuffer.append({
           chatId: params.chatId,
           messageId: params.messageId,
           blockId: "active",
-          delta: params.delta.text
+          delta: params.delta.text,
+          type: deltaType,
         });
         break;
       }
@@ -362,9 +377,11 @@ export class CanywhereClient {
       case "tool.completed": {
         this.tokenBuffer.flush();
         const messages = useChatStore.getState().messages[params.chatId] || [];
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg) {
-          useChatStore.getState().updateBlock(params.chatId, lastMsg.id, params.block.id, params.block);
+        const targetMessageId = params.messageId || messages[messages.length - 1]?.id;
+        if (targetMessageId) {
+          const blockId = params.block?.id || params.block?.callId;
+          const patch = params.block?.status ? params.block : { ...params.block, status: "completed" };
+          useChatStore.getState().updateBlock(params.chatId, targetMessageId, blockId, patch);
         }
         break;
       }

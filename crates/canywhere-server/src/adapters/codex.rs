@@ -19,15 +19,22 @@ pub enum AgentEvent {
         message_id: String,
         delta: String,
     },
+    ReasoningDelta {
+        chat_id: String,
+        message_id: String,
+        delta: String,
+    },
     BlockStarted {
         chat_id: String,
         message_id: String,
+        block_id: String,
         block: MessageBlock,
     },
     BlockCompleted {
         chat_id: String,
         message_id: String,
         block_id: String,
+        block: Option<MessageBlock>,
     },
     ApprovalRequested {
         chat_id: String,
@@ -35,9 +42,12 @@ pub enum AgentEvent {
     },
     TurnCompleted {
         chat_id: String,
+        message_id: String,
         turn_id: String,
         status: ChatStatus,
+        blocks: Vec<MessageBlock>,
         text_content: Option<String>,
+        reasoning_content: Option<String>,
     },
     ChatTitleUpdated {
         chat_id: String,
@@ -69,6 +79,9 @@ pub struct CodexAdapter {
     thread_to_chat: Arc<Mutex<HashMap<String, String>>>,
     chat_active_turn: Arc<Mutex<HashMap<String, (String, String)>>>,
     chat_accumulated_text: Arc<Mutex<HashMap<String, String>>>,
+    chat_accumulated_reasoning: Arc<Mutex<HashMap<String, String>>>,
+    chat_accumulated_blocks: Arc<Mutex<HashMap<String, Vec<MessageBlock>>>>,
+    chat_pending_approvals: Arc<Mutex<HashMap<String, Vec<ApprovalRequest>>>>,
     event_tx: broadcast::Sender<AgentEvent>,
 }
 
@@ -83,6 +96,9 @@ impl CodexAdapter {
             thread_to_chat: Arc::new(Mutex::new(HashMap::new())),
             chat_active_turn: Arc::new(Mutex::new(HashMap::new())),
             chat_accumulated_text: Arc::new(Mutex::new(HashMap::new())),
+            chat_accumulated_reasoning: Arc::new(Mutex::new(HashMap::new())),
+            chat_accumulated_blocks: Arc::new(Mutex::new(HashMap::new())),
+            chat_pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             event_tx,
         };
         (adapter, event_rx)
@@ -111,6 +127,9 @@ impl CodexAdapter {
         let thread_to_chat = Arc::clone(&self.thread_to_chat);
         let chat_turn = Arc::clone(&self.chat_active_turn);
         let chat_text = Arc::clone(&self.chat_accumulated_text);
+        let chat_reasoning = Arc::clone(&self.chat_accumulated_reasoning);
+        let chat_blocks = Arc::clone(&self.chat_accumulated_blocks);
+        let chat_approvals = Arc::clone(&self.chat_pending_approvals);
         let tx = self.event_tx.clone();
 
         tokio::spawn(async move {
@@ -127,6 +146,9 @@ impl CodexAdapter {
                         &thread_to_chat,
                         &chat_turn,
                         &chat_text,
+                        &chat_reasoning,
+                        &chat_blocks,
+                        &chat_approvals,
                         &tx,
                     )
                     .await;
@@ -173,7 +195,10 @@ impl CodexAdapter {
                 "thread/start",
                 serde_json::json!({
                     "cwd": cwd,
-                    "runtimeWorkspaceRoots": sub_paths
+                    "runtimeWorkspaceRoots": sub_paths,
+                    "config": {
+                        "model_reasoning_summary": "detailed"
+                    }
                 }),
             )
             .await?;
@@ -366,7 +391,8 @@ impl CodexAdapter {
 
         let mut turn_params = serde_json::json!({
             "threadId": thread_id,
-            "input": [{ "type": "text", "text": prompt }]
+            "input": [{ "type": "text", "text": prompt }],
+            "summary": "detailed"
         });
 
         if let Some(m) = model {
@@ -398,6 +424,14 @@ impl CodexAdapter {
         {
             let mut text = self.chat_accumulated_text.lock().await;
             text.insert(chat_id.to_string(), String::new());
+        }
+        {
+            let mut reasoning = self.chat_accumulated_reasoning.lock().await;
+            reasoning.insert(chat_id.to_string(), String::new());
+        }
+        {
+            let mut blocks = self.chat_accumulated_blocks.lock().await;
+            blocks.insert(chat_id.to_string(), Vec::new());
         }
 
         let res = self.send_request("turn/start", turn_params).await?;
@@ -456,6 +490,14 @@ impl CodexAdapter {
             _ => "decline",
         };
 
+        // Remove from pending approvals across chats
+        {
+            let mut approvals = self.chat_pending_approvals.lock().await;
+            for list in approvals.values_mut() {
+                list.retain(|a| a.id != external_request_id && a.external_request_id != external_request_id);
+            }
+        }
+
         if let Ok(id) = external_request_id.parse::<i64>() {
             self.send_response(id, serde_json::json!({ "decision": codex_decision }))
                 .await?;
@@ -470,14 +512,64 @@ impl CodexAdapter {
         Ok(())
     }
 
+    pub async fn get_pending_approvals(&self, chat_id: &str) -> Vec<ApprovalRequest> {
+        let approvals = self.chat_pending_approvals.lock().await;
+        approvals.get(chat_id).cloned().unwrap_or_default()
+    }
+
+    pub async fn get_active_streaming_message(&self, chat_id: &str) -> Option<Message> {
+        let active = self.chat_active_turn.lock().await;
+        let (turn_id, message_id) = active.get(chat_id)?;
+
+        let blocks_guard = self.chat_accumulated_blocks.lock().await;
+        let mut blocks = blocks_guard.get(chat_id).cloned().unwrap_or_default();
+
+        let text_content = self.chat_accumulated_text.lock().await;
+        let text = text_content.get(chat_id).cloned().unwrap_or_default();
+
+        let reasoning_content = self.chat_accumulated_reasoning.lock().await;
+        let reasoning = reasoning_content.get(chat_id).cloned().unwrap_or_default();
+
+        if blocks.is_empty() {
+            if !reasoning.trim().is_empty() {
+                blocks.push(MessageBlock::Reasoning {
+                    content: reasoning,
+                    completed: false,
+                });
+            }
+            if !text.trim().is_empty() {
+                blocks.push(MessageBlock::Text {
+                    content: text,
+                });
+            }
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+
+        Some(Message {
+            id: message_id.clone(),
+            chat_id: chat_id.to_string(),
+            turn_id: if turn_id.is_empty() { None } else { Some(turn_id.clone()) },
+            role: MessageRole::Agent,
+            blocks,
+            created_at: now,
+            streaming: true,
+        })
+    }
+
     pub async fn get_active_turn(&self, chat_id: &str) -> Option<String> {
         let active = self.chat_active_turn.lock().await;
-        active.get(chat_id).map(|(turn_id, _)| turn_id.clone()).filter(|s| !s.is_empty())
+        active.get(chat_id).map(|(turn_id, _)| turn_id.clone())
     }
 
     pub async fn clear_active_turn(&self, chat_id: &str) {
         let mut active = self.chat_active_turn.lock().await;
         active.remove(chat_id);
+        let mut approvals = self.chat_pending_approvals.lock().await;
+        approvals.remove(chat_id);
     }
 
     pub async fn interrupt_turn(&self, thread_id: &str, turn_id: &str) -> Result<()> {
@@ -503,6 +595,9 @@ impl CodexAdapter {
         thread_to_chat: &Arc<Mutex<HashMap<String, String>>>,
         chat_turn: &Arc<Mutex<HashMap<String, (String, String)>>>,
         chat_text: &Arc<Mutex<HashMap<String, String>>>,
+        chat_reasoning: &Arc<Mutex<HashMap<String, String>>>,
+        chat_blocks: &Arc<Mutex<HashMap<String, Vec<MessageBlock>>>>,
+        chat_approvals: &Arc<Mutex<HashMap<String, Vec<ApprovalRequest>>>>,
         tx: &broadcast::Sender<AgentEvent>,
     ) {
         // 1. In JSON-RPC 2.0, a Response has an "id" and ("result" or "error"), but NO "method".
@@ -534,6 +629,9 @@ impl CodexAdapter {
             "item/agentMessage/delta"
             | "item/reasoning/textDelta"
             | "item/reasoning/summaryTextDelta"
+            | "item/reasoning/summaryPartAdded"
+            | "item/commandExecution/outputDelta"
+            | "item/started"
             | "item/completed"
             | "item/commandExecution/requestApproval"
             | "item/fileChange/requestApproval"
@@ -551,6 +649,19 @@ impl CodexAdapter {
             .or_else(|| {
                 params
                     .get("thread")
+                    .and_then(|t| t.get("id"))
+                    .and_then(|id| id.as_str())
+            })
+            .or_else(|| {
+                params
+                    .get("item")
+                    .and_then(|it| it.get("threadId"))
+                    .and_then(|t| t.as_str())
+            })
+            .or_else(|| {
+                params
+                    .get("item")
+                    .and_then(|it| it.get("thread"))
                     .and_then(|t| t.get("id"))
                     .and_then(|id| id.as_str())
             })
@@ -596,6 +707,20 @@ impl CodexAdapter {
                     .or_default()
                     .push_str(&delta);
             }
+            {
+                let mut blocks_lock = chat_blocks.lock().await;
+                let blocks = blocks_lock.entry(chat_id.clone()).or_default();
+                if let Some(MessageBlock::Reasoning { completed, .. }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                    *completed = true;
+                }
+                if let Some(MessageBlock::Text { content }) = blocks.last_mut() {
+                    content.push_str(&delta);
+                } else {
+                    blocks.push(MessageBlock::Text {
+                        content: delta.clone(),
+                    });
+                }
+            }
             let _ = tx.send(AgentEvent::TokenDelta {
                 chat_id,
                 message_id: msg_id,
@@ -607,11 +732,183 @@ impl CodexAdapter {
                 .as_ref()
                 .map(|t| t.1.clone())
                 .unwrap_or_else(|| nanoid::nanoid!(16));
-            let _ = tx.send(AgentEvent::TokenDelta {
+            {
+                let mut r_lock = chat_reasoning.lock().await;
+                r_lock
+                    .entry(chat_id.clone())
+                    .or_default()
+                    .push_str(&delta);
+            }
+            {
+                let mut blocks_lock = chat_blocks.lock().await;
+                let blocks = blocks_lock.entry(chat_id.clone()).or_default();
+                if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                    if !*completed {
+                        content.push_str(&delta);
+                    } else {
+                        blocks.push(MessageBlock::Reasoning {
+                            content: delta.clone(),
+                            completed: false,
+                        });
+                    }
+                } else {
+                    blocks.push(MessageBlock::Reasoning {
+                        content: delta.clone(),
+                        completed: false,
+                    });
+                }
+            }
+            let _ = tx.send(AgentEvent::ReasoningDelta {
                 chat_id,
                 message_id: msg_id,
                 delta,
             });
+        } else if method == "item/reasoning/summaryPartAdded" {
+            let msg_id = active_turn
+                .as_ref()
+                .map(|t| t.1.clone())
+                .unwrap_or_else(|| nanoid::nanoid!(16));
+            let mut need_newline = false;
+            {
+                let mut r_lock = chat_reasoning.lock().await;
+                let r = r_lock.entry(chat_id.clone()).or_default();
+                if !r.is_empty() && !r.ends_with("\n\n") {
+                    if r.ends_with('\n') {
+                        r.push('\n');
+                    } else {
+                        r.push_str("\n\n");
+                    }
+                    need_newline = true;
+                }
+            }
+            if need_newline {
+                let mut blocks_lock = chat_blocks.lock().await;
+                let blocks = blocks_lock.entry(chat_id.clone()).or_default();
+                if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                    if !*completed && !content.ends_with("\n\n") {
+                        if content.ends_with('\n') {
+                            content.push('\n');
+                        } else {
+                            content.push_str("\n\n");
+                        }
+                    }
+                }
+                let _ = tx.send(AgentEvent::ReasoningDelta {
+                    chat_id,
+                    message_id: msg_id,
+                    delta: "\n\n".to_string(),
+                });
+            }
+        } else if method == "item/commandExecution/outputDelta" {
+            let delta = params["delta"]
+                .as_str()
+                .or_else(|| params["chunk"].as_str())
+                .unwrap_or("");
+            if !delta.is_empty() {
+                let mut blocks_lock = chat_blocks.lock().await;
+                if let Some(blocks) = blocks_lock.get_mut(&chat_id) {
+                    for b in blocks.iter_mut().rev() {
+                        if let MessageBlock::CommandExec { output, .. } = b {
+                            output.get_or_insert_with(String::new).push_str(delta);
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if method == "item/started" {
+            let item = &params["item"];
+            let item_type = item["type"].as_str().unwrap_or("");
+            let msg_id = active_turn
+                .as_ref()
+                .map(|t| t.1.clone())
+                .unwrap_or_else(|| nanoid::nanoid!(16));
+            let item_id = item["id"].as_str().unwrap_or("").to_string();
+
+            // Mark any prior uncompleted reasoning block as complete
+            {
+                let mut blocks_lock = chat_blocks.lock().await;
+                let blocks = blocks_lock.entry(chat_id.clone()).or_default();
+                if let Some(MessageBlock::Reasoning { completed, .. }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                    *completed = true;
+                }
+            }
+
+            if item_type == "commandExecution" {
+                let cmd = item["command"].as_str().unwrap_or("").to_string();
+                let cwd = item["cwd"].as_str().unwrap_or("").to_string();
+                let block = MessageBlock::CommandExec {
+                    command: cmd,
+                    cwd,
+                    output: None,
+                    exit_code: None,
+                    status: CommandExecStatus::Running,
+                };
+                {
+                    let mut blocks_lock = chat_blocks.lock().await;
+                    blocks_lock
+                        .entry(chat_id.clone())
+                        .or_default()
+                        .push(block.clone());
+                }
+                let _ = tx.send(AgentEvent::BlockStarted {
+                    chat_id,
+                    message_id: msg_id,
+                    block_id: item_id,
+                    block,
+                });
+            } else if item_type == "mcpToolCall"
+                || item_type == "dynamicToolCall"
+                || item_type == "collabAgentToolCall"
+                || item_type == "webSearch"
+                || item_type == "toolCall"
+            {
+                let name = item["tool"]
+                    .as_str()
+                    .or_else(|| item["name"].as_str())
+                    .unwrap_or(if item_type == "webSearch" { "webSearch" } else { "tool" })
+                    .to_string();
+                let args = item
+                    .get("arguments")
+                    .cloned()
+                    .or_else(|| item.get("query").map(|q| serde_json::json!({ "query": q })))
+                    .unwrap_or(serde_json::Value::Null);
+                let block = MessageBlock::ToolCall {
+                    call_id: item_id.clone(),
+                    name,
+                    args,
+                    output: None,
+                    status: ToolCallStatus::Running,
+                };
+                {
+                    let mut blocks_lock = chat_blocks.lock().await;
+                    blocks_lock
+                        .entry(chat_id.clone())
+                        .or_default()
+                        .push(block.clone());
+                }
+                let _ = tx.send(AgentEvent::BlockStarted {
+                    chat_id,
+                    message_id: msg_id,
+                    block_id: item_id,
+                    block,
+                });
+            } else if item_type == "plan" {
+                let text = item["text"].as_str().unwrap_or("").to_string();
+                let block = MessageBlock::Plan { content: text };
+                {
+                    let mut blocks_lock = chat_blocks.lock().await;
+                    blocks_lock
+                        .entry(chat_id.clone())
+                        .or_default()
+                        .push(block.clone());
+                }
+                let _ = tx.send(AgentEvent::BlockStarted {
+                    chat_id,
+                    message_id: msg_id,
+                    block_id: item_id,
+                    block,
+                });
+            }
         } else if method == "item/completed" {
             let item = &params["item"];
             let item_type = item["type"].as_str().unwrap_or("");
@@ -619,6 +916,7 @@ impl CodexAdapter {
                 .as_ref()
                 .map(|t| t.1.clone())
                 .unwrap_or_else(|| nanoid::nanoid!(16));
+            let item_id = item["id"].as_str().unwrap_or("").to_string();
 
             if item_type == "agentMessage" {
                 if let Some(text) = item["text"].as_str() {
@@ -632,6 +930,237 @@ impl CodexAdapter {
                         });
                     }
                     text_lock.insert(chat_id.clone(), text.to_string());
+
+                    let mut blocks_lock = chat_blocks.lock().await;
+                    let blocks = blocks_lock.entry(chat_id.clone()).or_default();
+                    if let Some(MessageBlock::Text { content }) = blocks.last_mut() {
+                        if content.is_empty() {
+                            *content = text.to_string();
+                        }
+                    } else if !text.is_empty() {
+                        blocks.push(MessageBlock::Text {
+                            content: text.to_string(),
+                        });
+                    }
+                }
+            } else if item_type == "commandExecution" {
+                let agg_out = item["aggregatedOutput"]
+                    .as_str()
+                    .or_else(|| item["output"].as_str())
+                    .map(|s| s.to_string());
+                let exit_code = item["exitCode"].as_i64().map(|n| n as i32);
+                let status_str = item["status"].as_str().unwrap_or("");
+                let status = match status_str {
+                    "failed" | "declined" => CommandExecStatus::Failed,
+                    "completed" => CommandExecStatus::Completed,
+                    _ => {
+                        if exit_code.unwrap_or(0) == 0 {
+                            CommandExecStatus::Completed
+                        } else {
+                            CommandExecStatus::Failed
+                        }
+                    }
+                };
+
+                let mut updated_block: Option<MessageBlock> = None;
+                {
+                    let mut blocks_lock = chat_blocks.lock().await;
+                    if let Some(blocks) = blocks_lock.get_mut(&chat_id) {
+                        for b in blocks.iter_mut().rev() {
+                            if let MessageBlock::CommandExec {
+                                output,
+                                exit_code: b_exit,
+                                status: b_status,
+                                ..
+                            } = b
+                            {
+                                if let Some(ao) = agg_out.clone() {
+                                    *output = Some(ao);
+                                }
+                                *b_exit = exit_code;
+                                *b_status = status;
+                                updated_block = Some(b.clone());
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                let _ = tx.send(AgentEvent::BlockCompleted {
+                    chat_id,
+                    message_id: msg_id,
+                    block_id: item_id,
+                    block: updated_block,
+                });
+            } else if item_type == "mcpToolCall"
+                || item_type == "dynamicToolCall"
+                || item_type == "collabAgentToolCall"
+                || item_type == "webSearch"
+                || item_type == "toolCall"
+            {
+                let status_str = item["status"].as_str().unwrap_or("");
+                let success = item.get("success").and_then(|s| s.as_bool());
+                let is_failed = status_str == "failed"
+                    || item.get("error").is_some()
+                    || success == Some(false);
+                let status = if is_failed {
+                    ToolCallStatus::Failed
+                } else {
+                    ToolCallStatus::Completed
+                };
+
+                let tool_out = if let Some(err) = item
+                    .get("error")
+                    .and_then(|e| e.get("message"))
+                    .and_then(|m| m.as_str())
+                {
+                    Some(err.to_string())
+                } else if let Some(res) = item.get("result") {
+                    if let Some(arr) = res.get("content").and_then(|c| c.as_array()) {
+                        let texts: Vec<String> = arr
+                            .iter()
+                            .filter_map(|c| {
+                                c.get("text")
+                                    .and_then(|t| t.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .collect();
+                        if !texts.is_empty() {
+                            Some(texts.join("\n"))
+                        } else {
+                            Some(res.to_string())
+                        }
+                    } else {
+                        Some(res.to_string())
+                    }
+                } else if let Some(items) = item.get("contentItems").and_then(|c| c.as_array()) {
+                    let texts: Vec<String> = items
+                        .iter()
+                        .filter_map(|c| {
+                            c.get("text")
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.to_string())
+                        })
+                        .collect();
+                    if !texts.is_empty() {
+                        Some(texts.join("\n"))
+                    } else {
+                        Some(item["contentItems"].to_string())
+                    }
+                } else if let Some(out) = item.get("output").and_then(|o| o.as_str()) {
+                    Some(out.to_string())
+                } else {
+                    None
+                };
+
+                let mut updated_block: Option<MessageBlock> = None;
+                {
+                    let mut blocks_lock = chat_blocks.lock().await;
+                    if let Some(blocks) = blocks_lock.get_mut(&chat_id) {
+                        let mut matched = false;
+                        if !item_id.is_empty() {
+                            for b in blocks.iter_mut().rev() {
+                                if let MessageBlock::ToolCall {
+                                    call_id,
+                                    output,
+                                    status: b_status,
+                                    ..
+                                } = b
+                                {
+                                    if *call_id == item_id {
+                                        if let Some(to) = tool_out.clone() {
+                                            *output = Some(to);
+                                        }
+                                        *b_status = status;
+                                        updated_block = Some(b.clone());
+                                        matched = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if !matched {
+                            // Fallback: match the last running ToolCall
+                            for b in blocks.iter_mut().rev() {
+                                if let MessageBlock::ToolCall {
+                                    output,
+                                    status: b_status,
+                                    ..
+                                } = b
+                                {
+                                    if *b_status == ToolCallStatus::Running {
+                                        if let Some(to) = tool_out.clone() {
+                                            *output = Some(to);
+                                        }
+                                        *b_status = status;
+                                        updated_block = Some(b.clone());
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let _ = tx.send(AgentEvent::BlockCompleted {
+                    chat_id,
+                    message_id: msg_id,
+                    block_id: item_id,
+                    block: updated_block,
+                });
+            } else if item_type == "fileChange" {
+                if let Some(changes) = item.get("changes").and_then(|c| c.as_array()) {
+                    for change in changes {
+                        let path = change["path"].as_str().unwrap_or("").to_string();
+                        let patch = change["diff"]
+                            .as_str()
+                            .or_else(|| change["patch"].as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let block = MessageBlock::FileDiff {
+                            path,
+                            patch,
+                            status: FileDiffStatus::Applied,
+                        };
+                        {
+                            let mut blocks_lock = chat_blocks.lock().await;
+                            blocks_lock
+                                .entry(chat_id.clone())
+                                .or_default()
+                                .push(block.clone());
+                        }
+                        let _ = tx.send(AgentEvent::BlockStarted {
+                            chat_id: chat_id.clone(),
+                            message_id: msg_id.clone(),
+                            block_id: item_id.clone(),
+                            block,
+                        });
+                    }
+                }
+            } else if item_type == "reasoning" {
+                let full_reasoning = extract_reasoning_text(item);
+                let accumulated_reasoning = {
+                    let r_lock = chat_reasoning.lock().await;
+                    r_lock.get(&chat_id).cloned().unwrap_or_default()
+                };
+                let best_reasoning = if !full_reasoning.is_empty() {
+                    full_reasoning
+                } else {
+                    accumulated_reasoning
+                };
+
+                let mut blocks_lock = chat_blocks.lock().await;
+                let blocks = blocks_lock.entry(chat_id.clone()).or_default();
+                if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                    if !best_reasoning.is_empty() && (content.is_empty() || best_reasoning.len() > content.len()) {
+                        *content = best_reasoning;
+                    }
+                    *completed = true;
+                } else if !best_reasoning.is_empty() {
+                    blocks.push(MessageBlock::Reasoning {
+                        content: best_reasoning,
+                        completed: true,
+                    });
                 }
             }
         } else if method == "item/commandExecution/requestApproval" {
@@ -676,6 +1205,10 @@ impl CodexAdapter {
                 resolved_by_device_id: None,
                 resolved_by_device_name: None,
             };
+            {
+                let mut app_lock = chat_approvals.lock().await;
+                app_lock.entry(chat_id.clone()).or_default().push(approval.clone());
+            }
             let _ = tx.send(AgentEvent::ApprovalRequested {
                 chat_id,
                 request: approval,
@@ -718,25 +1251,120 @@ impl CodexAdapter {
                 resolved_by_device_id: None,
                 resolved_by_device_name: None,
             };
+            {
+                let mut app_lock = chat_approvals.lock().await;
+                app_lock.entry(chat_id.clone()).or_default().push(approval.clone());
+            }
             let _ = tx.send(AgentEvent::ApprovalRequested {
                 chat_id,
                 request: approval,
             });
         } else if method == "turn/completed" {
-            chat_turn.lock().await.remove(&chat_id);
+            let _ = chat_approvals.lock().await.remove(&chat_id);
+            let active_pair = chat_turn.lock().await.remove(&chat_id);
             let text_content = chat_text.lock().await.remove(&chat_id);
+            let reasoning_content = chat_reasoning.lock().await.remove(&chat_id);
+            let mut blocks = chat_blocks.lock().await.remove(&chat_id).unwrap_or_default();
+
+            // Extract any completed reasoning from turn items if available
+            if let Some(items) = params.get("turn").and_then(|t| t.get("items")).and_then(|i| i.as_array()) {
+                for it in items {
+                    if it.get("type").and_then(|t| t.as_str()) == Some("reasoning") {
+                        let text = extract_reasoning_text(it);
+                        if !text.is_empty() {
+                            if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                                if content.is_empty() || text.len() > content.len() {
+                                    *content = text;
+                                }
+                                *completed = true;
+                            } else {
+                                blocks.push(MessageBlock::Reasoning {
+                                    content: text,
+                                    completed: true,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If any reasoning block has content less comprehensive than accumulated reasoning_content, update it
+            if let Some(r) = reasoning_content.as_ref() {
+                let r_trimmed = r.trim();
+                if !r_trimmed.is_empty() {
+                    if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                        if content.is_empty() || r_trimmed.len() > content.len() {
+                            *content = r.clone();
+                        }
+                        *completed = true;
+                    }
+                }
+            }
+
+            // Ensure any open reasoning, tool call, or command blocks are marked completed
+            for b in &mut blocks {
+                match b {
+                    MessageBlock::Reasoning { completed, .. } => {
+                        *completed = true;
+                    }
+                    MessageBlock::ToolCall { status, .. } => {
+                        if *status == ToolCallStatus::Running {
+                            *status = ToolCallStatus::Completed;
+                        }
+                    }
+                    MessageBlock::CommandExec { status, exit_code, .. } => {
+                        if *status == CommandExecStatus::Running {
+                            *status = if exit_code.unwrap_or(0) == 0 {
+                                CommandExecStatus::Completed
+                            } else {
+                                CommandExecStatus::Failed
+                            };
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            // Fallback: If blocks is empty but text_content or reasoning_content exists, reconstruct them
+            if blocks.is_empty() {
+                if let Some(r) = reasoning_content.as_ref() {
+                    if !r.trim().is_empty() {
+                        blocks.push(MessageBlock::Reasoning {
+                            content: r.clone(),
+                            completed: true,
+                        });
+                    }
+                }
+                if let Some(t) = text_content.as_ref() {
+                    if !t.trim().is_empty() {
+                        blocks.push(MessageBlock::Text {
+                            content: t.clone(),
+                        });
+                    }
+                }
+            }
+
             let turn_id = params
                 .get("turn")
                 .and_then(|t| t.get("id"))
                 .and_then(|id| id.as_str())
                 .or_else(|| params.get("turnId").and_then(|id| id.as_str()))
-                .unwrap_or("")
-                .to_string();
+                .map(|s| s.to_string())
+                .or_else(|| active_pair.as_ref().map(|(t, _)| t.clone()))
+                .unwrap_or_default();
+
+            let message_id = active_pair
+                .map(|(_, m)| m)
+                .unwrap_or_else(|| nanoid::nanoid!(16));
+
             let _ = tx.send(AgentEvent::TurnCompleted {
                 chat_id,
+                message_id,
                 turn_id,
                 status: ChatStatus::Idle,
+                blocks,
                 text_content,
+                reasoning_content,
             });
         } else if method == "thread/name/updated" {
             let thread_name = params
@@ -818,5 +1446,62 @@ impl CodexAdapter {
         } else {
             bail!("Stdin not open")
         }
+    }
+}
+
+fn extract_reasoning_text(item: &serde_json::Value) -> String {
+    let mut summary_parts = Vec::new();
+    let mut content_parts = Vec::new();
+
+    let extract = |val: &serde_json::Value, acc: &mut Vec<String>| {
+        if let Some(s) = val.as_str() {
+            let s_trimmed = s.trim();
+            if !s_trimmed.is_empty() {
+                acc.push(s.to_string());
+            }
+        } else if let Some(arr) = val.as_array() {
+            for elem in arr {
+                if let Some(s) = elem.as_str() {
+                    let s_trimmed = s.trim();
+                    if !s_trimmed.is_empty() {
+                        acc.push(s.to_string());
+                    }
+                } else if let Some(text) = elem.get("text").and_then(|t| t.as_str()) {
+                    let text_trimmed = text.trim();
+                    if !text_trimmed.is_empty() {
+                        acc.push(text.to_string());
+                    }
+                }
+            }
+        } else if let Some(text) = val.get("text").and_then(|t| t.as_str()) {
+            let text_trimmed = text.trim();
+            if !text_trimmed.is_empty() {
+                acc.push(text.to_string());
+            }
+        }
+    };
+
+    let summary_val = item
+        .get("summary")
+        .or_else(|| item.get("summaryText"))
+        .or_else(|| item.get("summary_text"));
+    if let Some(val) = summary_val {
+        extract(val, &mut summary_parts);
+    }
+
+    let content_val = item
+        .get("content")
+        .or_else(|| item.get("rawContent"))
+        .or_else(|| item.get("raw_content"));
+    if let Some(val) = content_val {
+        extract(val, &mut content_parts);
+    }
+
+    if !summary_parts.is_empty() {
+        summary_parts.join("\n\n")
+    } else if !content_parts.is_empty() {
+        content_parts.join("\n\n")
+    } else {
+        String::new()
     }
 }

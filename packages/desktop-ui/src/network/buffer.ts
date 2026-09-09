@@ -3,16 +3,17 @@ export interface TokenDelta {
   messageId: string;
   blockId: string;
   delta: string;
+  type?: "text" | "reasoning";
 }
 
 export class TokenStreamBuffer {
-  private buffer: Map<string, { chatId: string; messageId: string; text: string }> = new Map();
+  private buffer: Map<string, { chatId: string; messageId: string; type: "text" | "reasoning"; text: string }> = new Map();
   private timer: any = null;
-  private flushCallback: (flushed: Array<{ chatId: string; messageId: string; blockId: string; text: string }>) => void;
+  private flushCallback: (flushed: Array<{ chatId: string; messageId: string; blockId: string; text: string; type: "text" | "reasoning" }>) => void;
   private intervalMs: number;
 
   constructor(
-    flushCallback: (flushed: Array<{ chatId: string; messageId: string; blockId: string; text: string }>) => void,
+    flushCallback: (flushed: Array<{ chatId: string; messageId: string; blockId: string; text: string; type: "text" | "reasoning" }>) => void,
     intervalMs: number = 24
   ) {
     this.flushCallback = flushCallback;
@@ -20,7 +21,8 @@ export class TokenStreamBuffer {
   }
 
   append(delta: TokenDelta): void {
-    const key = `${delta.chatId}:${delta.messageId}:${delta.blockId}`;
+    const deltaType = delta.type || "text";
+    const key = `${delta.chatId}:${delta.messageId}:${deltaType}:${delta.blockId}`;
     const existing = this.buffer.get(key);
     if (existing) {
       existing.text += delta.delta;
@@ -28,6 +30,7 @@ export class TokenStreamBuffer {
       this.buffer.set(key, {
         chatId: delta.chatId,
         messageId: delta.messageId,
+        type: deltaType,
         text: delta.delta
       });
     }
@@ -45,15 +48,16 @@ export class TokenStreamBuffer {
 
     if (this.buffer.size === 0) return;
 
-    const flushed: Array<{ chatId: string; messageId: string; blockId: string; text: string }> = [];
+    const flushed: Array<{ chatId: string; messageId: string; blockId: string; text: string; type: "text" | "reasoning" }> = [];
     for (const [key, val] of this.buffer.entries()) {
       const parts = key.split(":");
-      const blockId = parts.slice(2).join(":");
+      const blockId = parts.slice(3).join(":");
       flushed.push({
         chatId: val.chatId,
         messageId: val.messageId,
         blockId,
-        text: val.text
+        text: val.text,
+        type: val.type
       });
     }
 

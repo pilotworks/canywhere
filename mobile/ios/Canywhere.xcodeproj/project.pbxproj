@@ -11,6 +11,7 @@
 		05DA2D86B1E6A5763651D58F /* BonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C96BAA87827A61DB07F31A8 /* BonjourBrowser.swift */; };
 		0B8E5E66591AB2401573CDA0 /* PairingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED3FAB7A6FC46F3369795C2F /* PairingView.swift */; };
 		0C3017EEB94865A6B01BA7E7 /* ReasoningBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D441C1F2B98EF0704A42796E /* ReasoningBlockView.swift */; };
+		28CFBD1B623AA3475C358252 /* CanywhereApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = "TEMP_56E7ABBD-F7C3-4AD3-A4A4-BB6B8F1A0565" /* CanywhereApp.swift */; };
 		35081FE37AB362FDF1389D58 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A3B9AE36045F63A44CCD31 /* ChatViewModel.swift */; };
 		39A689B2B70D68488ADEC7FF /* KeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E72432385C8F4DDA5D48E79 /* KeyManager.swift */; };
 		4034303035A941D33BB67D6E /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975EAAA2972F4D521CC2AC5E /* RootView.swift */; };
@@ -25,12 +26,12 @@
 		AC3FFCC1565BC563AF1FD1A9 /* WireMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FBC1FEA0D67A5E523C11BA /* WireMessages.swift */; };
 		B84FCC4EBC41A2A6F2E26E20 /* UITheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E3F4C78B123EA230B5D1F9 /* UITheme.swift */; };
 		D2E0C95A630B80B93D293DEB /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E742BD6E7D8AF904FE3E5D7A /* Network.framework */; };
-		D59D0E1BB9B2B1FC8DD0C630 /* CanywhereApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = "TEMP_BA3E5594-BA56-4A44-BE14-1E5A625B05A5" /* CanywhereApp.swift */; };
 		E8CE5F75947ADB7A66F2CCB4 /* AppSessionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8996080DDA3E40EFC05AF94 /* AppSessionState.swift */; };
+		E97D6130614027734D1FA18A /* ToolCallBlockView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D453DEFA6CEF1232E726E16F /* ToolCallBlockView.swift */; };
+		EB3E4CA8985814B77B23E754 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = "TEMP_3BEBF1B9-3F85-4766-BEC2-9B0371CABCFF" /* Assets.xcassets */; };
 		F1D8928258D9B55221167AD8 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F6AB173E278F9DFEF6EB6982 /* AVFoundation.framework */; };
 		F48894B7B900FEB4C524E850 /* CryptoKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FDD67D6DC750DB1CF0B8860D /* CryptoKit.framework */; };
 		F69F661505BAC5297CD8628C /* MessageBubbleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DDED80E5EB27AB152014B8C /* MessageBubbleView.swift */; };
-		FD43F43D00465BCA8B5C8513 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = "TEMP_A8011824-4038-4511-814D-A381D3E4A478" /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -51,14 +52,15 @@
 		AD1A12ECCAFBB34E00F09C19 /* ChatListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatListView.swift; sourceTree = "<group>"; };
 		B0E076E07857DA6B5E0E5A54 /* ProtocolModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtocolModels.swift; sourceTree = "<group>"; };
 		D441C1F2B98EF0704A42796E /* ReasoningBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReasoningBlockView.swift; sourceTree = "<group>"; };
+		D453DEFA6CEF1232E726E16F /* ToolCallBlockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCallBlockView.swift; sourceTree = "<group>"; };
 		D771D49ACDD9E8D6ABC16D9F /* ChatDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDetailView.swift; sourceTree = "<group>"; };
 		E742BD6E7D8AF904FE3E5D7A /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
 		ED3FAB7A6FC46F3369795C2F /* PairingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingView.swift; sourceTree = "<group>"; };
 		F5A3B9AE36045F63A44CCD31 /* ChatViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatViewModel.swift; sourceTree = "<group>"; };
 		F6AB173E278F9DFEF6EB6982 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		FDD67D6DC750DB1CF0B8860D /* CryptoKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
-		"TEMP_A8011824-4038-4511-814D-A381D3E4A478" /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		"TEMP_BA3E5594-BA56-4A44-BE14-1E5A625B05A5" /* CanywhereApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanywhereApp.swift; sourceTree = "<group>"; };
+		"TEMP_3BEBF1B9-3F85-4766-BEC2-9B0371CABCFF" /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		"TEMP_56E7ABBD-F7C3-4AD3-A4A4-BB6B8F1A0565" /* CanywhereApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanywhereApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,11 +104,11 @@
 			path = Generated;
 			sourceTree = "<group>";
 		};
-		1A3E590630505604004E2D59 /* Recovered References */ = {
+		1A3E59083050658E004E2D59 /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_BA3E5594-BA56-4A44-BE14-1E5A625B05A5" /* CanywhereApp.swift */,
-				"TEMP_A8011824-4038-4511-814D-A381D3E4A478" /* Assets.xcassets */,
+				"TEMP_56E7ABBD-F7C3-4AD3-A4A4-BB6B8F1A0565" /* CanywhereApp.swift */,
+				"TEMP_3BEBF1B9-3F85-4766-BEC2-9B0371CABCFF" /* Assets.xcassets */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -129,7 +131,7 @@
 				EB7A3FA1800B17B76CF8186F /* Views */,
 				04E0FD2092CB9FDFCAA2B949 /* Frameworks */,
 				D58BE33DCF0BA5502E2BCA43 /* Products */,
-				1A3E590630505604004E2D59 /* Recovered References */,
+				1A3E59083050658E004E2D59 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -206,6 +208,7 @@
 				78A387F71ECE836BE932864C /* ComposerView.swift */,
 				4DDED80E5EB27AB152014B8C /* MessageBubbleView.swift */,
 				D441C1F2B98EF0704A42796E /* ReasoningBlockView.swift */,
+				D453DEFA6CEF1232E726E16F /* ToolCallBlockView.swift */,
 			);
 			path = Chat;
 			sourceTree = "<group>";
@@ -265,7 +268,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FD43F43D00465BCA8B5C8513 /* Assets.xcassets in Resources */,
+				EB3E4CA8985814B77B23E754 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -279,7 +282,7 @@
 				E8CE5F75947ADB7A66F2CCB4 /* AppSessionState.swift in Sources */,
 				8E2FC58AD0B12587BD21326B /* ApprovalSheetView.swift in Sources */,
 				05DA2D86B1E6A5763651D58F /* BonjourBrowser.swift in Sources */,
-				D59D0E1BB9B2B1FC8DD0C630 /* CanywhereApp.swift in Sources */,
+				28CFBD1B623AA3475C358252 /* CanywhereApp.swift in Sources */,
 				95380DEABF064A3A09125693 /* ChatDetailView.swift in Sources */,
 				5CDBC927B42C5B54D97107A1 /* ChatListView.swift in Sources */,
 				35081FE37AB362FDF1389D58 /* ChatViewModel.swift in Sources */,
@@ -294,6 +297,7 @@
 				8670ADCC9902E7FBDDF450A9 /* QRScannerView.swift in Sources */,
 				0C3017EEB94865A6B01BA7E7 /* ReasoningBlockView.swift in Sources */,
 				4034303035A941D33BB67D6E /* RootView.swift in Sources */,
+				E97D6130614027734D1FA18A /* ToolCallBlockView.swift in Sources */,
 				B84FCC4EBC41A2A6F2E26E20 /* UITheme.swift in Sources */,
 				AC3FFCC1565BC563AF1FD1A9 /* WireMessages.swift in Sources */,
 			);

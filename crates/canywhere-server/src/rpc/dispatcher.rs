@@ -247,8 +247,12 @@ end try"#;
                     .get_chat(chat_id)?
                     .ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
 
-                // Self-healing: if SQLite says running but no active turn is in memory, reset to Idle
-                if chat.status == ChatStatus::Running {
+                let streaming_msg = self.adapter.get_active_streaming_message(chat_id).await;
+                if streaming_msg.is_some() {
+                    if chat.status != ChatStatus::AwaitingApproval {
+                        chat.status = ChatStatus::Running;
+                    }
+                } else if chat.status == ChatStatus::Running {
                     let has_active_turn = self.adapter.get_active_turn(chat_id).await.is_some();
                     if !has_active_turn {
                         let _ = self.repo.update_chat_status(chat_id, ChatStatus::Idle, None);
@@ -256,8 +260,11 @@ end try"#;
                     }
                 }
 
-                let messages = self.repo.get_chat_history(chat_id)?;
-                let pending_approvals = Vec::new(); // Approvals handled in-flight
+                let mut messages = self.repo.get_chat_history(chat_id)?;
+                if let Some(s_msg) = streaming_msg {
+                    messages.push(s_msg);
+                }
+                let pending_approvals = self.adapter.get_pending_approvals(chat_id).await;
                 Ok(serde_json::to_value(ChatGetResult {
                     chat,
                     messages,
@@ -498,9 +505,12 @@ end try"#;
 
                 let _ = self.adapter.event_tx().send(AgentEvent::TurnCompleted {
                     chat_id: chat_id.to_string(),
+                    message_id: String::new(),
                     turn_id,
                     status: ChatStatus::Idle,
+                    blocks: Vec::new(),
                     text_content: None,
+                    reasoning_content: None,
                 });
 
                 Ok(serde_json::json!({ "status": "interrupted" }))
