@@ -470,7 +470,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                     <div
                       key={file.path}
                       onClick={() => handleOpenFileDiff(file, true)}
-                      className="group flex items-center gap-1.5 py-1 px-2 rounded hover:bg-[var(--secondary)] cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors text-[11px]"
+                      className="group flex items-center h-7 gap-1.5 px-2 rounded hover:bg-[var(--secondary)] cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors text-[11px]"
                     >
                       <FileIcon fileName={file.path} className="w-3.5 h-3.5 shrink-0" />
                       <span className="truncate flex-1" title={file.path}>
@@ -478,7 +478,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                       </span>
 
                       {/* Hover action (unstage) + Permanent status indicator on the right */}
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0 h-full">
                         {/* Hover action: unstage (takes 0 space when hidden) */}
                         <button
                           onClick={(e) => {
@@ -486,7 +486,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                             handleUnstage([file.path]);
                           }}
                           disabled={isBusy}
-                          className={`p-0.5 rounded cursor-pointer hover:text-[var(--foreground)] ${
+                          className={`h-5 w-5 items-center justify-center rounded cursor-pointer hover:text-[var(--foreground)] ${
                             isBusy ? "flex" : "hidden group-hover:flex"
                           }`}
                           title="Unstage change"
@@ -500,7 +500,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
 
                         {/* Status indicator (M, A, D, R) - always visible at right edge */}
                         <span
-                          className={`text-[9px] font-bold px-1 rounded ${
+                          className={`text-[9px] font-bold px-1 rounded flex items-center justify-center ${
                             file.status === "added"
                               ? "text-emerald-400"
                               : file.status === "deleted"
@@ -568,7 +568,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                     <div
                       key={file.path}
                       onClick={() => handleOpenFileDiff(file, false)}
-                      className="group flex items-center gap-1.5 py-1 px-2 rounded hover:bg-[var(--secondary)] cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors text-[11px]"
+                      className="group flex items-center h-7 gap-1.5 px-2 rounded hover:bg-[var(--secondary)] cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors text-[11px]"
                     >
                       <FileIcon fileName={file.path} className="w-3.5 h-3.5 shrink-0" />
                       <span className="truncate flex-1" title={file.path}>
@@ -576,7 +576,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                       </span>
 
                       {/* Hover actions (discard & stage) + Permanent status indicator on the right */}
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0 h-full">
                         {/* Hover actions: discard & stage (takes 0 space when hidden) */}
                         <div className={`items-center gap-0.5 ${
                           isBusy ? "flex" : "hidden group-hover:flex"
@@ -587,7 +587,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                               handleDiscard([file.path]);
                             }}
                             disabled={isBusy}
-                            className="hover:text-rose-400 p-0.5 rounded cursor-pointer transition-colors"
+                            className="h-5 w-5 flex items-center justify-center hover:text-rose-400 rounded cursor-pointer transition-colors"
                             title="Discard changes"
                           >
                             <RotateCcw className="w-3.5 h-3.5" />
@@ -598,7 +598,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
                               handleStage([file.path]);
                             }}
                             disabled={isBusy}
-                            className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer transition-colors"
+                            className="h-5 w-5 flex items-center justify-center hover:text-[var(--foreground)] rounded cursor-pointer transition-colors"
                             title="Stage change"
                           >
                             {isBusy ? (
@@ -611,7 +611,7 @@ export const GitView: React.FC<GitViewProps> = ({ workspaceId }) => {
 
                         {/* Status indicator (M, U, D) - always visible at right edge */}
                         <span
-                          className={`text-[9px] font-bold px-1 rounded ${
+                          className={`text-[9px] font-bold px-1 rounded flex items-center justify-center ${
                             file.status === "untracked"
                               ? "text-sky-400"
                               : file.status === "deleted"
