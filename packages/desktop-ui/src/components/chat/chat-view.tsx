@@ -25,6 +25,8 @@ import {
   Shield,
   Eye,
   Flame,
+  Folder,
+  Plus,
 } from "lucide-react";
 import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore, useUiStore, EMPTY_MESSAGES } from "../../store/index.js";
 import { client } from "../../network/client.js";
@@ -36,9 +38,10 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "../ui/dropdown-menu.js";
 import { RenderBlock, MessageBlocksRenderer } from "./render-block.js";
-import { InlineApprovalCard } from "./inline-approval-card.js";
+import { ApprovalTray } from "./approval-tray.js";
 import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
 import {
   FileSearchPopup,
@@ -47,6 +50,7 @@ import {
   SlashCommandDefinition,
 } from "./composer-popups.js";
 import { ModelEffortCombo } from "./model-effort-combo.js";
+import { QueueTray } from "./queue-tray.js";
 
 const QUICK_STARTERS = [
   {
@@ -83,31 +87,36 @@ const PERMISSION_CONFIG: Record<
     label: "Ask for Approval",
     shortLabel: "Safe",
     desc: "Requires explicit user confirmation for shell commands and write actions",
-    icon: <Shield className="w-3.5 h-3.5 text-emerald-400" />,
-    colorClass: "text-emerald-400",
-    badgeBorder: "border-emerald-500/30 text-emerald-400 bg-emerald-500/10",
+    icon: <Shield className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />,
+    colorClass: "text-[var(--foreground)]",
+    badgeBorder: "border-[var(--border)] text-[var(--foreground)] bg-[var(--secondary)]/80 hover:bg-[var(--secondary)]",
   },
   readOnly: {
     label: "Plan Only (Read-Only)",
     shortLabel: "Plan Only",
     desc: "Disallows modifying files or executing state-altering shell commands",
-    icon: <Eye className="w-3.5 h-3.5 text-sky-400" />,
-    colorClass: "text-sky-400",
-    badgeBorder: "border-sky-500/30 text-sky-400 bg-sky-500/10",
+    icon: <Eye className="w-3.5 h-3.5 text-[var(--muted-foreground)]" />,
+    colorClass: "text-[var(--foreground)]",
+    badgeBorder: "border-[var(--border)] text-[var(--foreground)] bg-[var(--secondary)]/80 hover:bg-[var(--secondary)]",
   },
   auto: {
     label: "Full Auto (YOLO)",
     shortLabel: "Full Auto",
     desc: "Autonomously executes all commands and applies edits without prompt",
-    icon: <Flame className="w-3.5 h-3.5 text-amber-400" />,
-    colorClass: "text-amber-400",
-    badgeBorder: "border-amber-500/30 text-amber-400 bg-amber-500/10",
+    icon: <Flame className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />,
+    colorClass: "text-amber-500 dark:text-amber-400 font-medium",
+    badgeBorder: "border-amber-500/40 text-amber-500 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20",
   },
 };
 
 export const ChatView: React.FC = () => {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const chats = useChatStore((s) => s.chats);
+  const draftChat = useChatStore((s) => s.draftChat);
+  const draftPermissionMode = useChatStore((s) => s.draftPermissionMode);
+  const setDraftPermissionMode = useChatStore((s) => s.setDraftPermissionMode);
+  const setDraftChat = useChatStore((s) => s.setDraftChat);
+  const activeWorkspaceId = useWorkspaceStore((s) => s.activeWorkspaceId);
   const workspaces = useWorkspaceStore((s) => s.workspaces);
   const messages = useChatStore((s) =>
     activeChatId && s.messages[activeChatId] ? s.messages[activeChatId] : EMPTY_MESSAGES
@@ -115,6 +124,8 @@ export const ChatView: React.FC = () => {
   const activeTurnId = useChatStore((s) =>
     activeChatId && s.activeTurnId[activeChatId] ? s.activeTurnId[activeChatId] : null
   );
+  const queuedMessages = useChatStore((s) => s.queuedMessages);
+  const activeChatQueue = activeChatId ? (queuedMessages[activeChatId] || []) : [];
   const pendingApprovals = useApprovalStore((s) => s.pendingApprovals);
 
   const models = useModelStore((s) => s.models);
@@ -130,6 +141,7 @@ export const ChatView: React.FC = () => {
   const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [hasUnseenMessages, setHasUnseenMessages] = useState(false);
+  const [isSubmittingDraft, setIsSubmittingDraft] = useState(false);
 
   // File mention state (@)
   const [showFileMenu, setShowFileMenu] = useState(false);
@@ -149,8 +161,32 @@ export const ChatView: React.FC = () => {
   const searchTimerRef = useRef<any>(null);
 
   const activeChat = chats.find((c) => c.id === activeChatId);
-  const activeWorkspace = workspaces.find((w) => w.id === activeChat?.workspaceId);
+  const isDraft = !activeChat;
+  const targetWorkspaceId = activeChat ? activeChat.workspaceId : (draftChat?.workspaceId ?? activeWorkspaceId);
+  const activeWorkspace = workspaces.find((w) => w.id === targetWorkspaceId);
   const isRunning = activeChat?.status === "running";
+  const currentPermissionMode = activeChat ? (activeChat.permissionMode || "onRequest") : draftPermissionMode;
+
+  // Global ⌘N / Ctrl+N shortcut for New Chat
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        const wsId = useWorkspaceStore.getState().activeWorkspaceId;
+        client.openDraftChat(wsId || undefined);
+        setTimeout(() => textareaRef.current?.focus(), 50);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // Auto-focus composer when entering draft mode
+  useEffect(() => {
+    if (isDraft) {
+      textareaRef.current?.focus();
+    }
+  }, [isDraft, draftChat]);
 
   // Filter approvals for this active chat
   const chatApprovals = pendingApprovals.filter(
@@ -319,13 +355,13 @@ export const ChatView: React.FC = () => {
 
     if (cmd.cmd === "/reset") {
       setInput("");
-      await client.createChat(activeWorkspace?.id);
+      client.openDraftChat(activeWorkspace?.id);
       return;
     }
 
     if (cmd.cmd === "/scratch") {
       setInput("");
-      await client.createChat();
+      client.openDraftChat(null);
       return;
     }
 
@@ -336,7 +372,16 @@ export const ChatView: React.FC = () => {
     }
   };
 
-  if (!activeChat) {
+  const handleSelectWorkspace = (wsId: string | null) => {
+    useWorkspaceStore.getState().setActiveWorkspaceId(wsId);
+    if (!activeChat) {
+      setDraftChat({ workspaceId: wsId });
+    } else {
+      client.openDraftChat(wsId);
+    }
+  };
+
+  if (!activeChat && !draftChat && chats.length > 0) {
     return (
       <div className="flex-1 flex flex-col h-screen bg-[var(--background)] select-none">
         {/* Header bar in empty state matching sidebar height and draggable */}
@@ -369,7 +414,7 @@ export const ChatView: React.FC = () => {
           <p className="text-xs text-[var(--muted-foreground)] text-center max-w-sm mb-6">
             Decoupled remote workstation controller for OpenAI Codex and CLI models.
           </p>
-          <Button size="sm" onClick={() => client.createChat()}>
+          <Button size="sm" onClick={() => client.openDraftChat(activeWorkspace?.id || null)}>
             Start New Conversation
           </Button>
         </div>
@@ -379,7 +424,7 @@ export const ChatView: React.FC = () => {
 
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || isSubmittingDraft) return;
 
     const text = input.trim();
     setInput("");
@@ -391,21 +436,312 @@ export const ChatView: React.FC = () => {
 
     // Handle slash commands client-side if applicable
     if (text === "/reset") {
-      await client.createChat(activeChat.workspaceId ?? undefined, "New Conversation");
+      client.openDraftChat(activeWorkspace?.id);
       return;
     }
 
-    // Mid-turn Steering or Regular Turn
-    if (isRunning && activeTurnId) {
-      await client.steerTurn(activeChat.id, activeTurnId, text);
-    } else {
-      await client.sendTurn(activeChat.id, text, selectedModel);
+    if (text === "/scratch") {
+      client.openDraftChat(null);
+      return;
     }
+
+    // Draft / Lazy Chat Creation Flow
+    if (isDraft || !activeChat) {
+      const workspaceId = targetWorkspaceId ?? undefined;
+      const permMode = draftPermissionMode || "onRequest";
+      const firstLine = text.split("\n")[0].trim();
+      const title = firstLine.length > 40 ? firstLine.slice(0, 40).trim() + "..." : (firstLine || "New Chat");
+
+      try {
+        setIsSubmittingDraft(true);
+        const newChat = await client.createChat(workspaceId, title);
+        if (permMode !== "onRequest") {
+          await client.setChatPermission(newChat.id, permMode);
+        }
+        useChatStore.getState().setDraftChat(null);
+        await client.sendTurn(newChat.id, text, selectedModel, permMode);
+      } catch (err) {
+        console.error("Failed to create chat and send turn:", err);
+        setInput(text);
+      } finally {
+        setIsSubmittingDraft(false);
+      }
+      return;
+    }
+
+    // When agent is currently running, auto-enqueue into Chat Message Queue!
+    if (isRunning) {
+      client.enqueuePrompt(
+        activeChat.id,
+        text,
+        selectedModel,
+        selectedEffort,
+        currentPermissionMode
+      );
+      return;
+    }
+
+    await client.sendTurn(activeChat.id, text, selectedModel);
   };
 
   const handleInterrupt = async () => {
-    await client.interruptTurn(activeChat.id, activeTurnId || undefined);
+    if (activeChat) {
+      await client.interruptTurn(activeChat.id, activeTurnId || undefined);
+    }
   };
+
+  const handleComposerKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 1. File Search navigation
+    if (showFileMenu && fileResults.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setFileSelectIndex((i) => (i + 1) % fileResults.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setFileSelectIndex((i) => (i - 1 + fileResults.length) % fileResults.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        if (fileResults[fileSelectIndex]) {
+          handleSelectFile(fileResults[fileSelectIndex]);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowFileMenu(false);
+        return;
+      }
+    }
+
+    // 2. Slash Command navigation
+    if (showSlashMenu && filteredSlashCommands.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setSlashSelectIndex((i) => (i + 1) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashSelectIndex((i) => (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        if (filteredSlashCommands[slashSelectIndex]) {
+          handleSelectSlash(filteredSlashCommands[slashSelectIndex]);
+        }
+        return;
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setShowSlashMenu(false);
+        return;
+      }
+    }
+
+    // Normal Send
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    } else if (e.key === "Escape") {
+      setShowSlashMenu(false);
+      setShowFileMenu(false);
+    }
+  };
+
+  const renderComposer = (isHero: boolean) => (
+    <div className={`w-full relative ${isHero ? "select-text" : ""}`}>
+      {/* File Search (@) Suggestions Popover via Codex App-Server */}
+      {showFileMenu && (
+        <FileSearchPopup
+          files={fileResults}
+          selectedIndex={fileSelectIndex}
+          query={fileQuery}
+          isLoading={isFileSearching}
+          onSelect={handleSelectFile}
+        />
+      )}
+
+      {/* Slash Command (/) Suggestions Popover */}
+      {showSlashMenu && (
+        <SlashCommandPopup
+          commands={filteredSlashCommands}
+          selectedIndex={slashSelectIndex}
+          filter={slashFilter}
+          onSelect={handleSelectSlash}
+        />
+      )}
+
+
+
+      {/* Approval Tray: Docked directly above composer for inline approvals */}
+      {activeChat && chatApprovals.length > 0 && (
+        <ApprovalTray chatId={activeChat.id} approvals={chatApprovals} />
+      )}
+
+      {/* Queue Tray: Docked directly above the composer box */}
+      {activeChat && activeChatQueue.length > 0 && (
+        <QueueTray
+          chatId={activeChat.id}
+          items={activeChatQueue}
+          isRunning={isRunning}
+          activeTurnId={activeTurnId}
+          onSteer={(queueId) => client.steerQueuedPrompt(activeChat.id, queueId)}
+          onEdit={(queueId, newText) => client.updateQueuedPrompt(activeChat.id, queueId, newText)}
+          onDelete={(queueId) => client.cancelQueuedPrompt(activeChat.id, queueId)}
+        />
+      )}
+
+      <div
+        className={`rounded-2xl border transition-all overflow-hidden ${
+          isHero
+            ? "border-[var(--border)] bg-[var(--card)]/90 backdrop-blur-md shadow-xl shadow-black/5 dark:shadow-black/30 focus-within:border-emerald-500/40 focus-within:ring-2 focus-within:ring-emerald-500/20"
+            : "border-[var(--border)] bg-[var(--sidebar-bg)] focus-within:border-[var(--ring)] focus-within:ring-1 focus-within:ring-[var(--ring)] shadow-md shadow-black/5 dark:shadow-black/20"
+        }`}
+      >
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={handleInputChange}
+          onKeyDown={handleComposerKeyDown}
+          placeholder={
+            isRunning
+              ? "Agent is working... Type next task (Enter to queue)"
+              : isHero
+              ? "Ask Codex to code, run tests, or refactor... (Type @ for files, / for commands)"
+              : "Ask Codex to code, run tests, or refactor... (Type / for commands, Enter to send)"
+          }
+          rows={isHero ? 3 : 2}
+          className={`w-full bg-transparent p-3.5 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none resize-none font-mono ${
+            isHero ? "min-h-[76px]" : "min-h-[52px]"
+          }`}
+        />
+
+        {/* Composer Utility Toolbar */}
+        <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--secondary)]/30 text-[11px] text-[var(--muted-foreground)] select-none">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                title={activeWorkspace ? `Workspace: ${activeWorkspace.name} (Click to switch)` : "Select workspace"}
+                className="h-6 px-1.5 rounded-full border border-[var(--border)] bg-[var(--secondary)]/80 hover:bg-[var(--secondary)] hover:border-[var(--ring)] flex items-center gap-1 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer select-none"
+              >
+                <Folder className="w-3 h-3 text-[var(--muted-foreground)] shrink-0" />
+                <Plus className="w-2.5 h-2.5 text-[var(--muted-foreground)] shrink-0" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <div className="px-2 py-1 text-[10px] font-mono font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+                  Workspaces
+                </div>
+                {workspaces.map((ws) => {
+                  const isSelected = targetWorkspaceId === ws.id;
+                  return (
+                    <DropdownMenuItem
+                      key={ws.id}
+                      onClick={() => handleSelectWorkspace(ws.id)}
+                      className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                    >
+                      <div className="flex items-center gap-2 truncate">
+                        <Folder className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
+                        <span className="truncate">{ws.name}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 ml-2" />}
+                    </DropdownMenuItem>
+                  );
+                })}
+                {workspaces.length === 0 && (
+                  <div className="px-2 py-1.5 text-xs text-[var(--muted-foreground)] italic font-mono">
+                    No workspaces added
+                  </div>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => handleSelectWorkspace(null)}
+                  className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                >
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-[var(--muted-foreground)] shrink-0" />
+                    <span>Scratchpad mode</span>
+                  </div>
+                  {!targetWorkspaceId && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 ml-2" />}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <ModelEffortCombo
+              models={models}
+              selectedModel={selectedModel}
+              selectedEffort={selectedEffort}
+              onSelectModel={setSelectedModel}
+              onSelectEffort={setSelectedEffort}
+              size="sm"
+              align="start"
+            />
+            <DropdownMenu>
+              <DropdownMenuTrigger className={`font-mono text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 cursor-pointer transition-colors hover:opacity-80 select-none ${PERMISSION_CONFIG[currentPermissionMode]?.badgeBorder}`}>
+                {PERMISSION_CONFIG[currentPermissionMode]?.icon}
+                <span>{PERMISSION_CONFIG[currentPermissionMode]?.shortLabel}</span>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-52">
+                {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
+                  const cfg = PERMISSION_CONFIG[mode];
+                  const isSelected = currentPermissionMode === mode;
+                  return (
+                    <DropdownMenuItem
+                      key={mode}
+                      onClick={() => {
+                        if (activeChat) {
+                          client.setChatPermission(activeChat.id, mode);
+                        } else {
+                          setDraftPermissionMode(mode);
+                        }
+                      }}
+                      className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        {cfg.icon}
+                        <span className={cfg.colorClass}>{cfg.shortLabel}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)]" />}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <span className="hidden sm:inline-block font-mono text-[10px] text-[var(--muted-foreground)] opacity-75">
+              ⚡ Context: ~32k tokens
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <span className="hidden sm:inline-block text-[10px] font-mono opacity-60">
+              {isRunning ? "↵ to queue" : "↵ to send · ⇧↵ newline"}
+            </span>
+            <Button
+              size="xs"
+              disabled={!input.trim() || isSubmittingDraft}
+              onClick={() => handleSend()}
+              className="gap-1 font-mono cursor-pointer"
+            >
+              {isSubmittingDraft ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <span>Creating...</span>
+                </>
+              ) : (
+                <>
+                  <span>{isRunning ? "Queue" : "Send"}</span>
+                  <CornerDownLeft className="w-3 h-3" />
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex-1 flex flex-col h-screen bg-[var(--background)] text-[var(--foreground)] select-text">
@@ -430,7 +766,9 @@ export const ChatView: React.FC = () => {
               <span>›</span>
             </>
           )}
-          <span className="truncate text-[var(--foreground)] font-medium">{activeChat.title}</span>
+          <span className="truncate text-[var(--foreground)] font-medium">
+            {activeChat ? activeChat.title : "New Chat"}
+          </span>
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
@@ -446,39 +784,47 @@ export const ChatView: React.FC = () => {
           />
 
           {/* Permission Mode Selector Dropdown */}
-          {activeChat && (
-            <DropdownMenu>
-              <DropdownMenuTrigger className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[var(--secondary)] border border-[var(--border)] font-mono text-[11px] text-[var(--foreground)] hover:bg-[var(--accent)] transition-colors cursor-pointer select-none">
-                {PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.icon}
-                <span>{PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.shortLabel || "Safe"}</span>
-                <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
-                  const cfg = PERMISSION_CONFIG[mode];
-                  const isSelected = (activeChat.permissionMode || "onRequest") === mode;
-                  return (
-                    <DropdownMenuItem
-                      key={mode}
-                      onClick={() => client.setChatPermission(activeChat.id, mode)}
-                      className="flex items-start justify-between font-mono text-xs cursor-pointer py-1.5"
-                    >
-                      <div className="flex items-start gap-2 truncate pr-2">
-                        <div className="mt-0.5">{cfg.icon}</div>
-                        <div className="flex flex-col">
-                          <span className={`font-medium ${cfg.colorClass}`}>{cfg.label}</span>
-                          <span className="text-[10px] text-[var(--muted-foreground)] line-clamp-2">
-                            {cfg.desc}
-                          </span>
-                        </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono text-[11px] transition-colors cursor-pointer select-none ${
+              currentPermissionMode === "auto"
+                ? "border border-amber-500/40 text-amber-500 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
+                : "border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] hover:bg-[var(--accent)]"
+            }`}>
+              {PERMISSION_CONFIG[currentPermissionMode]?.icon}
+              <span>{PERMISSION_CONFIG[currentPermissionMode]?.shortLabel || "Safe"}</span>
+              <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
+                const cfg = PERMISSION_CONFIG[mode];
+                const isSelected = currentPermissionMode === mode;
+                return (
+                  <DropdownMenuItem
+                    key={mode}
+                    onClick={() => {
+                      if (activeChat) {
+                        client.setChatPermission(activeChat.id, mode);
+                      } else {
+                        setDraftPermissionMode(mode);
+                      }
+                    }}
+                    className="flex items-start justify-between font-mono text-xs cursor-pointer py-1.5"
+                  >
+                    <div className="flex items-start gap-2 truncate pr-2">
+                      <div className="mt-0.5">{cfg.icon}</div>
+                      <div className="flex flex-col">
+                        <span className={`font-medium ${cfg.colorClass}`}>{cfg.label}</span>
+                        <span className="text-[10px] text-[var(--muted-foreground)] line-clamp-2">
+                          {cfg.desc}
+                        </span>
                       </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                    </div>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 mt-0.5" />}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           {isRunning && (
             <Button
@@ -499,71 +845,107 @@ export const ChatView: React.FC = () => {
             title="Toggle Right Sidebar"
             className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
           >
-            <PanelRight className="w-4 h-4" />
+        <PanelRight className="w-4 h-4" />
           </Button>
         </div>
       </header>
 
-      {/* Message History Feed */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto px-6 py-6 space-y-6 relative"
-      >
-        {messages.length === 0 ? (
-          <div className="max-w-2xl mx-auto py-12 px-4 flex flex-col items-center text-center select-none">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex items-center justify-center mb-4 text-emerald-500">
-              <Bot className="w-6 h-6" />
-            </div>
-            <h3 className="text-base font-semibold text-[var(--foreground)] mb-1">
-              {activeWorkspace ? activeWorkspace.name : "Autonomous Coding Session"}
-            </h3>
-            <p className="text-xs text-[var(--muted-foreground)] max-w-md mb-8">
-              {activeWorkspace
-                ? `Ready to inspect, modify, test, and run commands in ${activeWorkspace.rootPath}.`
-                : "Isolated scratchpad session. Ask questions, draft scripts, or explore ideas."}
-            </p>
+      {messages.length === 0 ? (
+        /* Centered Composer Screen */
+        <div className="flex-1 flex flex-col items-center justify-center p-6 relative overflow-hidden select-none">
+          {/* Subtle Ambient Radial Glow */}
+          <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+            <div className="w-[560px] h-[360px] bg-emerald-500/[0.03] dark:bg-emerald-500/[0.04] rounded-full blur-3xl" />
+          </div>
 
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-left">
-              {QUICK_STARTERS.map((item, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setInput(item.prompt);
-                    if (textareaRef.current) {
-                      textareaRef.current.focus();
-                    }
-                  }}
-                  className="group flex flex-col p-3 rounded-xl border border-[var(--border)] bg-[var(--card)]/60 hover:bg-[var(--secondary)] hover:border-[var(--ring)] transition-all cursor-pointer shadow-xs"
-                >
-                  <div className="flex items-center gap-2 mb-1">
-                    {item.icon}
-                    <span className="text-xs font-semibold text-[var(--foreground)] group-hover:text-emerald-400 transition-colors">
-                      {item.title}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-[var(--muted-foreground)] line-clamp-2">
-                    {item.desc}
-                  </p>
-                </button>
-              ))}
+          <div className="w-full max-w-3xl flex flex-col items-center relative z-10 space-y-3">
+            {/* Centered Composer */}
+            {renderComposer(true)}
+
+            {/* Keyboard-First Helper Line */}
+            <div className="flex items-center gap-2.5 text-[11px] font-mono text-[var(--muted-foreground)]/70 pt-1 select-none">
+              <span>Type <kbd className="px-1.5 py-0.5 rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--foreground)] text-[10px]">@</kbd> to mention files</span>
+              <span>•</span>
+              <span>Type <kbd className="px-1.5 py-0.5 rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--foreground)] text-[10px]">/</kbd> for commands</span>
+              <span>•</span>
+              <span><kbd className="px-1.5 py-0.5 rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--foreground)] text-[10px]">⌘N</kbd> new chat</span>
             </div>
           </div>
-        ) : (
-          messages.map((msg, idx) => {
-            const isUser = msg.role === "user";
-            const textContent = msg.blocks
-              .filter((b) => b.type === "text")
-              .map((b) => (b as any).content)
-              .join("\n");
+        </div>
+      ) : (
+        /* 2. Standard Active Chat Timeline Feed + Bottom Composer (when >0 messages) */
+        <>
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto px-6 py-6 space-y-6 relative"
+          >
+            {messages.map((msg, idx) => {
+              const isUser = msg.role === "user";
+              const textContent = msg.blocks
+                .filter((b) => b.type === "text")
+                .map((b) => (b as any).content)
+                .join("\n");
 
-            if (isUser) {
-              return (
-                <div key={msg.id} className="group max-w-3xl mx-auto flex flex-col items-end space-y-1">
-                  <div className="rounded-2xl px-4 py-3 text-[13px] leading-relaxed select-text bg-[var(--secondary)]/80 border border-[var(--border)] text-[var(--foreground)] max-w-[85%] shadow-xs">
-                    <MessageBlocksRenderer blocks={msg.blocks} />
+              if (isUser) {
+                return (
+                  <div key={msg.id} className="group max-w-3xl mx-auto flex flex-col items-end space-y-1">
+                    <div className="rounded-2xl px-4 py-3 text-[13px] leading-relaxed select-text bg-[var(--secondary)]/80 border border-[var(--border)] text-[var(--foreground)] max-w-[85%] shadow-xs">
+                      <MessageBlocksRenderer blocks={msg.blocks} />
+                    </div>
+                    <div className="flex items-center gap-2 text-[10px] text-[var(--muted-foreground)] font-mono opacity-0 group-hover:opacity-100 transition-opacity pr-1 select-none">
+                      {textContent && (
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(textContent);
+                            setCopiedMsgId(msg.id);
+                            setTimeout(() => setCopiedMsgId(null), 1500);
+                          }}
+                          className="p-1 rounded hover:bg-[var(--secondary)] transition-all cursor-pointer hover:text-[var(--foreground)]"
+                          title="Copy prompt"
+                        >
+                          {copiedMsgId === msg.id ? (
+                            <Check className="w-3 h-3" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
+                      )}
+                      <span>
+                        {new Date(Number(msg.createdAt)).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-[var(--muted-foreground)] font-mono opacity-0 group-hover:opacity-100 transition-opacity pr-1 select-none">
+                );
+              }
+
+              const isMsgStreaming = isRunning && msg.streaming;
+              let userTurnTime = Number(msg.createdAt);
+              for (let i = idx - 1; i >= 0; i--) {
+                if (messages[i].role === "user") {
+                  userTurnTime = Number(messages[i].createdAt);
+                  break;
+                }
+              }
+              const durationSec = Math.max(0, Math.round((Number(msg.createdAt) - userTurnTime) / 1000));
+
+              return (
+                <div key={msg.id} className="group max-w-3xl mx-auto flex flex-col space-y-1">
+                  <div className="text-[13px] leading-relaxed select-text text-[var(--foreground)] relative py-1">
+                    <MessageBlocksRenderer blocks={msg.blocks} isStreaming={isMsgStreaming} durationSeconds={durationSec} />
+                  </div>
+
+                  {isMsgStreaming && (
+                    <div className="flex items-center gap-2 text-[11px] font-mono text-[var(--muted-foreground)] py-1 select-none">
+                      <Loader2 className="w-3 h-3 animate-spin text-[var(--foreground)]" />
+                      <span>Generating...</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 text-[10px] text-[var(--muted-foreground)] font-mono opacity-0 group-hover:opacity-100 transition-opacity select-none pt-0.5">
                     {textContent && (
                       <button
                         onClick={() => {
@@ -571,13 +953,19 @@ export const ChatView: React.FC = () => {
                           setCopiedMsgId(msg.id);
                           setTimeout(() => setCopiedMsgId(null), 1500);
                         }}
-                        className="p-1 rounded hover:bg-[var(--secondary)] transition-all cursor-pointer hover:text-[var(--foreground)]"
-                        title="Copy prompt"
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--secondary)] transition-all cursor-pointer hover:text-[var(--foreground)]"
+                        title="Copy response"
                       >
                         {copiedMsgId === msg.id ? (
-                          <Check className="w-3 h-3 text-emerald-500" />
+                          <>
+                            <Check className="w-3 h-3" />
+                            <span>Copied</span>
+                          </>
                         ) : (
-                          <Copy className="w-3 h-3" />
+                          <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy</span>
+                          </>
                         )}
                       </button>
                     )}
@@ -587,268 +975,42 @@ export const ChatView: React.FC = () => {
                         minute: "2-digit",
                       })}
                     </span>
+                    {durationSec > 0 && <span>• {durationSec}s</span>}
                   </div>
                 </div>
               );
-            }
-
-            const isMsgStreaming = isRunning && msg.streaming;
-            let userTurnTime = Number(msg.createdAt);
-            for (let i = idx - 1; i >= 0; i--) {
-              if (messages[i].role === "user") {
-                userTurnTime = Number(messages[i].createdAt);
-                break;
-              }
-            }
-            const durationSeconds = Math.max(1, Math.round((Number(msg.createdAt) - userTurnTime) / 1000));
-
-            return (
-              <div key={msg.id} className="group max-w-3xl mx-auto space-y-1.5">
-                {/* Assistant Message Body */}
-                <div className="text-[13px] leading-relaxed select-text text-[var(--foreground)]">
-                  <MessageBlocksRenderer
-                    blocks={msg.blocks}
-                    isStreaming={isMsgStreaming}
-                    durationSeconds={durationSeconds}
-                  />
-
-                  {isRunning && msg.streaming && msg.blocks.length === 0 && (
-                    <div className="inline-flex items-center gap-2 text-[var(--muted-foreground)] text-xs font-mono py-1">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-500" />
-                      <span className="animate-pulse">Analyzing codebase & formulating response...</span>
-                    </div>
-                  )}
-
-                  {isRunning && msg.streaming && msg.blocks.length > 0 && (
-                    <div className="inline-flex items-center gap-1.5 text-[var(--muted-foreground)] text-[11px] font-mono pt-2 opacity-75 select-none">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>Streaming response...</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Subtle Actions Bar on Hover */}
-                <div className="flex items-center gap-2 text-[10px] text-[var(--muted-foreground)] font-mono opacity-0 group-hover:opacity-100 transition-opacity pl-0.5 select-none">
-                  {textContent && (
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(textContent);
-                        setCopiedMsgId(msg.id);
-                        setTimeout(() => setCopiedMsgId(null), 1500);
-                      }}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--secondary)] transition-all cursor-pointer hover:text-[var(--foreground)]"
-                      title="Copy response"
-                    >
-                      {copiedMsgId === msg.id ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-500" />
-                          <span className="text-emerald-500">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3" />
-                          <span>Copy</span>
-                        </>
-                      )}
-                    </button>
-                  )}
-                  <span>
-                    {new Date(Number(msg.createdAt)).toLocaleTimeString([], {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                </div>
-              </div>
-            );
-          })
-        )}
-
-        {/* Inline Pending Approvals Banner */}
-        {chatApprovals.map((approval) => (
-          <div key={approval.id} className="max-w-3xl mx-auto">
-            <InlineApprovalCard approval={approval} />
+            })}
           </div>
-        ))}
-      </div>
 
-      {/* Floating Jump to Bottom Button */}
-      {!isAtBottom && (
-        <button
-          onClick={scrollToBottom}
-          className="absolute bottom-28 right-8 z-20 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--primary)] text-[var(--primary-foreground)] text-xs font-medium shadow-lg hover:opacity-95 transition-all cursor-pointer select-none"
-        >
-          <ArrowDown className="w-3.5 h-3.5" />
-          <span>{hasUnseenMessages ? "New messages below" : "Scroll to bottom"}</span>
-          {hasUnseenMessages && (
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          )}
-        </button>
-      )}
+          {/* Anchored Bottom Composer with Ambient Shadow & Smooth Fade Overlay */}
+          <div className="p-4 pt-2 shrink-0 relative bg-gradient-to-t from-[var(--background)] via-[var(--background)]/90 to-transparent">
+            {/* Top Fade Edge for Seamless Scrolling */}
+            <div className="absolute -top-6 left-0 right-0 h-6 bg-gradient-to-t from-[var(--background)] to-transparent pointer-events-none" />
 
-      {/* Information Dense Composer Input Area */}
-      <div className="p-4 shrink-0 relative">
-        {/* File Search (@) Suggestions Popover via Codex App-Server */}
-        {showFileMenu && (
-          <FileSearchPopup
-            files={fileResults}
-            selectedIndex={fileSelectIndex}
-            query={fileQuery}
-            isLoading={isFileSearching}
-            onSelect={handleSelectFile}
-          />
-        )}
-
-        {/* Slash Command (/) Suggestions Popover */}
-        {showSlashMenu && (
-          <SlashCommandPopup
-            commands={filteredSlashCommands}
-            selectedIndex={slashSelectIndex}
-            filter={slashFilter}
-            onSelect={handleSelectSlash}
-          />
-        )}
-
-        <div className="max-w-3xl mx-auto rounded-xl border border-[var(--border)] bg-[var(--sidebar-bg)] focus-within:border-[var(--ring)] focus-within:ring-1 focus-within:ring-[var(--ring)] transition-all shadow-xs overflow-hidden">
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={handleInputChange}
-            onKeyDown={(e) => {
-              // 1. File Search navigation
-              if (showFileMenu && fileResults.length > 0) {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setFileSelectIndex((i) => (i + 1) % fileResults.length);
-                  return;
-                }
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setFileSelectIndex((i) => (i - 1 + fileResults.length) % fileResults.length);
-                  return;
-                }
-                if (e.key === "Enter" || e.key === "Tab") {
-                  e.preventDefault();
-                  if (fileResults[fileSelectIndex]) {
-                    handleSelectFile(fileResults[fileSelectIndex]);
-                  }
-                  return;
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setShowFileMenu(false);
-                  return;
-                }
-              }
-
-              // 2. Slash Command navigation
-              if (showSlashMenu && filteredSlashCommands.length > 0) {
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setSlashSelectIndex((i) => (i + 1) % filteredSlashCommands.length);
-                  return;
-                }
-                if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setSlashSelectIndex((i) => (i - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
-                  return;
-                }
-                if (e.key === "Enter" || e.key === "Tab") {
-                  e.preventDefault();
-                  if (filteredSlashCommands[slashSelectIndex]) {
-                    handleSelectSlash(filteredSlashCommands[slashSelectIndex]);
-                  }
-                  return;
-                }
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setShowSlashMenu(false);
-                  return;
-                }
-              }
-
-              // Normal Send
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSend();
-              } else if (e.key === "Escape") {
-                setShowSlashMenu(false);
-                setShowFileMenu(false);
-              }
-            }}
-            placeholder={
-              isRunning
-                ? "Type mid-turn guidance to steer Codex, or click Interrupt above..."
-                : "Ask Codex to code, run tests, or refactor... (Type / for commands, Enter to send)"
-            }
-            rows={2}
-            className="w-full bg-transparent p-3 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none resize-none font-mono min-h-[52px]"
-          />
-
-          {/* Composer Utility Toolbar */}
-          <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--secondary)]/30 text-[11px] text-[var(--muted-foreground)] select-none">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-[var(--secondary)] border border-[var(--border)] text-[var(--foreground)] font-medium">
-                {activeWorkspace ? `Root: ${activeWorkspace.name}` : "Scratchpad mode"}
-              </span>
-              <ModelEffortCombo
-                models={models}
-                selectedModel={selectedModel}
-                selectedEffort={selectedEffort}
-                onSelectModel={setSelectedModel}
-                onSelectEffort={setSelectedEffort}
-                size="sm"
-                align="start"
-              />
-              {activeChat && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger className={`font-mono text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 cursor-pointer transition-colors hover:opacity-80 select-none ${PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.badgeBorder}`}>
-                    {PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.icon}
-                    <span>{PERMISSION_CONFIG[activeChat.permissionMode || "onRequest"]?.shortLabel}</span>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start" className="w-52">
-                    {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
-                      const cfg = PERMISSION_CONFIG[mode];
-                      const isSelected = (activeChat.permissionMode || "onRequest") === mode;
-                      return (
-                        <DropdownMenuItem
-                          key={mode}
-                          onClick={() => client.setChatPermission(activeChat.id, mode)}
-                          className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
-                        >
-                          <div className="flex items-center gap-2">
-                            {cfg.icon}
-                            <span className={cfg.colorClass}>{cfg.shortLabel}</span>
-                          </div>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500" />}
-                        </DropdownMenuItem>
-                      );
-                    })}
-                  </DropdownMenuContent>
-                </DropdownMenu>
+            <div className="max-w-3xl mx-auto relative">
+              {/* Floating Jump to Bottom / New msg below Button */}
+              {!isAtBottom && (
+                <div className="absolute bottom-full right-0 mb-3 z-30 pointer-events-none select-none animate-in fade-in slide-in-from-bottom-2 duration-150">
+                  <button
+                    onClick={scrollToBottom}
+                    className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[var(--card)]/95 backdrop-blur-md border border-[var(--border)] text-[var(--foreground)] text-xs font-medium shadow-xl hover:bg-[var(--secondary)] transition-all cursor-pointer group"
+                  >
+                    <ArrowDown className="w-3.5 h-3.5 text-[var(--muted-foreground)] group-hover:text-[var(--foreground)] transition-colors" />
+                    <span className="font-mono text-[11px]">
+                      {hasUnseenMessages ? "New messages below" : "Scroll to bottom"}
+                    </span>
+                    {hasUnseenMessages && (
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    )}
+                  </button>
+                </div>
               )}
-              <span className="font-mono text-[10px] text-[var(--muted-foreground)] opacity-75">
-                ⚡ Context: ~32k tokens
-              </span>
-            </div>
 
-            <div className="flex items-center gap-2.5">
-              <span className="text-[10px] font-mono opacity-60">
-                {isRunning ? "Steer turn ↵" : "↵ to send · ⇧↵ newline"}
-              </span>
-              <Button
-                size="xs"
-                disabled={!input.trim()}
-                onClick={() => handleSend()}
-                className="gap-1 font-mono"
-              >
-                <span>{isRunning ? "Steer" : "Send"}</span>
-                <CornerDownLeft className="w-3 h-3" />
-              </Button>
+              {renderComposer(false)}
             </div>
           </div>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 };

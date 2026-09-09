@@ -132,7 +132,7 @@ export function ModelEffortCombo({
           size === "sm" ? "px-2 py-0.5 text-[10px]" : "px-2.5 py-1 text-[11px]"
         } ${className}`}
       >
-        <span className="font-semibold text-blue-500 dark:text-blue-400">
+        <span className="font-semibold text-[var(--foreground)]">
           {formattedEffort}
         </span>
         <span className="text-[var(--border)]">·</span>
@@ -156,9 +156,9 @@ export function ModelEffortCombo({
                 onClick={() => setView("select_model")}
                 className="flex flex-col text-left group/btn cursor-pointer outline-none"
               >
-                <div className="flex items-center gap-1 text-[15px] font-medium text-blue-600 dark:text-blue-400 group-hover/btn:text-blue-500 transition-colors">
+                <div className="flex items-center gap-1 text-[15px] font-medium text-[var(--foreground)] transition-colors">
                   <span>{formattedEffort}</span>
-                  <ChevronRight className="w-4 h-4 mt-0.5 text-blue-600 dark:text-blue-400 group-hover/btn:translate-x-0.5 transition-transform" />
+                  <ChevronRight className="w-4 h-4 mt-0.5 text-[var(--muted-foreground)] group-hover/btn:translate-x-0.5 transition-transform" />
                 </div>
                 <div className="text-[13px] text-[var(--muted-foreground)] font-normal mt-0.5 group-hover/btn:text-[var(--foreground)] transition-colors">
                   {activeModelDisplayName}
@@ -184,7 +184,7 @@ export function ModelEffortCombo({
                   <div className="relative w-full h-[22px] bg-[var(--secondary)] border border-[var(--border)]/70 rounded-full flex items-center px-2.5">
                     {/* Active Progress Fill */}
                     <div
-                      className="absolute left-0 top-0 bottom-0 bg-[#0070f3] rounded-full transition-all duration-150"
+                      className="absolute left-0 top-0 bottom-0 bg-[var(--foreground)]/30 dark:bg-white/30 rounded-full transition-all duration-150"
                       style={{
                         width:
                           steps.length <= 1

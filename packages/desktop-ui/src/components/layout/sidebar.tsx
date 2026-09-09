@@ -249,7 +249,7 @@ export const Sidebar: React.FC = () => {
         <Button
           variant="ghost"
           size="icon-sm"
-          onClick={() => client.createChat(activeWorkspaceId || undefined)}
+          onClick={() => client.openDraftChat(activeWorkspaceId || undefined)}
           title="New Chat (⌘N)"
           className="text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
         >
@@ -288,7 +288,12 @@ export const Sidebar: React.FC = () => {
                 return (
                   <div key={ws.id} className="space-y-0.5">
                     <div
-                      onClick={() => useWorkspaceStore.getState().setActiveWorkspaceId(ws.id)}
+                      onClick={() => {
+                        useWorkspaceStore.getState().setActiveWorkspaceId(ws.id);
+                        if (useChatStore.getState().draftChat) {
+                          useChatStore.getState().setDraftChat({ workspaceId: ws.id });
+                        }
+                      }}
                       className={`group flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer transition-colors ${
                         isWsActive
                           ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium"
@@ -314,7 +319,7 @@ export const Sidebar: React.FC = () => {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            client.createChat(ws.id);
+                            client.openDraftChat(ws.id);
                           }}
                           className="p-1 rounded hover:bg-[var(--accent)] hover:text-[var(--foreground)] text-[var(--muted-foreground)] cursor-pointer"
                           title="New Chat in Workspace"
@@ -380,7 +385,7 @@ export const Sidebar: React.FC = () => {
           <div className="flex items-center justify-between px-2 mb-1.5 text-[11px] font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
             <span>Standalone</span>
             <button
-              onClick={() => client.createChat()}
+              onClick={() => client.openDraftChat(null)}
               className="hover:text-[var(--foreground)] p-0.5 rounded cursor-pointer"
               title="New Standalone Chat"
             >

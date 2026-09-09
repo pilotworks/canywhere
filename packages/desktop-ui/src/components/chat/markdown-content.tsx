@@ -27,7 +27,7 @@ const CodeBlock: React.FC<{
   if (!isBlock) {
     return (
       <code
-        className="rounded px-1.5 py-0.5 font-mono text-[11px] bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)] inline-block align-baseline"
+        className="font-mono text-[12px] text-[#a3752c] dark:text-[#e5c98d] font-normal inline align-baseline"
         {...props}
       >
         {children}

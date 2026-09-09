@@ -99,6 +99,8 @@ export class CanywhereClient {
 
       if (chatsRes.chats.length > 0 && !useChatStore.getState().activeChatId) {
         this.selectChat(chatsRes.chats[0].id);
+      } else if (chatsRes.chats.length === 0) {
+        this.openDraftChat(useWorkspaceStore.getState().activeWorkspaceId);
       }
 
       const devRes = await this.call("device.list", {});
@@ -226,6 +228,10 @@ export class CanywhereClient {
     return res?.path || null;
   }
 
+  openDraftChat(workspaceId?: string | null): void {
+    useChatStore.getState().openDraftChat(workspaceId);
+  }
+
   async createChat(workspaceId?: string, title?: string, prompt?: string): Promise<any> {
     const res = await this.call("chat.create", {
       kind: workspaceId ? "workspace" : "standalone",
@@ -273,6 +279,44 @@ export class CanywhereClient {
       turnId,
       content
     });
+  }
+
+  enqueuePrompt(
+    chatId: string,
+    content: string,
+    model?: string | null,
+    effort?: string | null,
+    permissionMode?: import("../types/index.js").PermissionMode
+  ): import("../types/index.js").QueuedMessage {
+    return useChatStore.getState().enqueueMessage(chatId, content, model, effort, permissionMode);
+  }
+
+  cancelQueuedPrompt(chatId: string, queueId: string): void {
+    useChatStore.getState().removeQueuedMessage(chatId, queueId);
+  }
+
+  updateQueuedPrompt(chatId: string, queueId: string, newContent: string): void {
+    useChatStore.getState().updateQueuedMessage(chatId, queueId, newContent);
+  }
+
+  async steerQueuedPrompt(chatId: string, queueId: string): Promise<void> {
+    const queueList = useChatStore.getState().queuedMessages[chatId] || [];
+    const item = queueList.find((q) => q.id === queueId);
+    if (!item) return;
+    const activeTurnId = useChatStore.getState().activeTurnId[chatId];
+    this.cancelQueuedPrompt(chatId, queueId);
+    if (activeTurnId) {
+      await this.steerTurn(chatId, activeTurnId, item.content);
+    } else {
+      await this.sendTurn(chatId, item.content, item.model || undefined, item.permissionMode);
+    }
+  }
+
+  async processNextQueuedItem(chatId: string): Promise<void> {
+    const nextItem = useChatStore.getState().shiftNextQueuedMessage(chatId);
+    if (nextItem) {
+      await this.sendTurn(nextItem.chatId, nextItem.content, nextItem.model || undefined, nextItem.permissionMode);
+    }
   }
 
   async interruptTurn(chatId: string, turnId?: string): Promise<void> {
@@ -437,6 +481,11 @@ export class CanywhereClient {
         this.tokenBuffer.flush();
         useChatStore.getState().setChatStatus(params.chatId, params.status);
         useChatStore.getState().setActiveTurn(params.chatId, null);
+        if (params.status === "idle" || params.status === "completed") {
+          setTimeout(() => {
+            this.processNextQueuedItem(params.chatId);
+          }, 60);
+        }
         break;
       }
 

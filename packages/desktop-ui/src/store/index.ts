@@ -9,6 +9,8 @@ import {
   PairingQrPayload,
   ModelInfo,
   FileTreeNode,
+  PermissionMode,
+  QueuedMessage,
 } from "../types/index.js";
 
 export interface ConnectionState {
@@ -63,14 +65,24 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   setActiveFile: (activeFile) => set({ activeFile }),
 }));
 
+export interface DraftChat {
+  workspaceId: string | null;
+}
+
 export interface ChatState {
   chats: Chat[];
   activeChatId: string | null;
+  draftChat: DraftChat | null;
+  draftPermissionMode: PermissionMode;
   messages: Record<string, Message[]>; // chatId -> Message[]
   activeTurnId: Record<string, string | null>; // chatId -> turnId
+  queuedMessages: Record<string, QueuedMessage[]>; // chatId -> QueuedMessage[]
   setChats: (chats: Chat[]) => void;
   addChat: (chat: Chat) => void;
   setActiveChatId: (id: string | null) => void;
+  setDraftChat: (draft: DraftChat | null) => void;
+  setDraftPermissionMode: (mode: PermissionMode) => void;
+  openDraftChat: (workspaceId?: string | null) => void;
   setChatStatus: (chatId: string, status: Chat["status"]) => void;
   setMessages: (chatId: string, messages: Message[]) => void;
   addMessage: (chatId: string, message: Message) => void;
@@ -80,6 +92,11 @@ export interface ChatState {
   setActiveTurn: (chatId: string, turnId: string | null) => void;
   updateChat: (chatId: string, update: Partial<Chat>) => void;
   removeChat: (chatId: string) => void;
+  enqueueMessage: (chatId: string, content: string, model?: string | null, effort?: string | null, permissionMode?: PermissionMode) => QueuedMessage;
+  removeQueuedMessage: (chatId: string, queueId: string) => void;
+  updateQueuedMessage: (chatId: string, queueId: string, content: string) => void;
+  shiftNextQueuedMessage: (chatId: string) => QueuedMessage | null;
+  clearQueue: (chatId: string) => void;
 }
 
 export const EMPTY_MESSAGES: Message[] = [];
@@ -87,11 +104,27 @@ export const EMPTY_MESSAGES: Message[] = [];
 export const useChatStore = create<ChatState>((set) => ({
   chats: [],
   activeChatId: null,
+  draftChat: null,
+  draftPermissionMode: "onRequest",
   messages: {},
   activeTurnId: {},
+  queuedMessages: {},
 
   setChats: (chats) => set({ chats }),
   addChat: (chat) => set((s) => ({ chats: [chat, ...s.chats] })),
+  setDraftChat: (draftChat) => set({ draftChat }),
+  setDraftPermissionMode: (draftPermissionMode) => set({ draftPermissionMode }),
+  openDraftChat: (workspaceId) => {
+    const wsId = workspaceId ?? null;
+    if (wsId) {
+      useWorkspaceStore.getState().setActiveWorkspaceId(wsId);
+    }
+    set({
+      activeChatId: null,
+      draftChat: { workspaceId: wsId },
+      draftPermissionMode: "onRequest",
+    });
+  },
   updateChat: (chatId, update) =>
     set((s) => ({
       chats: s.chats.map((c) => (c.id === chatId ? { ...c, ...update } : c))
@@ -103,14 +136,72 @@ export const useChatStore = create<ChatState>((set) => ({
       delete newMessages[chatId];
       const newActiveTurn = { ...s.activeTurnId };
       delete newActiveTurn[chatId];
+      const newQueued = { ...s.queuedMessages };
+      delete newQueued[chatId];
+      const nextChatId = s.activeChatId === chatId ? (remainingChats[0]?.id || null) : s.activeChatId;
       return {
         chats: remainingChats,
-        activeChatId: s.activeChatId === chatId ? (remainingChats[0]?.id || null) : s.activeChatId,
+        activeChatId: nextChatId,
+        draftChat: nextChatId ? null : { workspaceId: s.draftChat?.workspaceId ?? null },
         messages: newMessages,
         activeTurnId: newActiveTurn,
+        queuedMessages: newQueued,
       };
     }),
-  setActiveChatId: (activeChatId) => set({ activeChatId }),
+  enqueueMessage: (chatId, content, model, effort, permissionMode) => {
+    const newItem: QueuedMessage = {
+      id: "queue-" + Date.now() + "-" + Math.random().toString(36).slice(2, 7),
+      chatId,
+      content,
+      model: model || null,
+      effort: effort || null,
+      permissionMode,
+      createdAt: Date.now(),
+    };
+    set((s) => ({
+      queuedMessages: {
+        ...s.queuedMessages,
+        [chatId]: [...(s.queuedMessages[chatId] || []), newItem],
+      },
+    }));
+    return newItem;
+  },
+  removeQueuedMessage: (chatId, queueId) =>
+    set((s) => ({
+      queuedMessages: {
+        ...s.queuedMessages,
+        [chatId]: (s.queuedMessages[chatId] || []).filter((q) => q.id !== queueId),
+      },
+    })),
+  updateQueuedMessage: (chatId, queueId, content) =>
+    set((s) => ({
+      queuedMessages: {
+        ...s.queuedMessages,
+        [chatId]: (s.queuedMessages[chatId] || []).map((q) => (q.id === queueId ? { ...q, content } : q)),
+      },
+    })),
+  shiftNextQueuedMessage: (chatId) => {
+    let nextItem: QueuedMessage | null = null;
+    set((s) => {
+      const list = s.queuedMessages[chatId] || [];
+      if (list.length === 0) return s;
+      nextItem = list[0];
+      return {
+        queuedMessages: {
+          ...s.queuedMessages,
+          [chatId]: list.slice(1),
+        },
+      };
+    });
+    return nextItem;
+  },
+  clearQueue: (chatId) =>
+    set((s) => {
+      const next = { ...s.queuedMessages };
+      delete next[chatId];
+      return { queuedMessages: next };
+    }),
+  setActiveChatId: (activeChatId) => set({ activeChatId, draftChat: null }),
   setChatStatus: (chatId, status) =>
     set((s) => {
       const isCompleted = status === "idle" || status === "error";

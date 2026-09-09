@@ -551,7 +551,7 @@ end try"#;
                     turn_id: Some(params.turn_id.clone()),
                     role: MessageRole::User,
                     blocks: vec![MessageBlock::Text {
-                        content: format!("[Steer] {}", params.content),
+                        content: params.content.clone(),
                     }],
                     created_at: now,
                     streaming: false,
