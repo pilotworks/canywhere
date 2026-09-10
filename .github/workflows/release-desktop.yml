@@ -58,6 +58,7 @@ jobs:
           bun-version: latest
 
       - name: Build Desktop UI
+        shell: bash
         run: |
           cd packages/desktop-ui
           bun install --frozen-lockfile
@@ -65,6 +66,7 @@ jobs:
 
       - name: Extract Release Notes
         id: release_notes
+        shell: bash
         run: |
           if [ -f .release-notes.md ]; then
             echo "body<<EOF" >> $GITHUB_OUTPUT
