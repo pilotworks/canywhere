@@ -400,14 +400,43 @@ struct CodeBlockView: View {
         return trimmed.isEmpty ? "code" : trimmed
     }
 
+    private var languageIcon: String {
+        switch displayLanguage {
+        case "swift":
+            return "swift"
+        case "sh", "bash", "shell", "zsh":
+            return "terminal"
+        case "json", "yaml", "yml", "toml":
+            return "curlybraces"
+        case "md", "markdown":
+            return "text.alignleft"
+        case "sql":
+            return "cylinder.split.1x2"
+        case "diff", "patch":
+            return "plus.forwardslash.minus"
+        default:
+            return "chevron.left.forwardslash.chevron.right"
+        }
+    }
+
+    private var highlightedCode: AttributedString {
+        CodeSyntaxHighlighter.highlight(code, language: language)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header Bar
             HStack(spacing: 8) {
-                Text(displayLanguage)
-                    .font(.system(size: isReasoning ? 10 : 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .textCase(.lowercase)
+                HStack(spacing: 5) {
+                    Image(systemName: languageIcon)
+                        .font(.system(size: isReasoning ? 9 : 10))
+                        .foregroundStyle(.secondary)
+
+                    Text(displayLanguage)
+                        .font(.system(size: isReasoning ? 10 : 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textCase(.lowercase)
+                }
 
                 Spacer()
 
@@ -443,16 +472,16 @@ struct CodeBlockView: View {
 
             Divider()
 
-            // Code Content
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
+            // Code Content with bounded height and scrolling
+            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+                Text(highlightedCode)
                     .font(.system(size: isReasoning ? 11 : 12, design: .monospaced))
                     .lineSpacing(2)
-                    .foregroundStyle(.primary)
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
+            .frame(maxHeight: isReasoning ? 260 : 380)
         }
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -461,6 +490,76 @@ struct CodeBlockView: View {
                 .stroke(Color(uiColor: .separator).opacity(0.5), lineWidth: 1)
         )
         .padding(.vertical, isReasoning ? 2 : 4)
+    }
+}
+
+// MARK: - Lightweight Syntax Highlighter for iOS
+
+enum CodeSyntaxHighlighter {
+    static func highlight(_ code: String, language: String) -> AttributedString {
+        var attributed = AttributedString(code)
+        let trimmedLang = language.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !code.isEmpty, trimmedLang != "text", trimmedLang != "txt" else {
+            return attributed
+        }
+
+        let nsCode = code as NSString
+        let fullRange = NSRange(location: 0, length: nsCode.length)
+
+        // Palette matching modern developer themes
+        let keywordColor = Color(red: 0.95, green: 0.45, blue: 0.55) // Pink / Magenta
+        let stringColor = Color(red: 0.42, green: 0.78, blue: 0.60)  // Mint / Green
+        let numberColor = Color(red: 0.95, green: 0.68, blue: 0.38)  // Orange / Amber
+        let commentColor = Color.secondary.opacity(0.7)               // Muted Gray
+        let typeColor = Color(red: 0.90, green: 0.78, blue: 0.45)    // Warm Yellow
+        let funcColor = Color(red: 0.45, green: 0.70, blue: 0.98)    // Sky Blue
+
+        func applyRegex(_ pattern: String, color: Color) {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return }
+            let matches = regex.matches(in: code, options: [], range: fullRange)
+            for match in matches {
+                if let range = Range(match.range, in: code),
+                   let lower = AttributedString.Index(range.lowerBound, within: attributed),
+                   let upper = AttributedString.Index(range.upperBound, within: attributed) {
+                    attributed[lower..<upper].foregroundColor = color
+                }
+            }
+        }
+
+        // 1. Numbers
+        applyRegex(#"\b\d+(\.\d+)?\b"#, color: numberColor)
+
+        // 2. Types / Capitalized Identifiers
+        applyRegex(#"\b[A-Z][a-zA-Z0-9_]*\b"#, color: typeColor)
+
+        // 3. Keywords
+        let keywords = [
+            "func", "fn", "def", "function", "const", "let", "var", "val", "mut",
+            "class", "struct", "enum", "protocol", "interface", "type", "impl", "trait",
+            "return", "if", "else", "switch", "case", "default", "for", "while", "loop",
+            "match", "in", "of", "import", "export", "from", "package", "use", "pub",
+            "async", "await", "try", "catch", "throw", "throws", "guard", "defer",
+            "self", "this", "super", "new", "true", "false", "nil", "null", "None",
+            "where", "static", "final", "public", "private", "protected", "override",
+            "yield", "break", "continue", "as", "is", "extern", "crate", "mod"
+        ]
+        let kwPattern = #"\b("# + keywords.joined(separator: "|") + #")\b"#
+        applyRegex(kwPattern, color: keywordColor)
+
+        // 4. Function call identifiers (foo())
+        applyRegex(#"\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\s*\()"#, color: funcColor)
+
+        // 5. Strings ("...", '...', `...`)
+        applyRegex(#"\"([^\"\\]|\\.)*\"|'([^'\\]|\\.)*'|`([^`\\]|\\.)*`"#, color: stringColor)
+
+        // 6. Comments (//..., #..., /*...*/) - applied last so comments override everything inside
+        if ["py", "python", "sh", "bash", "zsh", "shell", "yaml", "yml", "rb", "ruby"].contains(trimmedLang) {
+            applyRegex(#"#.*$"#, color: commentColor)
+        }
+        applyRegex(#"//.*$"#, color: commentColor)
+        applyRegex(#"/\*[\s\S]*?\*/"#, color: commentColor)
+
+        return attributed
     }
 }
 

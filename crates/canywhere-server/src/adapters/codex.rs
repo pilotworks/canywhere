@@ -24,6 +24,7 @@ pub struct CodexAdapter {
     chat_accumulated_reasoning: Arc<Mutex<HashMap<String, String>>>,
     chat_accumulated_blocks: Arc<Mutex<HashMap<String, Vec<MessageBlock>>>>,
     chat_pending_approvals: Arc<Mutex<HashMap<String, Vec<ApprovalRequest>>>>,
+    auto_approve_read_only: Arc<Mutex<bool>>,
     event_tx: broadcast::Sender<AgentEvent>,
 }
 
@@ -46,8 +47,13 @@ impl CodexAdapter {
             chat_accumulated_reasoning: Arc::new(Mutex::new(HashMap::new())),
             chat_accumulated_blocks: Arc::new(Mutex::new(HashMap::new())),
             chat_pending_approvals: Arc::new(Mutex::new(HashMap::new())),
+            auto_approve_read_only: Arc::new(Mutex::new(false)),
             event_tx,
         }
+    }
+
+    pub async fn set_auto_approve_read_only(&self, enabled: bool) {
+        *self.auto_approve_read_only.lock().await = enabled;
     }
 
     pub fn resolve_binary() -> String {
@@ -111,6 +117,8 @@ impl CodexAdapter {
         let chat_reasoning = Arc::clone(&self.chat_accumulated_reasoning);
         let chat_blocks = Arc::clone(&self.chat_accumulated_blocks);
         let chat_approvals = Arc::clone(&self.chat_pending_approvals);
+        let auto_approve = Arc::clone(&self.auto_approve_read_only);
+        let stdin_ref = Arc::clone(&self.stdin);
         let tx = self.event_tx.clone();
 
         tokio::spawn(async move {
@@ -130,6 +138,8 @@ impl CodexAdapter {
                         &chat_reasoning,
                         &chat_blocks,
                         &chat_approvals,
+                        &auto_approve,
+                        &stdin_ref,
                         &tx,
                     )
                     .await;
@@ -763,6 +773,8 @@ impl CodexAdapter {
         chat_reasoning: &Arc<Mutex<HashMap<String, String>>>,
         chat_blocks: &Arc<Mutex<HashMap<String, Vec<MessageBlock>>>>,
         chat_approvals: &Arc<Mutex<HashMap<String, Vec<ApprovalRequest>>>>,
+        auto_approve: &Arc<Mutex<bool>>,
+        stdin: &Arc<Mutex<Option<ChildStdin>>>,
         tx: &broadcast::Sender<AgentEvent>,
     ) {
         // 1. In JSON-RPC 2.0, a Response has an "id" and ("result" or "error"), but NO "method".
@@ -1338,6 +1350,47 @@ impl CodexAdapter {
                 .unwrap_or_else(|| params["itemId"].as_str().unwrap_or("").to_string());
             let command = params["command"].as_str().unwrap_or("").to_string();
             let cwd = params["cwd"].as_str().unwrap_or("").to_string();
+
+            // Check if auto-approval for read-only commands is enabled
+            let auto_approve_enabled = *auto_approve.lock().await;
+            if auto_approve_enabled && is_read_only_command(&command) {
+                tracing::info!(
+                    "[CodexAdapter] Auto-approving read-only command: '{}' (req_id={})",
+                    command,
+                    external_req_id
+                );
+                // Immediately reply with {"decision": "accept"} to Codex via stdin
+                let response_payload = if let Some(numeric_id) = req_id.and_then(|v| v.as_i64()) {
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": numeric_id,
+                        "result": { "decision": "accept" }
+                    })
+                } else {
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "id": external_req_id,
+                        "result": { "decision": "accept" }
+                    })
+                };
+
+                let mut stdin_guard = stdin.lock().await;
+                if let Some(stdin_proc) = stdin_guard.as_mut() {
+                    let mut s = response_payload.to_string();
+                    s.push('\n');
+                    let _ = stdin_proc.write_all(s.as_bytes()).await;
+                    let _ = stdin_proc.flush().await;
+                }
+
+                // Emit ApprovalResolved event to update UI clients
+                let _ = tx.send(AgentEvent::ApprovalResolved {
+                    approval_id: external_req_id,
+                    chat_id: Some(chat_id),
+                    decision: "accept".to_string(),
+                });
+                return;
+            }
+
             let is_high_risk = command.contains("rm -rf")
                 || command.contains("sudo")
                 || command.contains("git reset --hard")
@@ -1870,6 +1923,101 @@ impl CliAdapter for CodexAdapter {
             }
             _ => anyhow::bail!("Command '{}' is not supported by Codex", command),
         }
+    }
+
+    async fn set_auto_approve_read_only(&self, enabled: bool) {
+        *self.auto_approve_read_only.lock().await = enabled;
+    }
+}
+
+pub fn is_read_only_command(cmd: &str) -> bool {
+    let trimmed = cmd.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    // Disallow dangerous shell metacharacters that allow chaining, redirecting or executing subshells
+    let forbidden_chars = ['>', '<', '|', ';', '&', '`', '$', '(', ')', '\n', '\r'];
+    if trimmed.chars().any(|c| forbidden_chars.contains(&c)) {
+        return false;
+    }
+
+    // Split into tokens by whitespace
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    if tokens.is_empty() {
+        return false;
+    }
+
+    let first = tokens[0];
+
+    // Single-word commands that are pure inspection/read-only
+    let safe_tools = [
+        "ls", "dir", "pwd", "which", "where", "whoami",
+        "cat", "head", "tail", "less", "more",
+        "grep", "rg", "ag", "find", "fd",
+        "echo", "file", "stat", "wc", "readlink",
+        "env", "printenv",
+    ];
+    if safe_tools.contains(&first) {
+        return true;
+    }
+
+    // Git inspection commands
+    if first == "git" && tokens.len() >= 2 {
+        let sub = tokens[1];
+        let safe_git_subs = [
+            "status", "diff", "log", "show", "branch",
+            "tag", "describe", "remote", "rev-parse",
+        ];
+        if safe_git_subs.contains(&sub) {
+            // Ensure no mutating flags or arguments
+            let mutating_args = ["-D", "-m", "-M", "--delete", "--prune", "--add", "--set-upstream"];
+            if !tokens.iter().any(|t| mutating_args.contains(t)) {
+                return true;
+            }
+        }
+    }
+
+    // Node/Rust inspection commands
+    if (first == "cargo" || first == "pnpm" || first == "npm" || first == "bun" || first == "yarn")
+        && tokens.len() >= 2
+    {
+        let sub = tokens[1];
+        let safe_pkg_subs = ["--version", "-v", "check", "clippy", "test"];
+        if safe_pkg_subs.contains(&sub) {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_read_only_command() {
+        // Read only
+        assert!(is_read_only_command("ls -la"));
+        assert!(is_read_only_command("cat src/main.rs"));
+        assert!(is_read_only_command("git status"));
+        assert!(is_read_only_command("git diff"));
+        assert!(is_read_only_command("git log -n 5"));
+        assert!(is_read_only_command("pwd"));
+        assert!(is_read_only_command("which codex"));
+        assert!(is_read_only_command("cargo check"));
+        assert!(is_read_only_command("cargo test"));
+
+        // Mutating / dangerous / chained
+        assert!(!is_read_only_command("rm -rf target"));
+        assert!(!is_read_only_command("ls > file.txt"));
+        assert!(!is_read_only_command("cat foo | grep bar"));
+        assert!(!is_read_only_command("git branch -D feature"));
+        assert!(!is_read_only_command("git push origin main"));
+        assert!(!is_read_only_command("cargo build"));
+        assert!(!is_read_only_command("sudo rm -rf /"));
+        assert!(!is_read_only_command("echo hello; rm -rf /"));
     }
 }
 

@@ -32,6 +32,9 @@ fn export_typescript_and_json_schema() {
     GitLogResult::export_all_to(out_dir).unwrap();
     GitGenerateCommitMessageParams::export_all_to(out_dir).unwrap();
     GitGenerateCommitMessageResult::export_all_to(out_dir).unwrap();
+    HostSettings::export_all_to(out_dir).unwrap();
+    HostSettingsUpdateParams::export_all_to(out_dir).unwrap();
+    HostSettingsUpdatedNotification::export_all_to(out_dir).unwrap();
 
     // Export JSON Schema for Swift Codegen
     let schema_dir = Path::new("../../schemas");
@@ -46,6 +49,7 @@ fn export_typescript_and_json_schema() {
         ("pairing_qr.schema.json", serde_json::to_value(schemars::schema_for!(PairingQrPayload)).unwrap()),
         ("pairing_response.schema.json", serde_json::to_value(schemars::schema_for!(PairingResponse)).unwrap()),
         ("provider.schema.json", serde_json::to_value(schemars::schema_for!(Provider)).unwrap()),
+        ("settings.schema.json", serde_json::to_value(schemars::schema_for!(HostSettings)).unwrap()),
     ];
 
     for (filename, schema) in schemas {

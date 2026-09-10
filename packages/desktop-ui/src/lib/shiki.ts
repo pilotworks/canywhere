@@ -28,6 +28,21 @@ const CORE_LANGUAGES = [
 ] as const;
 
 const EXTENSION_TO_LANG: Record<string, string> = {
+  typescript: "typescript",
+  javascript: "javascript",
+  rust: "rust",
+  python: "python",
+  python3: "python",
+  shell: "bash",
+  ruby: "ruby",
+  kotlin: "kotlin",
+  golang: "go",
+  csharp: "csharp",
+  cs: "csharp",
+  "c++": "cpp",
+  docker: "dockerfile",
+  make: "makefile",
+  makefile: "makefile",
   ts: "typescript",
   mts: "typescript",
   cts: "typescript",
@@ -133,19 +148,24 @@ const LANG_DISPLAY_NAMES: Record<string, string> = {
 };
 
 /**
- * Resolves the language identifier for Shiki based on a file path or name.
+ * Resolves the language identifier for Shiki based on a file path or language name.
  */
 export function detectLanguage(filePath: string): string {
   if (!filePath) return "text";
   const baseName = filePath.split(/[/\\]/).pop() || filePath;
-  const lowerBase = baseName.toLowerCase();
+  const lowerBase = baseName.toLowerCase().trim();
 
-  // 1. Check exact filename match
+  // 1. Direct language name or alias match
+  if (EXTENSION_TO_LANG[lowerBase]) {
+    return EXTENSION_TO_LANG[lowerBase];
+  }
+
+  // 2. Check exact filename match
   if (FILENAME_TO_LANG[lowerBase]) {
     return FILENAME_TO_LANG[lowerBase];
   }
 
-  // 2. Check extension match (supports multi-part e.g. .d.ts)
+  // 3. Check extension match (supports multi-part e.g. .d.ts)
   const parts = lowerBase.split(".");
   for (let i = 1; i < parts.length; i++) {
     const ext = parts.slice(i).join(".");
@@ -154,7 +174,7 @@ export function detectLanguage(filePath: string): string {
     }
   }
 
-  // 3. Check single extension
+  // 4. Check single extension
   const singleExt = parts[parts.length - 1];
   if (singleExt && EXTENSION_TO_LANG[singleExt]) {
     return EXTENSION_TO_LANG[singleExt];
@@ -195,16 +215,19 @@ export async function tokenizeCode(
     const highlighter = await getHighlighterInstance();
     const themeName = theme === "dark" ? "github-dark" : "github-light";
 
+    const resolved = detectLanguage(lang);
+    const targetLang = resolved !== "text" ? resolved : (lang || "text");
+
     // Load language if not yet available
-    if (lang !== "text" && !highlighter.getLoadedLanguages().includes(lang)) {
+    if (targetLang !== "text" && !highlighter.getLoadedLanguages().includes(targetLang)) {
       try {
-        await highlighter.loadLanguage(lang as any);
+        await highlighter.loadLanguage(targetLang as any);
       } catch (err) {
-        console.warn(`[Shiki] Could not load language ${lang}, falling back to plain text`, err);
+        console.warn(`[Shiki] Could not load language ${targetLang}, falling back to plain text`, err);
       }
     }
 
-    const effectiveLang = highlighter.getLoadedLanguages().includes(lang) ? lang : "text";
+    const effectiveLang = highlighter.getLoadedLanguages().includes(targetLang) ? targetLang : "text";
     const result = highlighter.codeToTokens(code, {
       lang: effectiveLang as any,
       theme: themeName,

@@ -1,9 +1,11 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 import { FileIcon } from "../ui/file-icon.js";
 import { parseFileLink, openFileInRightSidebar } from "../../lib/file-link.js";
+import { detectLanguage, tokenizeCode, type CodeToken } from "../../lib/shiki.js";
+import { useThemeStore } from "../../store/theme-store.js";
 
 interface MarkdownContentProps {
   content: string;
@@ -16,6 +18,39 @@ const PreBlock: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   return <PreContext.Provider value={true}>{children}</PreContext.Provider>;
 };
 
+const LANG_TO_EXT: Record<string, string> = {
+  typescript: "ts",
+  javascript: "js",
+  python: "py",
+  rust: "rs",
+  bash: "sh",
+  shell: "sh",
+  zsh: "sh",
+  csharp: "cs",
+  ruby: "rb",
+  kotlin: "kt",
+  golang: "go",
+  markdown: "md",
+  dockerfile: "dockerfile",
+  makefile: "makefile",
+  json: "json",
+  yaml: "yaml",
+  yml: "yaml",
+  toml: "toml",
+  html: "html",
+  css: "css",
+  scss: "scss",
+  less: "less",
+  sql: "sql",
+  swift: "swift",
+  cpp: "cpp",
+  c: "c",
+  diff: "diff",
+  patch: "diff",
+  xml: "xml",
+  graphql: "graphql",
+};
+
 const CodeBlock: React.FC<{
   className?: string;
   children?: React.ReactNode;
@@ -23,8 +58,46 @@ const CodeBlock: React.FC<{
 }> = ({ className, children, node, ...props }) => {
   const isBlock = useContext(PreContext);
   const [copied, setCopied] = useState(false);
-  const match = /language-(\w+)/.exec(className || "");
-  const codeString = String(children).replace(/\n$/, "");
+  const [tokens, setTokens] = useState<CodeToken[][] | null>(null);
+  const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
+
+  const match = /language-([a-zA-Z0-9_+-]+)/.exec(className || "");
+  const rawLang = match ? match[1] : "";
+
+  const codeString = useMemo(() => {
+    function extractText(n: React.ReactNode): string {
+      if (typeof n === "string") return n;
+      if (typeof n === "number") return String(n);
+      if (Array.isArray(n)) return n.map(extractText).join("");
+      if (React.isValidElement(n) && (n.props as any)?.children) {
+        return extractText((n.props as any).children);
+      }
+      return "";
+    }
+    const extracted = extractText(children) || (typeof children === "string" ? children : "");
+    return extracted.replace(/\n$/, "");
+  }, [children]);
+
+  const detectedLang = useMemo(() => {
+    if (!rawLang) return "text";
+    return detectLanguage(rawLang);
+  }, [rawLang]);
+
+  useEffect(() => {
+    let active = true;
+    if (!isBlock || !codeString || detectedLang === "text") {
+      setTokens(null);
+      return;
+    }
+    tokenizeCode(codeString, detectedLang, resolvedTheme).then((res) => {
+      if (active) {
+        setTokens(res);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [isBlock, codeString, detectedLang, resolvedTheme]);
 
   if (!isBlock) {
     return (
@@ -43,17 +116,31 @@ const CodeBlock: React.FC<{
     setTimeout(() => setCopied(false), 1500);
   };
 
-  const lang = match ? match[1] : "";
+  const displayLang = rawLang || (detectedLang !== "text" ? detectedLang : "code");
+
+  const iconFileName = useMemo(() => {
+    if (!detectedLang || detectedLang === "text" || detectedLang === "code") {
+      return "default_file.svg";
+    }
+    const ext = LANG_TO_EXT[detectedLang] || detectedLang;
+    return `file.${ext}`;
+  }, [detectedLang]);
 
   return (
     <div className="relative my-2.5 rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] overflow-hidden font-mono text-xs shadow-xs">
       <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--secondary)]/60 border-b border-[var(--code-border)] text-[var(--muted-foreground)] select-none">
-        <span className="text-[11px] font-mono font-medium lowercase tracking-wider text-[var(--muted-foreground)]">
-          {lang || "code"}
-        </span>
+        <div className="flex items-center gap-1.5 min-w-0">
+          <FileIcon
+            fileName={iconFileName}
+            className="w-3.5 h-3.5 inline-block shrink-0 pointer-events-none"
+          />
+          <span className="text-[11px] font-mono font-medium lowercase tracking-wider text-[var(--muted-foreground)] truncate">
+            {displayLang}
+          </span>
+        </div>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1 hover:text-[var(--foreground)] p-1 rounded transition-colors cursor-pointer text-[10px]"
+          className="flex items-center gap-1 hover:text-[var(--foreground)] p-1 rounded transition-colors cursor-pointer text-[10px] shrink-0 ml-2"
           title="Copy snippet"
         >
           {copied ? (
@@ -69,8 +156,30 @@ const CodeBlock: React.FC<{
           )}
         </button>
       </div>
-      <pre className="p-3.5 overflow-x-auto text-[12px] leading-relaxed text-[var(--foreground)] select-text">
-        <code>{children}</code>
+      <pre className="p-3.5 max-h-[420px] overflow-auto text-[12px] leading-relaxed text-[var(--foreground)] select-text">
+        {tokens && tokens.length > 0 ? (
+          <code>
+            {tokens.map((lineTokens, lineIdx) => (
+              <React.Fragment key={lineIdx}>
+                {lineTokens.map((tok, tokIdx) => (
+                  <span
+                    key={tokIdx}
+                    style={{
+                      color: tok.color,
+                      fontStyle: tok.fontStyle === 1 ? "italic" : undefined,
+                      fontWeight: tok.fontStyle === 2 ? "bold" : undefined,
+                    }}
+                  >
+                    {tok.content}
+                  </span>
+                ))}
+                {lineIdx < tokens.length - 1 ? "\n" : ""}
+              </React.Fragment>
+            ))}
+          </code>
+        ) : (
+          <code>{children}</code>
+        )}
       </pre>
     </div>
   );

@@ -2,7 +2,9 @@ import {
   RpcRequestEnvelope,
   RpcResponseEnvelope,
   RpcNotificationEnvelope,
-  ApprovalDecision
+  ApprovalDecision,
+  HostSettings,
+  HostSettingsUpdateParams,
 } from "../types/index.js";
 import { TokenStreamBuffer } from "./buffer.js";
 import {
@@ -13,6 +15,7 @@ import {
   useDeviceStore,
   useModelStore,
   useProviderStore,
+  useSettingsStore,
 } from "../store/index.js";
 
 function getFallbackProviderId(): string {
@@ -139,6 +142,11 @@ export class CanywhereClient {
             this.loadModels(p.id).catch(() => {});
           }
         }
+      }
+
+      const settingsRes = await this.call("settings.get", {}).catch(() => null);
+      if (settingsRes) {
+        useSettingsStore.getState().setHostSettings(settingsRes);
       }
     } catch (err) {
       console.error("[CanywhereClient] Bootstrap failed", err);
@@ -646,6 +654,36 @@ export class CanywhereClient {
         }
         break;
       }
+
+      case "settings.updated": {
+        console.log("⚙️ [DesktopClient] settings.updated received:", params);
+        if (params.settings) {
+          useSettingsStore.getState().setHostSettings(params.settings);
+        }
+        break;
+      }
+    }
+  }
+
+  async getSettings(): Promise<HostSettings> {
+    useSettingsStore.getState().setLoading(true);
+    try {
+      const res = await this.call("settings.get", {});
+      useSettingsStore.getState().setHostSettings(res);
+      return res;
+    } finally {
+      useSettingsStore.getState().setLoading(false);
+    }
+  }
+
+  async updateSettings(patch: HostSettingsUpdateParams): Promise<HostSettings> {
+    useSettingsStore.getState().setSaving(true);
+    try {
+      const res = await this.call("settings.update", patch);
+      useSettingsStore.getState().setHostSettings(res);
+      return res;
+    } finally {
+      useSettingsStore.getState().setSaving(false);
     }
   }
 

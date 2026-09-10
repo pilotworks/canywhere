@@ -502,6 +502,76 @@ impl RepositoryManager {
         Ok(())
     }
 
+    pub fn get_host_settings(&self) -> Result<HostSettings> {
+        let default_provider_id = self.get_setting("default_provider_id")?
+            .unwrap_or_else(|| "codex".to_string());
+        let default_model = self.get_setting("current_model")?
+            .or_else(|| self.get_setting("default_model").ok().flatten())
+            .unwrap_or_else(|| "gpt-5-codex".to_string());
+        let default_reasoning_effort = self.get_setting("current_reasoning_effort")?
+            .or_else(|| self.get_setting("default_reasoning_effort").ok().flatten())
+            .or_else(|| Some("medium".to_string()));
+        let auto_approve_read_only = self.get_setting("auto_approve_read_only")?
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(false);
+        let default_permission_mode = self.get_setting("default_permission_mode")?
+            .map(|s| match s.as_str() {
+                "readOnly" => PermissionMode::ReadOnly,
+                "auto" => PermissionMode::Auto,
+                _ => PermissionMode::OnRequest,
+            })
+            .unwrap_or(PermissionMode::OnRequest);
+        let server_port = self.get_setting("server_port")?
+            .and_then(|v| v.parse::<u16>().ok())
+            .unwrap_or(7890);
+        let enable_mdns = self.get_setting("enable_mdns")?
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(true);
+
+        Ok(HostSettings {
+            default_provider_id,
+            default_model,
+            default_reasoning_effort,
+            auto_approve_read_only,
+            default_permission_mode,
+            server_port,
+            enable_mdns,
+        })
+    }
+
+    pub fn update_host_settings(&self, params: HostSettingsUpdateParams) -> Result<HostSettings> {
+        if let Some(provider_id) = &params.default_provider_id {
+            self.set_setting("default_provider_id", provider_id)?;
+        }
+        if let Some(model) = &params.default_model {
+            self.set_setting("default_model", model)?;
+            self.set_setting("current_model", model)?;
+        }
+        if let Some(effort) = &params.default_reasoning_effort {
+            self.set_setting("default_reasoning_effort", effort)?;
+            self.set_setting("current_reasoning_effort", effort)?;
+        }
+        if let Some(auto_approve) = params.auto_approve_read_only {
+            self.set_setting("auto_approve_read_only", &auto_approve.to_string())?;
+        }
+        if let Some(perm) = params.default_permission_mode {
+            let s = match perm {
+                PermissionMode::ReadOnly => "readOnly",
+                PermissionMode::Auto => "auto",
+                PermissionMode::OnRequest => "onRequest",
+            };
+            self.set_setting("default_permission_mode", s)?;
+        }
+        if let Some(port) = params.server_port {
+            self.set_setting("server_port", &port.to_string())?;
+        }
+        if let Some(mdns) = params.enable_mdns {
+            self.set_setting("enable_mdns", &mdns.to_string())?;
+        }
+
+        self.get_host_settings()
+    }
+
     // Message Queue
     pub fn list_queued_messages(&self, chat_id: &str) -> Result<Vec<QueuedMessage>> {
         let conn = self.db.conn();

@@ -7,6 +7,7 @@ use crate::models::{
     Provider, Workspace,
 };
 pub use crate::models::git::*;
+pub use crate::models::settings::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

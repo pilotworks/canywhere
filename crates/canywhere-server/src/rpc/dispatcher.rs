@@ -329,8 +329,14 @@ end try"#;
 
             "chat.create" => {
                 let mut input: ChatCreateInput = serde_json::from_value(p.clone())?;
+                let host_settings = self.repo.get_host_settings().ok();
+
                 if input.provider_id.trim().is_empty() {
-                    input.provider_id = "codex".to_string();
+                    input.provider_id = host_settings
+                        .as_ref()
+                        .map(|s| s.default_provider_id.clone())
+                        .filter(|p| !p.trim().is_empty())
+                        .unwrap_or_else(|| "codex".to_string());
                 }
                 if input.workspace_id.is_some() {
                     input.kind = ChatKind::Workspace;
@@ -340,6 +346,8 @@ end try"#;
                     if let Ok(ad) = self.registry.resolve(Some(&input.provider_id)) {
                         if !ad.capabilities().supports_approvals {
                             input.permission_mode = Some(PermissionMode::Auto);
+                        } else if let Some(ref s) = host_settings {
+                            input.permission_mode = Some(s.default_permission_mode);
                         }
                     }
                 }
@@ -1097,6 +1105,20 @@ end try"#;
                     active_turns_count: active_turns as u32,
                     uptime_seconds: 0,
                 })?)
+            }
+
+            "settings.get" => {
+                let settings = self.repo.get_host_settings()?;
+                Ok(serde_json::to_value(settings)?)
+            }
+
+            "settings.update" => {
+                let params: HostSettingsUpdateParams = serde_json::from_value(p)?;
+                let settings = self.repo.update_host_settings(params)?;
+                let _ = self.registry.event_tx().send(AgentEvent::SettingsUpdated {
+                    settings: settings.clone(),
+                });
+                Ok(serde_json::to_value(settings)?)
             }
 
             _ => anyhow::bail!("Method not found: {}", method),

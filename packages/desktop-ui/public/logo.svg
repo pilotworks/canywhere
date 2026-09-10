@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Architectural Monospace C Bracket -->
+  <path d="M 352 136 L 224 136 C 162.144 136 112 186.144 112 248 L 112 264 C 112 325.856 162.144 376 224 376 L 352 376" 
+        stroke="currentColor" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Outbound Forward Prompt Chevron -->
+  <path d="M 288 200 L 344 256 L 288 312" 
+        stroke="#38BDF8" stroke-width="44" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Remote Tether Beacon Node -->
+  <circle cx="408" cy="256" r="22" fill="#38BDF8"/>
+</svg>

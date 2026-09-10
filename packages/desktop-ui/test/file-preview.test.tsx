@@ -25,6 +25,19 @@ describe("Shiki Language Detection", () => {
     expect(detectLanguage(".env")).toBe("bash");
   });
 
+  it("detects direct language names and aliases", () => {
+    expect(detectLanguage("typescript")).toBe("typescript");
+    expect(detectLanguage("ts")).toBe("typescript");
+    expect(detectLanguage("python")).toBe("python");
+    expect(detectLanguage("py")).toBe("python");
+    expect(detectLanguage("rust")).toBe("rust");
+    expect(detectLanguage("rs")).toBe("rust");
+    expect(detectLanguage("shell")).toBe("bash");
+    expect(detectLanguage("sh")).toBe("bash");
+    expect(detectLanguage("bash")).toBe("bash");
+    expect(detectLanguage("c++")).toBe("cpp");
+  });
+
   it("falls back to text for unknown extensions", () => {
     expect(detectLanguage("unknown.unrecognized123")).toBe("text");
   });

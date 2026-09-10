@@ -13,6 +13,7 @@ import {
   PermissionMode,
   QueuedMessage,
 } from "../types/index.js";
+import { useSettingsStore } from "./settings.js";
 
 export interface ProviderState {
   providers: Provider[];
@@ -147,7 +148,7 @@ export const useChatStore = create<ChatState>((set) => ({
   chats: [],
   activeChatId: null,
   draftChat: null,
-  draftPermissionMode: "onRequest",
+  draftPermissionMode: useSettingsStore.getState().hostSettings?.defaultPermissionMode ?? "onRequest",
   messages: {},
   activeTurnId: {},
   queuedMessages: {},
@@ -163,11 +164,12 @@ export const useChatStore = create<ChatState>((set) => ({
   setDraftPermissionMode: (draftPermissionMode) => set({ draftPermissionMode }),
   openDraftChat: (workspaceId) => {
     const wsId = workspaceId ?? null;
+    const defaultPerm = useSettingsStore.getState().hostSettings?.defaultPermissionMode ?? "onRequest";
     useWorkspaceStore.getState().setActiveWorkspaceId(wsId);
     set({
       activeChatId: null,
       draftChat: { workspaceId: wsId },
-      draftPermissionMode: "onRequest",
+      draftPermissionMode: defaultPerm,
     });
   },
   updateChat: (chatId, update) =>
@@ -742,5 +744,7 @@ export const useUiStore = create<UiState>((set) => ({
       };
     }),
 }));
+
+export * from "./settings.js";
 
 

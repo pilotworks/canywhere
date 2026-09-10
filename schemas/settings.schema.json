@@ -1,0 +1,51 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "PermissionMode": {
+      "enum": [
+        "onRequest",
+        "readOnly",
+        "auto"
+      ],
+      "type": "string"
+    }
+  },
+  "properties": {
+    "autoApproveReadOnly": {
+      "type": "boolean"
+    },
+    "defaultModel": {
+      "type": "string"
+    },
+    "defaultPermissionMode": {
+      "$ref": "#/definitions/PermissionMode"
+    },
+    "defaultProviderId": {
+      "type": "string"
+    },
+    "defaultReasoningEffort": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "enableMdns": {
+      "type": "boolean"
+    },
+    "serverPort": {
+      "format": "uint16",
+      "minimum": 0.0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "autoApproveReadOnly",
+    "defaultModel",
+    "defaultPermissionMode",
+    "defaultProviderId",
+    "enableMdns",
+    "serverPort"
+  ],
+  "title": "HostSettings",
+  "type": "object"
+}

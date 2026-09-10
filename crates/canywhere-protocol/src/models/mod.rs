@@ -5,6 +5,7 @@ pub mod message;
 pub mod provider;
 pub mod workspace;
 pub mod git;
+pub mod settings;
 
 pub use approval::*;
 pub use chat::*;
@@ -13,3 +14,4 @@ pub use message::*;
 pub use provider::*;
 pub use workspace::*;
 pub use git::*;
+pub use settings::*;

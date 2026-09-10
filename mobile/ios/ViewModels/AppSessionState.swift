@@ -21,7 +21,32 @@ final class AppSessionState {
     var selectedEffort: String = "medium"
     var pendingApprovals: [ApprovalRequest] = []
     var hostInfo: HostInfoResult? = nil
+    var hostSettings: HostSettings? = nil
     var errorMessage: String?
+
+    var requireFaceIdOnOpen: Bool {
+        get { UserDefaults.standard.bool(forKey: "require_face_id_on_open") }
+        set { UserDefaults.standard.set(newValue, forKey: "require_face_id_on_open") }
+    }
+    var requireFaceIdOnApproval: Bool {
+        get { UserDefaults.standard.bool(forKey: "require_face_id_on_approval") }
+        set { UserDefaults.standard.set(newValue, forKey: "require_face_id_on_approval") }
+    }
+    var hapticsEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "haptics_enabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "haptics_enabled")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "haptics_enabled") }
+    }
+    var codeWordWrap: Bool {
+        get { UserDefaults.standard.bool(forKey: "code_word_wrap") }
+        set { UserDefaults.standard.set(newValue, forKey: "code_word_wrap") }
+    }
+    var appTheme: String {
+        get { UserDefaults.standard.string(forKey: "app_theme") ?? "system" }
+        set { UserDefaults.standard.set(newValue, forKey: "app_theme") }
+    }
 
     private let connectionManager = ConnectionManager.shared
 
@@ -252,10 +277,58 @@ final class AppSessionState {
             group.addTask { await self.loadModels() }
             group.addTask { await self.loadPendingApprovals() }
             group.addTask { await self.loadHostInfo() }
+            group.addTask { await self.loadHostSettings() }
         }
         if let active = activeChatViewModel {
             await active.loadChat()
         }
+    }
+
+    func loadHostSettings() async {
+        do {
+            struct EmptyParams: Encodable, Sendable {}
+            let result: HostSettings = try await connectionManager.sendRequest(
+                method: "settings.get",
+                params: EmptyParams()
+            )
+            self.hostSettings = result
+        } catch {
+            print("⚠️ [AppSessionState] Failed to load host settings: \(error)")
+        }
+    }
+
+    func updateHostSettings(
+        defaultProviderId: String? = nil,
+        defaultModel: String? = nil,
+        defaultReasoningEffort: String? = nil,
+        autoApproveReadOnly: Bool? = nil,
+        defaultPermissionMode: PermissionMode? = nil,
+        serverPort: Int? = nil,
+        enableMdns: Bool? = nil
+    ) async throws {
+        struct UpdateParams: Encodable, Sendable {
+            let defaultProviderId: String?
+            let defaultModel: String?
+            let defaultReasoningEffort: String?
+            let autoApproveReadOnly: Bool?
+            let defaultPermissionMode: PermissionMode?
+            let serverPort: Int?
+            let enableMdns: Bool?
+        }
+        let params = UpdateParams(
+            defaultProviderId: defaultProviderId,
+            defaultModel: defaultModel,
+            defaultReasoningEffort: defaultReasoningEffort,
+            autoApproveReadOnly: autoApproveReadOnly,
+            defaultPermissionMode: defaultPermissionMode,
+            serverPort: serverPort,
+            enableMdns: enableMdns
+        )
+        let result: HostSettings = try await connectionManager.sendRequest(
+            method: "settings.update",
+            params: params
+        )
+        self.hostSettings = result
     }
 
     func loadPendingApprovals() async {
@@ -640,6 +713,14 @@ final class AppSessionState {
             if let payload = try? data.decodeRPCParams(WorkspaceDeletedPayload.self) {
                 workspaces.removeAll { $0.id == payload.workspaceId }
                 chats.removeAll { $0.workspaceId == payload.workspaceId }
+            }
+
+        case "settings.updated":
+            struct SettingsUpdatedPayload: Decodable, Sendable {
+                let settings: HostSettings
+            }
+            if let payload = try? data.decodeRPCParams(SettingsUpdatedPayload.self) {
+                self.hostSettings = payload.settings
             }
 
         default:

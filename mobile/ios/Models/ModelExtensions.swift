@@ -35,6 +35,7 @@ extension MessageBlock: Equatable {
 }
 extension Workspace: Identifiable {}
 extension ApprovalRequest: Identifiable {}
+extension Provider: Identifiable {}
 
 typealias ToolCallStatus = Status
 

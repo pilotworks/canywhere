@@ -35,3 +35,4 @@ targets:
       - sdk: CryptoKit.framework
       - sdk: Network.framework
       - sdk: AVFoundation.framework
+      - sdk: LocalAuthentication.framework

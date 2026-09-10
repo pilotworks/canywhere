@@ -87,6 +87,9 @@ pub enum AgentEvent {
         chat_id: String,
         items: Vec<QueuedMessage>,
     },
+    SettingsUpdated {
+        settings: HostSettings,
+    },
 }
 
 #[async_trait]
@@ -177,4 +180,6 @@ pub trait CliAdapter: Send + Sync {
     ) -> Result<canywhere_protocol::rpc::ChatExecuteCommandResult> {
         anyhow::bail!("Command '{}' is not supported by this provider", command);
     }
+
+    async fn set_auto_approve_read_only(&self, _enabled: bool) {}
 }

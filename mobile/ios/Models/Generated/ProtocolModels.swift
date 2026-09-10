@@ -1,6 +1,7 @@
 // This file was generated from JSON Schema using quicktype, do not modify it directly.
 // To parse the JSON, add this file to your project and do:
 //
+//   let hostSettings = try HostSettings(json)
 //   let device = try Device(json)
 //   let provider = try Provider(json)
 //   let pairingResponse = try PairingResponse(json)
@@ -11,6 +12,76 @@
 //   let message = try Message(json)
 
 import Foundation
+
+// MARK: - HostSettings
+struct HostSettings: Codable, Sendable {
+    let autoApproveReadOnly: Bool
+    let defaultModel: String
+    let defaultPermissionMode: PermissionMode
+    let defaultProviderID: String
+    let defaultReasoningEffort: String?
+    let enableMdns: Bool
+    let serverPort: Int
+
+    enum CodingKeys: String, CodingKey {
+        case autoApproveReadOnly, defaultModel, defaultPermissionMode
+        case defaultProviderID = "defaultProviderId"
+        case defaultReasoningEffort, enableMdns, serverPort
+    }
+}
+
+// MARK: HostSettings convenience initializers and mutators
+
+extension HostSettings {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(HostSettings.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        autoApproveReadOnly: Bool? = nil,
+        defaultModel: String? = nil,
+        defaultPermissionMode: PermissionMode? = nil,
+        defaultProviderID: String? = nil,
+        defaultReasoningEffort: String?? = nil,
+        enableMdns: Bool? = nil,
+        serverPort: Int? = nil
+    ) -> HostSettings {
+        return HostSettings(
+            autoApproveReadOnly: autoApproveReadOnly ?? self.autoApproveReadOnly,
+            defaultModel: defaultModel ?? self.defaultModel,
+            defaultPermissionMode: defaultPermissionMode ?? self.defaultPermissionMode,
+            defaultProviderID: defaultProviderID ?? self.defaultProviderID,
+            defaultReasoningEffort: defaultReasoningEffort ?? self.defaultReasoningEffort,
+            enableMdns: enableMdns ?? self.enableMdns,
+            serverPort: serverPort ?? self.serverPort
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+enum PermissionMode: String, Codable, Sendable {
+    case auto = "auto"
+    case onRequest = "onRequest"
+    case readOnly = "readOnly"
+}
 
 // MARK: - Device
 struct Device: Codable, Sendable {
@@ -484,12 +555,6 @@ extension Chat {
 enum ChatKind: String, Codable, Sendable {
     case standalone = "standalone"
     case workspace = "workspace"
-}
-
-enum PermissionMode: String, Codable, Sendable {
-    case auto = "auto"
-    case onRequest = "onRequest"
-    case readOnly = "readOnly"
 }
 
 enum ChatStatus: String, Codable, Sendable {

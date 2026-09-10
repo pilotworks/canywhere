@@ -43,6 +43,9 @@ pub async fn start_daemon(port: u16) -> anyhow::Result<()> {
     let codex_bin = adapters::CodexAdapter::resolve_binary();
     info!("🤖 [CanywhereDaemon] Probing Codex CLI at: {}", codex_bin);
     let codex_adapter = Arc::new(adapters::CodexAdapter::with_event_tx(&codex_bin, event_tx.clone()));
+    if let Ok(host_settings) = repo.get_host_settings() {
+        codex_adapter.set_auto_approve_read_only(host_settings.auto_approve_read_only).await;
+    }
     if let Err(e) = codex_adapter.initialize().await {
         warn!(
             "⚠️  [CanywhereDaemon] Codex initialization warning (is 'codex' installed?): {}",

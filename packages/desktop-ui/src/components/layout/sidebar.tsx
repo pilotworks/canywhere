@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Folder,
   FolderGit2,
@@ -21,9 +21,10 @@ import {
   Pencil,
 } from "lucide-react";
 import type { Chat, Workspace } from "../../types/index.js";
-import { useConnectionStore, useWorkspaceStore, useChatStore, useUiStore, useDeviceStore } from "../../store/index.js";
+import { useConnectionStore, useWorkspaceStore, useChatStore, useUiStore, useDeviceStore, useSettingsStore } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { PairingModal } from "../pairing/pairing-modal.js";
+import { SettingsModal } from "../settings/settings-modal.js";
 import { ThemeToggle } from "../ui/theme-toggle.js";
 import { Button } from "../ui/button.js";
 import { Input } from "../ui/input.js";
@@ -124,6 +125,8 @@ export const Sidebar: React.FC = () => {
 
   const [isResizing, setIsResizing] = useState(false);
   const [pairingOpen, setPairingOpen] = useState(false);
+  const settingsOpen = useSettingsStore((s) => s.isOpen);
+  const setSettingsOpen = useSettingsStore((s) => s.setOpen);
   const [newWsOpen, setNewWsOpen] = useState(false);
   const [wsName, setWsName] = useState("");
   const [wsPath, setWsPath] = useState("");
@@ -135,6 +138,17 @@ export const Sidebar: React.FC = () => {
   const [expandedWorkspaces, setExpandedWorkspaces] = useState<Record<string, boolean>>({
     all: true,
   });
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === ",") {
+        e.preventDefault();
+        setSettingsOpen(!settingsOpen);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [settingsOpen, setSettingsOpen]);
 
   const handleOpenEdit = (ws: Workspace, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -252,7 +266,7 @@ export const Sidebar: React.FC = () => {
         onDoubleClick={handleTitleBarDoubleClick}
         className="h-10 flex items-center justify-between px-3 text-xs text-[var(--muted-foreground)] shrink-0"
       >
-        <div data-tauri-drag-region onMouseDown={startWindowDrag} className="flex-1 h-full" />
+        <div data-tauri-drag-region onMouseDown={startWindowDrag} className="flex-1 h-full select-none" />
         <Button
           variant="ghost"
           size="icon-sm"
@@ -444,11 +458,24 @@ export const Sidebar: React.FC = () => {
                 <span className="absolute 0.5 top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-500 ring-1 ring-[var(--sidebar)]" />
               )}
             </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setSettingsOpen(true)}
+              title="Settings (Cmd + ,)"
+            >
+              <Settings className="w-3.5 h-3.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)]" />
+            </Button>
           </div>
         </div>
       </div>
 
       <PairingModal open={pairingOpen} onOpenChange={setPairingOpen} />
+      <SettingsModal
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        onOpenPairing={() => setPairingOpen(true)}
+      />
 
       {/* Add Workspace Modal */}
       {newWsOpen && (

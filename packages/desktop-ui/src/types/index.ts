@@ -37,6 +37,9 @@ export * from "./generated/GitCommitItem.js";
 export * from "./generated/GitLogResult.js";
 export * from "./generated/GitGenerateCommitMessageParams.js";
 export * from "./generated/GitGenerateCommitMessageResult.js";
+export * from "./generated/HostSettings.js";
+export * from "./generated/HostSettingsUpdateParams.js";
+export * from "./generated/HostSettingsUpdatedNotification.js";
 
 export type ApprovalDecision = "accept" | "accept_for_session" | "decline" | "cancel";
 

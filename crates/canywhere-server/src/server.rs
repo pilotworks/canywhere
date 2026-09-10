@@ -214,6 +214,15 @@ pub async fn run_server(
                 AgentEvent::ChatThreadUpdated { chat_id, thread_id } => {
                     let _ = repo_persist.update_chat_status(&chat_id, canywhere_protocol::models::ChatStatus::Running, Some(&thread_id));
                 }
+                AgentEvent::SettingsUpdated { settings } => {
+                    if let Ok(adapter) = registry_persist.resolve(Some("codex")) {
+                        let auto_read_only = settings.auto_approve_read_only;
+                        tokio::spawn(async move {
+                            adapter.set_auto_approve_read_only(auto_read_only).await;
+                        });
+                        tracing::info!("[HostServer] Settings updated: auto_approve_read_only={}", settings.auto_approve_read_only);
+                    }
+                }
                 _ => {}
             }
         }
@@ -500,6 +509,15 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         "params": {
                             "chatId": chat_id,
                             "threadId": thread_id
+                        }
+                    })
+                }
+                AgentEvent::SettingsUpdated { settings } => {
+                    info!("⚙️  [HostServer] Settings updated: default_provider={}, default_model={}", settings.default_provider_id, settings.default_model);
+                    serde_json::json!({
+                        "method": "settings.updated",
+                        "params": {
+                            "settings": settings
                         }
                     })
                 }

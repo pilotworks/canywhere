@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <style>
+    .c-bracket { stroke: #0f172a; }
+    .tether-accent { stroke: #0284c7; fill: #0284c7; }
+    @media (prefers-color-scheme: dark) {
+      .c-bracket { stroke: #ffffff; }
+      .tether-accent { stroke: #38bdf8; fill: #38bdf8; }
+    }
+  </style>
+  <!-- Architectural Monospace C Bracket -->
+  <path class="c-bracket" d="M 352 136 L 224 136 C 162.144 136 112 186.144 112 248 L 112 264 C 112 325.856 162.144 376 224 376 L 352 376" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Outbound Forward Prompt Chevron -->
+  <path class="tether-accent" d="M 288 200 L 344 256 L 288 312" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Remote Tether Beacon Node -->
+  <circle class="tether-accent" cx="408" cy="256" r="22" stroke="none"/>
+</svg>

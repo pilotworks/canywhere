@@ -16,6 +16,7 @@ struct ChatListView: View {
     @State private var selectedFilter: ChatFilter = .all
     @State private var showUnpairConfirmation = false
     @State private var showConnectionsSheet = false
+    @State private var showSettingsSheet = false
     @State private var searchText = ""
 
     init() {}
@@ -204,6 +205,19 @@ struct ChatListView: View {
                     .accessibilityLabel("Workspaces")
 
                     Button {
+                        if session.hapticsEnabled { Haptics.shared.selection() }
+                        showSettingsSheet = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.primary)
+                            .padding(8)
+                            .background(Color(uiColor: .tertiarySystemFill))
+                            .clipShape(Circle())
+                    }
+                    .accessibilityLabel("Settings")
+
+                    Button {
                         Haptics.shared.impact(.light)
                         showNewChatSheet = true
                     } label: {
@@ -241,6 +255,9 @@ struct ChatListView: View {
         }
         .sheet(isPresented: $showConnectionsSheet) {
             HostConnectionsSheet()
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            SettingsView()
         }
         .sheet(item: $editingWorkspace) { _ in
             editWorkspaceSheet
@@ -341,6 +358,13 @@ struct ChatListView: View {
             Spacer()
 
             Menu {
+                Button {
+                    if session.hapticsEnabled { Haptics.shared.selection() }
+                    showSettingsSheet = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                }
+
                 Button {
                     Haptics.shared.selection()
                     showConnectionsSheet = true
