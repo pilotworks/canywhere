@@ -3,6 +3,17 @@
   "definitions": {
     "AdapterCapabilities": {
       "properties": {
+        "supportedModes": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "supportsApprovals": {
+          "default": false,
+          "type": "boolean"
+        },
         "supportsFileDiffs": {
           "type": "boolean"
         },
@@ -27,14 +38,91 @@
         "supportsSteering"
       ],
       "type": "object"
+    },
+    "ProviderAction": {
+      "properties": {
+        "icon": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "placement": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "placement"
+      ],
+      "type": "object"
+    },
+    "ProviderCommand": {
+      "properties": {
+        "category": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "icon": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "requiresArgs": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "category",
+        "description",
+        "name"
+      ],
+      "type": "object"
     }
   },
   "properties": {
+    "actions": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/ProviderAction"
+      },
+      "type": "array"
+    },
     "capabilities": {
       "$ref": "#/definitions/AdapterCapabilities"
     },
+    "commands": {
+      "default": [],
+      "items": {
+        "$ref": "#/definitions/ProviderCommand"
+      },
+      "type": "array"
+    },
     "description": {
       "type": "string"
+    },
+    "icon": {
+      "default": null,
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "id": {
       "type": "string"

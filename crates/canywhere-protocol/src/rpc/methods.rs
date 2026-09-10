@@ -247,6 +247,23 @@ pub struct ProviderListResult {
     pub providers: Vec<Provider>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatExecuteCommandParams {
+    pub chat_id: String,
+    pub command: String,
+    #[serde(default)]
+    pub args: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatExecuteCommandResult {
+    pub success: bool,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
 // Notifications
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -300,6 +317,9 @@ pub struct ApprovalResolvedNotification {
 pub struct HostInfoResult {
     pub host_name: String,
     pub os: String,
+    #[serde(default)]
+    pub agent_version: Option<String>,
+    #[serde(default)]
     pub codex_version: Option<String>,
     pub active_turns_count: u32,
     pub uptime_seconds: u64,

@@ -147,6 +147,7 @@ struct ApprovalResolvedPayload: Decodable, Sendable {
 struct HostInfoResult: Decodable, Sendable {
     let hostName: String
     let os: String
+    let agentVersion: String?
     let codexVersion: String?
     let activeTurnsCount: Int
     let uptimeSeconds: Int

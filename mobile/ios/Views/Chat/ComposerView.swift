@@ -6,13 +6,18 @@ struct ComposerView: View {
     @Binding var effort: String
     @Binding var permissionMode: PermissionMode
     let models: [ModelInfo]
+    var commands: [ProviderCommand]? = nil
+    var actions: [ProviderAction]? = nil
     let isRunning: Bool
     let isSending: Bool
     var hasWorkspace: Bool = false
+    var providerName: String = "Codex"
+    var supportsApprovals: Bool = true
     let onSend: () -> Void
     let onInterrupt: () -> Void
     let onPermissionChange: ((PermissionMode) -> Void)?
     var onSearchFiles: ((String) async -> [FuzzyFileMatchItem])? = nil
+    var onExecuteCommand: ((String, String?) -> Void)? = nil
     var onReview: (() -> Void)? = nil
     var onCompact: (() -> Void)? = nil
     var onReset: (() -> Void)? = nil
@@ -74,13 +79,18 @@ struct ComposerView: View {
         effort: Binding<String>,
         permissionMode: Binding<PermissionMode>,
         models: [ModelInfo] = [],
+        commands: [ProviderCommand]? = nil,
+        actions: [ProviderAction]? = nil,
         isRunning: Bool,
         isSending: Bool,
         hasWorkspace: Bool = false,
+        providerName: String = "Codex",
+        supportsApprovals: Bool = true,
         onSend: @escaping () -> Void,
         onInterrupt: @escaping () -> Void,
         onPermissionChange: ((PermissionMode) -> Void)? = nil,
         onSearchFiles: ((String) async -> [FuzzyFileMatchItem])? = nil,
+        onExecuteCommand: ((String, String?) -> Void)? = nil,
         onReview: (() -> Void)? = nil,
         onCompact: (() -> Void)? = nil,
         onReset: (() -> Void)? = nil,
@@ -91,13 +101,18 @@ struct ComposerView: View {
         self._effort = effort
         self._permissionMode = permissionMode
         self.models = models
+        self.commands = commands
+        self.actions = actions
         self.isRunning = isRunning
         self.isSending = isSending
         self.hasWorkspace = hasWorkspace
+        self.providerName = providerName
+        self.supportsApprovals = supportsApprovals
         self.onSend = onSend
         self.onInterrupt = onInterrupt
         self.onPermissionChange = onPermissionChange
         self.onSearchFiles = onSearchFiles
+        self.onExecuteCommand = onExecuteCommand
         self.onReview = onReview
         self.onCompact = onCompact
         self.onReset = onReset
@@ -124,7 +139,7 @@ struct ComposerView: View {
             // Slash command popover (/)
             if showSlashMenu {
                 SlashCommandPopupView(
-                    commands: SlashCommandItem.availableCommands,
+                    commands: SlashCommandItem.buildCommands(from: commands),
                     filter: slashFilter,
                     onSelect: handleSelectSlash,
                     onDismiss: {
@@ -144,63 +159,111 @@ struct ComposerView: View {
                     effort: $effort
                 )
 
-                // Permission Mode Selector Menu
-                Menu {
-                    Button {
-                        Haptics.shared.selection()
-                        permissionMode = .onRequest
-                        onPermissionChange?(.onRequest)
-                    } label: {
-                        HStack {
-                            Label("Ask for Approval", systemImage: "shield.checkered")
-                            if permissionMode == .onRequest {
-                                Image(systemName: "checkmark")
+                // Permission or Mode Selector Menu
+                if supportsApprovals {
+                    Menu {
+                        Button {
+                            Haptics.shared.selection()
+                            permissionMode = .onRequest
+                            onPermissionChange?(.onRequest)
+                        } label: {
+                            HStack {
+                                Label("Ask for Approval", systemImage: "shield.checkered")
+                                if permissionMode == .onRequest {
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
-                    }
 
-                    Button {
-                        Haptics.shared.selection()
-                        permissionMode = .readOnly
-                        onPermissionChange?(.readOnly)
-                    } label: {
-                        HStack {
-                            Label("Plan Only (Read-Only)", systemImage: "eye")
-                            if permissionMode == .readOnly {
-                                Image(systemName: "checkmark")
+                        Button {
+                            Haptics.shared.selection()
+                            permissionMode = .readOnly
+                            onPermissionChange?(.readOnly)
+                        } label: {
+                            HStack {
+                                Label("Plan Only (Read-Only)", systemImage: "eye")
+                                if permissionMode == .readOnly {
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
-                    }
 
-                    Button {
-                        Haptics.shared.selection()
-                        permissionMode = .auto
-                        onPermissionChange?(.auto)
-                    } label: {
-                        HStack {
-                            Label("Full Auto (YOLO)", systemImage: "flame.fill")
-                            if permissionMode == .auto {
-                                Image(systemName: "checkmark")
+                        Button {
+                            Haptics.shared.selection()
+                            permissionMode = .auto
+                            onPermissionChange?(.auto)
+                        } label: {
+                            HStack {
+                                Label("Full Auto (YOLO)", systemImage: "flame.fill")
+                                if permissionMode == .auto {
+                                    Image(systemName: "checkmark")
+                                }
                             }
                         }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: permissionIconName(permissionMode))
+                                .font(.system(size: 11))
+                                .foregroundStyle(permissionColor(permissionMode))
+                            Text(permissionLabel(permissionMode))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(permissionColor(permissionMode))
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke(permissionColor(permissionMode).opacity(0.35), lineWidth: 1))
                     }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: permissionIconName(permissionMode))
-                            .font(.system(size: 11))
-                            .foregroundStyle(permissionColor(permissionMode))
-                        Text(permissionLabel(permissionMode))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(permissionColor(permissionMode))
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(.secondary)
+                } else {
+                    let currentEffectiveMode: PermissionMode = (permissionMode == .readOnly) ? .readOnly : .auto
+                    Menu {
+                        Button {
+                            Haptics.shared.selection()
+                            permissionMode = .auto
+                            onPermissionChange?(.auto)
+                        } label: {
+                            HStack {
+                                Label("Full Auto (YOLO)", systemImage: "flame.fill")
+                                if currentEffectiveMode == .auto {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+
+                        Button {
+                            Haptics.shared.selection()
+                            permissionMode = .readOnly
+                            onPermissionChange?(.readOnly)
+                        } label: {
+                            HStack {
+                                Label("Plan Only", systemImage: "eye")
+                                if currentEffectiveMode == .readOnly {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: currentEffectiveMode == .readOnly ? "eye" : "flame.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(currentEffectiveMode == .readOnly ? Color.purple : Color.orange)
+                            Text(currentEffectiveMode == .readOnly ? "Plan Only" : "Full Auto")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(currentEffectiveMode == .readOnly ? Color.purple : Color.orange)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(Color(uiColor: .secondarySystemGroupedBackground))
+                        .clipShape(Capsule())
+                        .overlay(Capsule().stroke((currentEffectiveMode == .readOnly ? Color.purple : Color.orange).opacity(0.35), lineWidth: 1))
                     }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 5)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground))
-                    .clipShape(Capsule())
-                    .overlay(Capsule().stroke(permissionColor(permissionMode).opacity(0.35), lineWidth: 1))
                 }
 
                 Spacer()
@@ -229,7 +292,7 @@ struct ComposerView: View {
 
             // Input bar
             HStack(alignment: .bottom, spacing: 10) {
-                TextField(isRunning ? "Add to queue..." : "Ask Codex anything... (@ file, / command)", text: $text, axis: .vertical)
+                TextField(isRunning ? "Add to queue..." : "Ask \(providerName) anything... (@ file, / command)", text: $text, axis: .vertical)
                     .lineLimit(1...6)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -380,12 +443,6 @@ struct ComposerView: View {
         }
 
         switch cmd.cmd {
-        case "/review":
-            text = ""
-            onReview?()
-        case "/compact":
-            text = ""
-            onCompact?()
         case "/reset":
             text = ""
             onReset?()
@@ -393,7 +450,20 @@ struct ComposerView: View {
             text = ""
             onScratch?()
         default:
-            text = "\(cmd.cmd) "
+            if cmd.requiresArgs {
+                text = "\(cmd.cmd) "
+            } else if let onExecuteCommand {
+                text = ""
+                onExecuteCommand(cmd.cmd, nil)
+            } else if cmd.cmd == "/review" {
+                text = ""
+                onReview?()
+            } else if cmd.cmd == "/compact" {
+                text = ""
+                onCompact?()
+            } else {
+                text = "\(cmd.cmd) "
+            }
         }
     }
 

@@ -1,10 +1,13 @@
 import { MessageBlock } from "../../types/index.js";
+import { LineRange } from "../../lib/file-link.js";
 
 export interface FormattedToolAction {
   verb: string;
   target: string;
   isMono: boolean;
   fullSummary: string;
+  filePath?: string;
+  lineRange?: LineRange;
 }
 
 function getShortPath(filePath: string): string {
@@ -51,7 +54,30 @@ export function formatToolAction(
     argsObj = rawArgs as Record<string, any>;
   }
 
-  // 1. File Reading
+  // 1. Directory Listing (list_dir, ls, dir)
+  if (
+    lower === "list_dir" ||
+    lower.includes("list_dir") ||
+    lower === "dir" ||
+    lower === "ls"
+  ) {
+    const rawPath =
+      argsObj.DirectoryPath ||
+      argsObj.directory_path ||
+      argsObj.path ||
+      argsObj.dir ||
+      "";
+    const shortPath = getShortPath(String(rawPath));
+    const target = shortPath || (argsObj.toolSummary ? String(argsObj.toolSummary) : "directory");
+    return {
+      verb: isRunning ? "Listing" : "Listed",
+      target,
+      isMono: true,
+      fullSummary: `${isRunning ? "Listing" : "Listed"} ${target}`,
+    };
+  }
+
+  // 2. File Reading
   if (
     lower.includes("read") ||
     lower.includes("view") ||
@@ -67,16 +93,28 @@ export function formatToolAction(
       argsObj.TargetFile ||
       "";
     const shortPath = getShortPath(String(rawPath));
-    const target = shortPath || name;
+    const target = shortPath || (argsObj.toolSummary ? String(argsObj.toolSummary) : name);
+
+    let lineRange: LineRange | undefined;
+    const startLine = argsObj.StartLine ?? argsObj.start_line ?? argsObj.startLine ?? argsObj.line;
+    const endLine = argsObj.EndLine ?? argsObj.end_line ?? argsObj.endLine;
+    if (typeof startLine === "number" || (typeof startLine === "string" && !isNaN(parseInt(startLine, 10)))) {
+      const start = typeof startLine === "number" ? startLine : parseInt(startLine, 10);
+      const end = typeof endLine === "number" ? endLine : (typeof endLine === "string" && !isNaN(parseInt(endLine, 10)) ? parseInt(endLine, 10) : undefined);
+      lineRange = { start, end };
+    }
+
     return {
       verb: isRunning ? "Reading" : "Read",
       target,
       isMono: true,
       fullSummary: `${isRunning ? "Reading" : "Read"} ${target}`,
+      filePath: rawPath ? String(rawPath) : undefined,
+      lineRange,
     };
   }
 
-  // 2. File Writing / Editing
+  // 3. File Writing / Editing
   if (
     lower.includes("write") ||
     lower.includes("edit") ||
@@ -92,16 +130,28 @@ export function formatToolAction(
       argsObj.file ||
       "";
     const shortPath = getShortPath(String(rawPath));
-    const target = shortPath || name;
+    const target = shortPath || (argsObj.toolSummary ? String(argsObj.toolSummary) : name);
+
+    let lineRange: LineRange | undefined;
+    const startLine = argsObj.StartLine ?? argsObj.start_line ?? argsObj.startLine;
+    const endLine = argsObj.EndLine ?? argsObj.end_line ?? argsObj.endLine;
+    if (typeof startLine === "number" || (typeof startLine === "string" && !isNaN(parseInt(startLine, 10)))) {
+      const start = typeof startLine === "number" ? startLine : parseInt(startLine, 10);
+      const end = typeof endLine === "number" ? endLine : (typeof endLine === "string" && !isNaN(parseInt(endLine, 10)) ? parseInt(endLine, 10) : undefined);
+      lineRange = { start, end };
+    }
+
     return {
       verb: isRunning ? "Editing" : "Edited",
       target,
       isMono: true,
       fullSummary: `${isRunning ? "Editing" : "Edited"} ${target}`,
+      filePath: rawPath ? String(rawPath) : undefined,
+      lineRange,
     };
   }
 
-  // 3. Command / Terminal Execution
+  // 4. Command / Terminal Execution
   if (
     lower.includes("command") ||
     lower.includes("bash") ||
@@ -116,7 +166,7 @@ export function formatToolAction(
       argsObj.script ||
       "";
     const truncatedCmd = truncateString(String(cmd), 50);
-    const target = truncatedCmd ? `$ ${truncatedCmd}` : name;
+    const target = truncatedCmd ? `$ ${truncatedCmd}` : (argsObj.toolSummary ? String(argsObj.toolSummary) : name);
     return {
       verb: isRunning ? "Running" : "Ran",
       target,
@@ -125,7 +175,7 @@ export function formatToolAction(
     };
   }
 
-  // 4. CodeGraph Exploration / Search
+  // 5. CodeGraph Exploration / Search
   if (lower.includes("codegraph_explore") || lower.includes("explore")) {
     const query = argsObj.query || argsObj.Query || "";
     const truncatedQuery = truncateString(String(query), 45);
@@ -140,7 +190,7 @@ export function formatToolAction(
     };
   }
 
-  // 5. Search / Grep / Find
+  // 6. Search / Grep / Find
   if (
     lower.includes("grep") ||
     lower.includes("find") ||
@@ -151,6 +201,7 @@ export function formatToolAction(
       argsObj.query ||
       argsObj.Pattern ||
       argsObj.pattern ||
+      argsObj.toolSummary ||
       "";
     const truncatedQuery = truncateString(String(query), 40);
     const target = truncatedQuery ? `"${truncatedQuery}"` : "codebase";
@@ -162,7 +213,33 @@ export function formatToolAction(
     };
   }
 
-  // 6. Web / Browse / Fetch (with URL)
+  // 7. MCP Tools
+  if (lower.includes("mcp")) {
+    const toolName = argsObj.ToolName || argsObj.tool_name || "";
+    const serverName = argsObj.ServerName || argsObj.server_name || "";
+    const summary = argsObj.toolSummary || toolName || "MCP tool";
+    const target = serverName && toolName ? `${serverName}/${toolName}` : String(summary);
+    return {
+      verb: isRunning ? "Calling" : "Called",
+      target,
+      isMono: true,
+      fullSummary: `${isRunning ? "Calling" : "Called"} ${target}`,
+    };
+  }
+
+  // 8. Tasks / Subagents
+  if (lower.includes("subagent") || lower.includes("task")) {
+    const action = argsObj.Action || argsObj.toolSummary || (argsObj.Subagents ? `${argsObj.Subagents.length} subagents` : "");
+    const target = action ? String(action) : name;
+    return {
+      verb: isRunning ? "Running" : "Completed",
+      target,
+      isMono: false,
+      fullSummary: `${isRunning ? "Running" : "Completed"} ${target}`,
+    };
+  }
+
+  // 9. Web / Browse / Fetch (with URL)
   const hasUrl = argsObj.Url || argsObj.url || argsObj.link;
   if (hasUrl && (lower.includes("web") || lower.includes("browse") || lower.includes("fetch") || lower.includes("url"))) {
     const truncatedUrl = truncateString(String(hasUrl), 40);
@@ -174,7 +251,7 @@ export function formatToolAction(
     };
   }
 
-  // 7. General query parameter if present
+  // 10. General query parameter if present
   if (argsObj.query || argsObj.Query) {
     const query = String(argsObj.query || argsObj.Query);
     const truncated = truncateString(query, 35);
@@ -186,6 +263,17 @@ export function formatToolAction(
     };
   }
 
+  // 11. Tool summary if present
+  if (argsObj.toolSummary) {
+    const summary = String(argsObj.toolSummary);
+    return {
+      verb: isRunning ? "Running" : "Completed",
+      target: summary,
+      isMono: false,
+      fullSummary: `${isRunning ? "Running" : "Completed"} ${summary}`,
+    };
+  }
+
   // Default fallback
   const firstVal = Object.values(argsObj).find(
     (v) => typeof v === "string" && v.length > 0
@@ -194,7 +282,7 @@ export function formatToolAction(
     ? `${name} (${truncateString(String(firstVal), 35)})`
     : name;
 
-    return {
+  return {
     verb: isRunning ? "Calling" : "Called",
     target,
     isMono: true,
@@ -212,6 +300,7 @@ export function summarizeToolGroup(
   let commands = 0;
   let searches = 0;
   let explores = 0;
+  let directories = 0;
   let fetches = 0;
   let other = 0;
 
@@ -230,6 +319,13 @@ export function summarizeToolGroup(
       lower.includes("shell")
     ) {
       commands++;
+    } else if (
+      lower === "list_dir" ||
+      lower.includes("list_dir") ||
+      lower === "dir" ||
+      lower === "ls"
+    ) {
+      directories++;
     } else if (
       lower.includes("read") ||
       lower.includes("view") ||
@@ -277,27 +373,39 @@ export function summarizeToolGroup(
     parts.push(`explored ${filesRead + explores} files`);
   }
 
-  // 2. Searches
+  // 2. Directories checked / listed
+  if (directories > 0) {
+    parts.push(directories === 1 ? "checked 1 directory" : `checked ${directories} directories`);
+  }
+
+  // 3. Searches
   if (searches > 0) {
     parts.push(searches === 1 ? "1 search" : `${searches} searches`);
   }
 
-  // 3. Commands
+  // 4. Commands
   if (commands > 0) {
     parts.push(commands === 1 ? "ran 1 command" : `ran ${commands} commands`);
   }
 
-  // 4. Edits
+  // 5. Edits
   if (filesEdited > 0) {
     parts.push(filesEdited === 1 ? "edited 1 file" : `edited ${filesEdited} files`);
   }
 
-  // 5. Fetches
+  // 6. Fetches
   if (fetches > 0) {
     parts.push(fetches === 1 ? "1 fetch" : `${fetches} fetches`);
   }
 
-  if (parts.length === 0) return "";
+  // 7. Other actions if nothing else was grouped
+  if (parts.length === 0 && other > 0) {
+    parts.push(other === 1 ? "called 1 tool" : `called ${other} tools`);
+  }
+
+  if (parts.length === 0) {
+    return `Called ${blocks.length} tool${blocks.length === 1 ? "" : "s"}`;
+  }
 
   const joined = parts.join(", ");
   // Capitalize first character (e.g. "Explored 3 files, 5 searches, ran 5 commands")

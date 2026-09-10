@@ -85,8 +85,12 @@ enum DevicePlatform: String, Codable, Sendable {
 
 // MARK: - Provider
 struct Provider: Codable, Sendable {
+    let actions: [ProviderAction]?
     let capabilities: AdapterCapabilities
-    let description, id: String
+    let commands: [ProviderCommand]?
+    let description: String
+    let icon: String?
+    let id: String
     let isConfigured: Bool
     let name: String
 }
@@ -110,15 +114,21 @@ extension Provider {
     }
 
     func with(
+        actions: [ProviderAction]?? = nil,
         capabilities: AdapterCapabilities? = nil,
+        commands: [ProviderCommand]?? = nil,
         description: String? = nil,
+        icon: String?? = nil,
         id: String? = nil,
         isConfigured: Bool? = nil,
         name: String? = nil
     ) -> Provider {
         return Provider(
+            actions: actions ?? self.actions,
             capabilities: capabilities ?? self.capabilities,
+            commands: commands ?? self.commands,
             description: description ?? self.description,
+            icon: icon ?? self.icon,
             id: id ?? self.id,
             isConfigured: isConfigured ?? self.isConfigured,
             name: name ?? self.name
@@ -134,8 +144,57 @@ extension Provider {
     }
 }
 
+// MARK: - ProviderAction
+struct ProviderAction: Codable, Sendable {
+    let icon: String?
+    let id, label, placement: String
+}
+
+// MARK: ProviderAction convenience initializers and mutators
+
+extension ProviderAction {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(ProviderAction.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        icon: String?? = nil,
+        id: String? = nil,
+        label: String? = nil,
+        placement: String? = nil
+    ) -> ProviderAction {
+        return ProviderAction(
+            icon: icon ?? self.icon,
+            id: id ?? self.id,
+            label: label ?? self.label,
+            placement: placement ?? self.placement
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
 // MARK: - AdapterCapabilities
 struct AdapterCapabilities: Codable, Sendable {
+    let supportedModes: [String]?
+    let supportsApprovals: Bool?
     let supportsFileDiffs, supportsInterrupt, supportsReasoningStream, supportsSessionResumption: Bool
     let supportsSteering: Bool
 }
@@ -159,6 +218,8 @@ extension AdapterCapabilities {
     }
 
     func with(
+        supportedModes: [String]?? = nil,
+        supportsApprovals: Bool?? = nil,
         supportsFileDiffs: Bool? = nil,
         supportsInterrupt: Bool? = nil,
         supportsReasoningStream: Bool? = nil,
@@ -166,11 +227,64 @@ extension AdapterCapabilities {
         supportsSteering: Bool? = nil
     ) -> AdapterCapabilities {
         return AdapterCapabilities(
+            supportedModes: supportedModes ?? self.supportedModes,
+            supportsApprovals: supportsApprovals ?? self.supportsApprovals,
             supportsFileDiffs: supportsFileDiffs ?? self.supportsFileDiffs,
             supportsInterrupt: supportsInterrupt ?? self.supportsInterrupt,
             supportsReasoningStream: supportsReasoningStream ?? self.supportsReasoningStream,
             supportsSessionResumption: supportsSessionResumption ?? self.supportsSessionResumption,
             supportsSteering: supportsSteering ?? self.supportsSteering
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// MARK: - ProviderCommand
+struct ProviderCommand: Codable, Sendable {
+    let category, description: String
+    let icon: String?
+    let name: String
+    let requiresArgs: Bool?
+}
+
+// MARK: ProviderCommand convenience initializers and mutators
+
+extension ProviderCommand {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(ProviderCommand.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        category: String? = nil,
+        description: String? = nil,
+        icon: String?? = nil,
+        name: String? = nil,
+        requiresArgs: Bool?? = nil
+    ) -> ProviderCommand {
+        return ProviderCommand(
+            category: category ?? self.category,
+            description: description ?? self.description,
+            icon: icon ?? self.icon,
+            name: name ?? self.name,
+            requiresArgs: requiresArgs ?? self.requiresArgs
         )
     }
 

@@ -8,10 +8,51 @@ import {
   Device,
   PairingQrPayload,
   ModelInfo,
+  Provider,
   FileTreeNode,
   PermissionMode,
   QueuedMessage,
 } from "../types/index.js";
+
+export interface ProviderState {
+  providers: Provider[];
+  selectedProviderId: string;
+  setProviders: (providers: Provider[]) => void;
+  setSelectedProviderId: (providerId: string) => void;
+}
+
+const STORAGE_KEY_PROVIDER = "canywhere:selected_provider_id";
+
+export const useProviderStore = create<ProviderState>((set, get) => ({
+  providers: [],
+  selectedProviderId: (() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_PROVIDER) || "";
+    } catch {
+      return "";
+    }
+  })(),
+  setProviders: (providers) =>
+    set((s) => {
+      const exists = !!s.selectedProviderId && providers.some((p) => p.id === s.selectedProviderId);
+      const configured = providers.find((p) => p.isConfigured);
+      const fallback = configured?.id || providers[0]?.id || "";
+      return {
+        providers,
+        selectedProviderId: exists ? s.selectedProviderId : fallback,
+      };
+    }),
+  setSelectedProviderId: (selectedProviderId) => {
+    try {
+      localStorage.setItem(STORAGE_KEY_PROVIDER, selectedProviderId);
+    } catch {}
+    set({ selectedProviderId });
+    const p = get().providers.find((prov) => prov.id === selectedProviderId);
+    if (p && p.capabilities && !p.capabilities.supportsApprovals) {
+      useChatStore.getState().setDraftPermissionMode("auto");
+    }
+  },
+}));
 
 export interface ConnectionState {
   status: "disconnected" | "connecting" | "connected" | "error";
@@ -426,9 +467,11 @@ export interface ModelState {
   models: ModelInfo[];
   selectedModel: string;
   selectedEffort: string;
-  setModels: (models: ModelInfo[], currentModel?: string, currentEffort?: string) => void;
-  setSelectedModel: (model: string) => void;
-  setSelectedEffort: (effort: string) => void;
+  modelsByProvider: Record<string, { models: ModelInfo[]; currentModel: string; currentEffort: string }>;
+  setModels: (models: ModelInfo[], currentModel?: string, currentEffort?: string, providerId?: string) => void;
+  switchProviderCache: (providerId: string) => boolean;
+  setSelectedModel: (model: string, providerId?: string) => void;
+  setSelectedEffort: (effort: string, providerId?: string) => void;
   syncRemoteModel: (model: string, effort?: string) => void;
   setOnModelChanged: (cb: (model: string, effort?: string) => void) => void;
 }
@@ -458,10 +501,23 @@ export const useModelStore = create<ModelState>((set, get) => ({
   models: [],
   selectedModel: getSavedModel(),
   selectedEffort: getSavedEffort(),
+  modelsByProvider: {},
   setOnModelChanged: (cb) => {
     onModelChangedCallback = cb;
   },
-  setModels: (models, currentModel, currentEffort) => {
+  switchProviderCache: (providerId: string) => {
+    const cached = get().modelsByProvider[providerId];
+    if (cached && cached.models.length > 0) {
+      set({
+        models: cached.models,
+        selectedModel: cached.currentModel,
+        selectedEffort: cached.currentEffort,
+      });
+      return true;
+    }
+    return false;
+  },
+  setModels: (models, currentModel, currentEffort, providerId) => {
     if (!models || models.length === 0) return;
     const defaultModelInfo = models.find((m) => m.isDefault) || models[0];
     const defaultModel = defaultModelInfo?.model || "";
@@ -484,10 +540,20 @@ export const useModelStore = create<ModelState>((set, get) => ({
         }
       } catch {}
 
+      const nextModelsByProvider = { ...s.modelsByProvider };
+      if (providerId) {
+        nextModelsByProvider[providerId] = {
+          models,
+          currentModel: activeModel,
+          currentEffort: activeEffort,
+        };
+      }
+
       return {
         models,
         selectedModel: activeModel,
         selectedEffort: activeEffort,
+        modelsByProvider: nextModelsByProvider,
       };
     });
   },
@@ -511,7 +577,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
       };
     });
   },
-  setSelectedModel: (selectedModel) => {
+  setSelectedModel: (selectedModel, providerId) => {
     try {
       localStorage.setItem(STORAGE_KEY_MODEL, selectedModel);
     } catch {}
@@ -527,17 +593,36 @@ export const useModelStore = create<ModelState>((set, get) => ({
           localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
         } catch {}
       }
-      return { selectedModel, selectedEffort: activeEffort };
+      const pId = providerId || useProviderStore.getState().selectedProviderId;
+      const nextModelsByProvider = { ...s.modelsByProvider };
+      if (pId && nextModelsByProvider[pId]) {
+        nextModelsByProvider[pId] = {
+          ...nextModelsByProvider[pId],
+          currentModel: selectedModel,
+          currentEffort: activeEffort,
+        };
+      }
+      return { selectedModel, selectedEffort: activeEffort, modelsByProvider: nextModelsByProvider };
     });
     if (onModelChangedCallback) {
       onModelChangedCallback(selectedModel, finalEffort || undefined);
     }
   },
-  setSelectedEffort: (selectedEffort) => {
+  setSelectedEffort: (selectedEffort, providerId) => {
     try {
       localStorage.setItem(STORAGE_KEY_EFFORT, selectedEffort);
     } catch {}
-    set({ selectedEffort });
+    set((s) => {
+      const pId = providerId || useProviderStore.getState().selectedProviderId;
+      const nextModelsByProvider = { ...s.modelsByProvider };
+      if (pId && nextModelsByProvider[pId]) {
+        nextModelsByProvider[pId] = {
+          ...nextModelsByProvider[pId],
+          currentEffort: selectedEffort,
+        };
+      }
+      return { selectedEffort, modelsByProvider: nextModelsByProvider };
+    });
     if (onModelChangedCallback) {
       onModelChangedCallback(get().selectedModel, selectedEffort);
     }

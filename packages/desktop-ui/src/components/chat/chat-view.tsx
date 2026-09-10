@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   Send,
   Square,
@@ -28,11 +28,12 @@ import {
   Folder,
   Plus,
 } from "lucide-react";
-import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore, useUiStore, EMPTY_MESSAGES } from "../../store/index.js";
+import { useChatStore, useWorkspaceStore, useApprovalStore, useModelStore, useProviderStore, useUiStore, EMPTY_MESSAGES } from "../../store/index.js";
 import { client } from "../../network/client.js";
 import { Message, PermissionMode, FuzzyFileMatchItem } from "../../types/index.js";
 import { Button } from "../ui/button.js";
 import { Badge } from "../ui/badge.js";
+import { ProviderLogo } from "../ui/provider-logo.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -46,7 +47,8 @@ import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js"
 import {
   FileSearchPopup,
   SlashCommandPopup,
-  CANYWHERE_SLASH_COMMANDS,
+  buildSlashCommands,
+  renderCommandIcon,
   SlashCommandDefinition,
 } from "./composer-popups.js";
 import { ModelEffortCombo } from "./model-effort-combo.js";
@@ -109,6 +111,28 @@ const PERMISSION_CONFIG: Record<
   },
 };
 
+const MODE_CONFIG: Record<
+  "auto" | "readOnly",
+  { label: string; shortLabel: string; desc: string; icon: React.ReactNode; colorClass: string; badgeBorder: string }
+> = {
+  auto: {
+    label: "Full Auto (YOLO)",
+    shortLabel: "Full Auto",
+    desc: "Autonomous execution: executes shell commands and applies file edits without prompt",
+    icon: <Flame className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />,
+    colorClass: "text-amber-500 dark:text-amber-400 font-medium",
+    badgeBorder: "border-amber-500/40 text-amber-500 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20",
+  },
+  readOnly: {
+    label: "Plan Only",
+    shortLabel: "Plan Only",
+    desc: "Planning mode: investigates codebase and drafts plans without applying changes",
+    icon: <Eye className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400" />,
+    colorClass: "text-purple-500 dark:text-purple-400 font-medium",
+    badgeBorder: "border-purple-500/40 text-purple-500 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/20",
+  },
+};
+
 export const ChatView: React.FC = () => {
   const activeChatId = useChatStore((s) => s.activeChatId);
   const chats = useChatStore((s) => s.chats);
@@ -158,13 +182,21 @@ export const ChatView: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const searchTimerRef = useRef<any>(null);
+  const providers = useProviderStore((s) => s.providers);
+  const selectedProviderId = useProviderStore((s) => s.selectedProviderId);
 
   const activeChat = chats.find((c) => c.id === activeChatId);
   const isDraft = !activeChat;
+  const currentProviderId = activeChat?.providerId || selectedProviderId || providers[0]?.id || "";
+  const currentProvider = providers.find((p) => p.id === currentProviderId);
+  const providerName = currentProvider?.name || currentProviderId || "Assistant";
+
   const targetWorkspaceId = activeChat ? activeChat.workspaceId : (draftChat?.workspaceId ?? null);
   const activeWorkspace = workspaces.find((w) => w.id === targetWorkspaceId);
   const isRunning = activeChat?.status === "running";
+  const supportsApprovals = currentProvider?.capabilities?.supportsApprovals ?? (currentProviderId !== "agy");
   const currentPermissionMode = activeChat ? (activeChat.permissionMode || "onRequest") : draftPermissionMode;
+  const effectiveMode: "auto" | "readOnly" = currentPermissionMode === "readOnly" ? "readOnly" : "auto";
 
   // Global ⌘N / Ctrl+N shortcut for New Chat
   useEffect(() => {
@@ -216,8 +248,12 @@ export const ChatView: React.FC = () => {
     [activeWorkspace?.id]
   );
 
-  const filteredSlashCommands = CANYWHERE_SLASH_COMMANDS.filter(
-    (c) =>
+  const availableSlashCommands = useMemo(() => {
+    return buildSlashCommands(currentProvider?.commands);
+  }, [currentProvider?.commands]);
+
+  const filteredSlashCommands = availableSlashCommands.filter(
+    (c: SlashCommandDefinition) =>
       c.cmd.toLowerCase().includes("/" + slashFilter) ||
       c.desc.toLowerCase().includes(slashFilter)
   );
@@ -328,30 +364,7 @@ export const ChatView: React.FC = () => {
   const handleSelectSlash = async (cmd: SlashCommandDefinition) => {
     setShowSlashMenu(false);
 
-    if (cmd.cmd === "/review") {
-      if (activeChatId) {
-        try {
-          setInput("");
-          await client.startReview(activeChatId);
-        } catch (err) {
-          console.error("Failed to trigger review", err);
-        }
-      }
-      return;
-    }
-
-    if (cmd.cmd === "/compact") {
-      if (activeChatId) {
-        try {
-          setInput("");
-          await client.compactChat(activeChatId);
-        } catch (err) {
-          console.error("Failed to trigger compact", err);
-        }
-      }
-      return;
-    }
-
+    // System commands handled purely on client
     if (cmd.cmd === "/reset") {
       setInput("");
       client.openDraftChat(activeWorkspace?.id);
@@ -364,7 +377,27 @@ export const ChatView: React.FC = () => {
       return;
     }
 
-    // Default: insert command prefix into composer
+    // Provider commands: if it requires arguments, prefill input for the user
+    if (cmd.requiresArgs) {
+      setInput(cmd.cmd + " ");
+      if (textareaRef.current) {
+        textareaRef.current.focus();
+      }
+      return;
+    }
+
+    // Otherwise if it requires no arguments, execute directly if chat is active
+    if (activeChatId) {
+      try {
+        setInput("");
+        await client.executeCommand(activeChatId, cmd.cmd);
+      } catch (err) {
+        console.error(`Failed to execute command ${cmd.cmd}`, err);
+      }
+      return;
+    }
+
+    // If no active chat yet, prefill composer
     setInput(cmd.cmd + " ");
     if (textareaRef.current) {
       textareaRef.current.focus();
@@ -444,10 +477,25 @@ export const ChatView: React.FC = () => {
       return;
     }
 
+    // Check if input is a provider command execution
+    const firstWord = text.split(" ")[0];
+    const isMatchingProviderCmd = availableSlashCommands.find((c: SlashCommandDefinition) => c.cmd === firstWord && c.category === "agent");
+    if (isMatchingProviderCmd && activeChat) {
+      const args = text.slice(firstWord.length).trim() || undefined;
+      try {
+        await client.executeCommand(activeChat.id, firstWord, args);
+      } catch (err) {
+        console.error(`Failed to execute command ${firstWord}`, err);
+      }
+      return;
+    }
+
     // Draft / Lazy Chat Creation Flow
     if (isDraft || !activeChat) {
       const workspaceId = targetWorkspaceId ?? undefined;
-      const permMode = draftPermissionMode || "onRequest";
+      const permMode = !supportsApprovals
+        ? (effectiveMode === "readOnly" ? "readOnly" : "auto")
+        : (draftPermissionMode || "onRequest");
       const firstLine = text.split("\n")[0].trim();
       const title = firstLine.length > 40 ? firstLine.slice(0, 40).trim() + "..." : (firstLine || "New Chat");
 
@@ -468,6 +516,10 @@ export const ChatView: React.FC = () => {
       return;
     }
 
+    const effectiveSendPerm = !supportsApprovals
+      ? (effectiveMode === "readOnly" ? "readOnly" : "auto")
+      : currentPermissionMode;
+
     // When agent is currently running, auto-enqueue into Chat Message Queue!
     if (isRunning) {
       client.enqueuePrompt(
@@ -475,12 +527,12 @@ export const ChatView: React.FC = () => {
         text,
         selectedModel,
         selectedEffort,
-        currentPermissionMode
+        effectiveSendPerm
       );
       return;
     }
 
-    await client.sendTurn(activeChat.id, text, selectedModel);
+    await client.sendTurn(activeChat.id, text, selectedModel, effectiveSendPerm);
   };
 
   const handleInterrupt = async () => {
@@ -611,8 +663,8 @@ export const ChatView: React.FC = () => {
             isRunning
               ? "Agent is working... Type next task (Enter to queue)"
               : isHero
-              ? "Ask Codex to code, run tests, or refactor... (Type @ for files, / for commands)"
-              : "Ask Codex to code, run tests, or refactor... (Type / for commands, Enter to send)"
+              ? `Ask ${providerName} to code, run tests, or refactor... (Type @ for files, / for commands)`
+              : `Ask ${providerName} to code, run tests, or refactor... (Type / for commands, Enter to send)`
           }
           rows={isHero ? 3 : 2}
           className={`w-full bg-transparent p-3.5 text-xs text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] outline-none resize-none font-mono ${
@@ -621,13 +673,13 @@ export const ChatView: React.FC = () => {
         />
 
         {/* Composer Utility Toolbar */}
-        <div className="flex items-center justify-between px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--secondary)]/30 text-[11px] text-[var(--muted-foreground)] select-none">
-          <div className="flex items-center gap-2 sm:gap-3">
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-[var(--border-subtle)] bg-[var(--secondary)]/30 text-[11px] text-[var(--muted-foreground)] select-none">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-wrap sm:flex-nowrap">
             {isDraft && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   title={activeWorkspace ? `Workspace: ${activeWorkspace.name} (Click to switch)` : "Select workspace"}
-                  className={`h-6 px-2 rounded-full flex items-center gap-1.5 text-[11px] font-mono transition-colors cursor-pointer select-none ${
+                  className={`h-6 px-2 rounded-full shrink-0 flex items-center gap-1.5 text-[11px] font-mono transition-colors cursor-pointer select-none whitespace-nowrap ${
                     activeWorkspace
                       ? "border border-[var(--border)] bg-[var(--secondary)]/80 hover:bg-[var(--secondary)] hover:border-[var(--ring)] text-[var(--foreground)]"
                       : "border border-dashed border-[var(--border)] hover:border-[var(--ring)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] bg-transparent hover:bg-[var(--secondary)]/40"
@@ -635,7 +687,7 @@ export const ChatView: React.FC = () => {
                 >
                   <Folder className="w-3 h-3 shrink-0 opacity-70" />
                   {activeWorkspace && (
-                    <span className="truncate max-w-[120px]">{activeWorkspace.name}</span>
+                    <span className="truncate max-w-[110px]">{activeWorkspace.name}</span>
                   )}
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-56">
@@ -677,57 +729,129 @@ export const ChatView: React.FC = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
-            <ModelEffortCombo
-              models={models}
-              selectedModel={selectedModel}
-              selectedEffort={selectedEffort}
-              onSelectModel={setSelectedModel}
-              onSelectEffort={setSelectedEffort}
-              size="sm"
-              align="start"
-            />
-            <DropdownMenu>
-              <DropdownMenuTrigger className={`font-mono text-[10px] px-1.5 py-0.5 rounded border flex items-center gap-1 cursor-pointer transition-colors hover:opacity-80 select-none ${PERMISSION_CONFIG[currentPermissionMode]?.badgeBorder}`}>
-                {PERMISSION_CONFIG[currentPermissionMode]?.icon}
-                <span>{PERMISSION_CONFIG[currentPermissionMode]?.shortLabel}</span>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-52">
-                {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
-                  const cfg = PERMISSION_CONFIG[mode];
-                  const isSelected = currentPermissionMode === mode;
-                  return (
-                    <DropdownMenuItem
-                      key={mode}
-                      onClick={() => {
-                        if (activeChat) {
-                          client.setChatPermission(activeChat.id, mode);
-                        } else {
-                          setDraftPermissionMode(mode);
-                        }
-                      }}
-                      className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
-                    >
-                      <div className="flex items-center gap-2">
-                        {cfg.icon}
-                        <span className={cfg.colorClass}>{cfg.shortLabel}</span>
-                      </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)]" />}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
+            {/* AI Assistant Provider Selector (Only shown in empty/draft chat before conversation starts) */}
+            {messages.length === 0 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger className="h-6 font-mono text-xs px-2 py-0.5 rounded border border-[var(--border)] bg-[var(--secondary)] shrink-0 flex items-center gap-1.5 cursor-pointer hover:bg-[var(--accent)] text-[var(--foreground)] transition-colors select-none whitespace-nowrap">
+                  <ProviderLogo providerId={currentProviderId} size="xs" />
+                  <span className="max-w-[110px] truncate">
+                    {currentProvider?.name || currentProviderId || "Provider"}
+                  </span>
+                  <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70 shrink-0" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-56">
+                  <div className="px-2 py-1 text-[10px] font-mono font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
+                    AI Assistant
+                  </div>
+                  {providers.map((p) => {
+                    const isSelected = p.id === currentProviderId;
+                    return (
+                      <DropdownMenuItem
+                        key={p.id}
+                        onClick={() => client.switchProvider(p.id)}
+                        className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                      >
+                        <div className="flex items-center gap-2 pr-2">
+                          <ProviderLogo providerId={p.id} size="sm" />
+                          <div className="flex flex-col">
+                            <span className="font-medium text-[var(--foreground)]">{p.name}</span>
+                            <span className="text-[10px] text-[var(--muted-foreground)] line-clamp-1">{p.description}</span>
+                          </div>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            <div className="shrink-0">
+              <ModelEffortCombo
+                models={models}
+                selectedModel={selectedModel}
+                selectedEffort={selectedEffort}
+                onSelectModel={setSelectedModel}
+                onSelectEffort={setSelectedEffort}
+                size="sm"
+                align="start"
+              />
+            </div>
+            {supportsApprovals ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger className={`h-6 font-mono text-[10px] px-2 py-0.5 rounded border shrink-0 flex items-center gap-1 cursor-pointer transition-colors hover:opacity-80 select-none whitespace-nowrap ${PERMISSION_CONFIG[currentPermissionMode]?.badgeBorder}`}>
+                  {PERMISSION_CONFIG[currentPermissionMode]?.icon}
+                  <span className="whitespace-nowrap">{PERMISSION_CONFIG[currentPermissionMode]?.shortLabel}</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-52">
+                  {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
+                    const cfg = PERMISSION_CONFIG[mode];
+                    const isSelected = currentPermissionMode === mode;
+                    return (
+                      <DropdownMenuItem
+                        key={mode}
+                        onClick={() => {
+                          if (activeChat) {
+                            client.setChatPermission(activeChat.id, mode);
+                          } else {
+                            setDraftPermissionMode(mode);
+                          }
+                        }}
+                        className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                      >
+                        <div className="flex items-center gap-2">
+                          {cfg.icon}
+                          <span className={cfg.colorClass}>{cfg.shortLabel}</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)]" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger className={`h-6 font-mono text-[10px] px-2 py-0.5 rounded border shrink-0 flex items-center gap-1 cursor-pointer transition-colors hover:opacity-80 select-none whitespace-nowrap ${MODE_CONFIG[effectiveMode]?.badgeBorder}`}>
+                  {MODE_CONFIG[effectiveMode]?.icon}
+                  <span className="whitespace-nowrap">{MODE_CONFIG[effectiveMode]?.shortLabel}</span>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="w-48">
+                  {(["auto", "readOnly"] as const).map((mode) => {
+                    const cfg = MODE_CONFIG[mode];
+                    const isSelected = effectiveMode === mode;
+                    return (
+                      <DropdownMenuItem
+                        key={mode}
+                        onClick={() => {
+                          if (activeChat) {
+                            client.setChatPermission(activeChat.id, mode);
+                          } else {
+                            setDraftPermissionMode(mode);
+                          }
+                        }}
+                        className="flex items-center justify-between font-mono text-xs cursor-pointer py-1.5"
+                      >
+                        <div className="flex items-center gap-2">
+                          {cfg.icon}
+                          <span className={cfg.colorClass}>{cfg.shortLabel}</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)]" />}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <span className="hidden sm:inline-block text-[10px] font-mono opacity-60">
+          <div className="flex items-center gap-2.5 shrink-0 ml-auto">
+            <span className="hidden md:inline-block text-[10px] font-mono opacity-60 whitespace-nowrap">
               {isRunning ? "↵ to queue" : "↵ to send · ⇧↵ newline"}
             </span>
             <Button
               size="xs"
               disabled={!input.trim() || isSubmittingDraft}
               onClick={() => handleSend()}
-              className="gap-1 font-mono cursor-pointer"
+              className="gap-1 font-mono cursor-pointer shrink-0"
             >
               {isSubmittingDraft ? (
                 <>
@@ -773,6 +897,10 @@ export const ChatView: React.FC = () => {
           <span className="truncate text-[var(--foreground)] font-medium">
             {activeChat ? activeChat.title : "New Chat"}
           </span>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full border border-[var(--border)] bg-[var(--secondary)]/40 text-[10px] font-mono shrink-0 text-[var(--muted-foreground)]">
+            <ProviderLogo providerId={currentProviderId} size="xs" />
+            <span>{providerName}</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2.5 shrink-0">
@@ -787,48 +915,114 @@ export const ChatView: React.FC = () => {
             align="end"
           />
 
-          {/* Permission Mode Selector Dropdown */}
-          <DropdownMenu>
-            <DropdownMenuTrigger className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono text-[11px] transition-colors cursor-pointer select-none ${
-              currentPermissionMode === "auto"
-                ? "border border-amber-500/40 text-amber-500 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
-                : "border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] hover:bg-[var(--accent)]"
-            }`}>
-              {PERMISSION_CONFIG[currentPermissionMode]?.icon}
-              <span>{PERMISSION_CONFIG[currentPermissionMode]?.shortLabel || "Safe"}</span>
-              <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
-              {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
-                const cfg = PERMISSION_CONFIG[mode];
-                const isSelected = currentPermissionMode === mode;
-                return (
-                  <DropdownMenuItem
-                    key={mode}
-                    onClick={() => {
-                      if (activeChat) {
-                        client.setChatPermission(activeChat.id, mode);
-                      } else {
-                        setDraftPermissionMode(mode);
-                      }
-                    }}
-                    className="flex items-start justify-between font-mono text-xs cursor-pointer py-1.5"
-                  >
-                    <div className="flex items-start gap-2 truncate pr-2">
-                      <div className="mt-0.5">{cfg.icon}</div>
-                      <div className="flex flex-col">
-                        <span className={`font-medium ${cfg.colorClass}`}>{cfg.label}</span>
-                        <span className="text-[10px] text-[var(--muted-foreground)] line-clamp-2">
-                          {cfg.desc}
-                        </span>
+          {/* Permission / Execution Mode Selector Dropdown */}
+          {supportsApprovals ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono text-[11px] transition-colors cursor-pointer select-none ${
+                currentPermissionMode === "auto"
+                  ? "border border-amber-500/40 text-amber-500 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
+                  : "border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] hover:bg-[var(--accent)]"
+              }`}>
+                {PERMISSION_CONFIG[currentPermissionMode]?.icon}
+                <span>{PERMISSION_CONFIG[currentPermissionMode]?.shortLabel || "Safe"}</span>
+                <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {(["onRequest", "readOnly", "auto"] as PermissionMode[]).map((mode) => {
+                  const cfg = PERMISSION_CONFIG[mode];
+                  const isSelected = currentPermissionMode === mode;
+                  return (
+                    <DropdownMenuItem
+                      key={mode}
+                      onClick={() => {
+                        if (activeChat) {
+                          client.setChatPermission(activeChat.id, mode);
+                        } else {
+                          setDraftPermissionMode(mode);
+                        }
+                      }}
+                      className="flex items-start justify-between font-mono text-xs cursor-pointer py-1.5"
+                    >
+                      <div className="flex items-start gap-2 truncate pr-2">
+                        <div className="mt-0.5">{cfg.icon}</div>
+                        <div className="flex flex-col">
+                          <span className={`font-medium ${cfg.colorClass}`}>{cfg.label}</span>
+                          <span className="text-[10px] text-[var(--muted-foreground)] line-clamp-2">
+                            {cfg.desc}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 mt-0.5" />}
-                  </DropdownMenuItem>
-                );
-              })}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 mt-0.5" />}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <DropdownMenu>
+              <DropdownMenuTrigger className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md font-mono text-[11px] transition-colors cursor-pointer select-none border ${
+                effectiveMode === "readOnly"
+                  ? "border-purple-500/40 text-purple-500 dark:text-purple-400 bg-purple-500/10 hover:bg-purple-500/20"
+                  : "border-amber-500/40 text-amber-500 dark:text-amber-400 bg-amber-500/10 hover:bg-amber-500/20"
+              }`}>
+                {MODE_CONFIG[effectiveMode]?.icon}
+                <span>{MODE_CONFIG[effectiveMode]?.shortLabel || "Full Auto"}</span>
+                <ChevronDown className="w-3 h-3 text-[var(--muted-foreground)] opacity-70" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                {(["auto", "readOnly"] as const).map((mode) => {
+                  const cfg = MODE_CONFIG[mode];
+                  const isSelected = effectiveMode === mode;
+                  return (
+                    <DropdownMenuItem
+                      key={mode}
+                      onClick={() => {
+                        if (activeChat) {
+                          client.setChatPermission(activeChat.id, mode);
+                        } else {
+                          setDraftPermissionMode(mode);
+                        }
+                      }}
+                      className="flex items-start justify-between font-mono text-xs cursor-pointer py-1.5"
+                    >
+                      <div className="flex items-start gap-2 truncate pr-2">
+                        <div className="mt-0.5">{cfg.icon}</div>
+                        <div className="flex flex-col">
+                          <span className={`font-medium ${cfg.colorClass}`}>{cfg.label}</span>
+                          <span className="text-[10px] text-[var(--muted-foreground)] line-clamp-2">
+                            {cfg.desc}
+                          </span>
+                        </div>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-[var(--foreground)] shrink-0 mt-0.5" />}
+                    </DropdownMenuItem>
+                  );
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
+          {/* Dynamic Provider Actions (Toolbar) */}
+          {activeChat && (currentProvider?.actions || []).filter((a) => a.placement === "toolbar").map((act) => (
+            <Button
+              key={act.id}
+              variant="outline"
+              size="xs"
+              disabled={isRunning}
+              onClick={async () => {
+                try {
+                  await client.executeCommand(activeChat.id, act.id);
+                } catch (e) {
+                  console.error(`Failed to trigger action ${act.id}`, e);
+                }
+              }}
+              title={act.label}
+              className="flex items-center gap-1 font-mono text-[11px] cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            >
+              {renderCommandIcon(act.icon)}
+              <span className="hidden md:inline">{act.label}</span>
+            </Button>
+          ))}
 
           {isRunning && (
             <Button
@@ -938,7 +1132,7 @@ export const ChatView: React.FC = () => {
 
               return (
                 <div key={msg.id} className="group max-w-3xl mx-auto flex flex-col space-y-1">
-                  <div className="text-[13px] leading-relaxed select-text text-[var(--foreground)] relative py-1">
+                  <div className="text-[13px] leading-relaxed select-text text-[var(--message-foreground)] relative py-1">
                     <MessageBlocksRenderer blocks={msg.blocks} isStreaming={isMsgStreaming} durationSeconds={durationSec} />
                   </div>
 

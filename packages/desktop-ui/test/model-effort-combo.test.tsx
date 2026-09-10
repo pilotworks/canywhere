@@ -109,4 +109,54 @@ describe("ModelEffortCombo", () => {
       expect(single.progressWidth).toBe("100%");
     });
   });
+
+  describe("useModelStore per-provider caching", () => {
+    it("caches models per provider and switches instantly", async () => {
+      const { useModelStore } = await import("../src/store/index");
+
+      const codexModels: ModelInfo[] = [
+        {
+          id: "gpt-5-codex",
+          model: "gpt-5-codex",
+          displayName: "GPT-5 Codex",
+          description: null,
+          isDefault: true,
+          supportedReasoningEfforts: ["low", "medium", "high"],
+          defaultReasoningEffort: "high",
+        },
+      ];
+
+      const agyModels: ModelInfo[] = [
+        {
+          id: "gemini-3.8-flash",
+          model: "gemini-3.8-flash",
+          displayName: "Gemini 3.8 Flash",
+          description: null,
+          isDefault: true,
+          supportedReasoningEfforts: ["low", "medium", "high"],
+          defaultReasoningEffort: "high",
+        },
+      ];
+
+      // Set models for codex
+      useModelStore.getState().setModels(codexModels, "gpt-5-codex", "high", "codex");
+      expect(useModelStore.getState().selectedModel).toBe("gpt-5-codex");
+
+      // Set models for agy
+      useModelStore.getState().setModels(agyModels, "gemini-3.8-flash", "low", "agy");
+      expect(useModelStore.getState().selectedModel).toBe("gemini-3.8-flash");
+
+      // Switch back to codex instantly using cache
+      const switchedToCodex = useModelStore.getState().switchProviderCache("codex");
+      expect(switchedToCodex).toBe(true);
+      expect(useModelStore.getState().selectedModel).toBe("gpt-5-codex");
+      expect(useModelStore.getState().models[0].id).toBe("gpt-5-codex");
+
+      // Switch back to agy instantly using cache
+      const switchedToAgy = useModelStore.getState().switchProviderCache("agy");
+      expect(switchedToAgy).toBe(true);
+      expect(useModelStore.getState().selectedModel).toBe("gemini-3.8-flash");
+      expect(useModelStore.getState().models[0].id).toBe("gemini-3.8-flash");
+    });
+  });
 });

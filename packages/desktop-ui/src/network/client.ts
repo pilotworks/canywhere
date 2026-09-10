@@ -12,7 +12,15 @@ import {
   useApprovalStore,
   useDeviceStore,
   useModelStore,
+  useProviderStore,
 } from "../store/index.js";
+
+function getFallbackProviderId(): string {
+  const store = useProviderStore.getState();
+  if (store.selectedProviderId) return store.selectedProviderId;
+  const configured = store.providers.find((p) => p.isConfigured);
+  return configured?.id || store.providers[0]?.id || "";
+}
 
 export class CanywhereClient {
   private ws: WebSocket | null = null;
@@ -103,18 +111,34 @@ export class CanywhereClient {
         this.openDraftChat(null);
       }
 
+      const provRes = await this.call("provider.list", {}).catch(() => ({ providers: [] }));
+      if (provRes?.providers) {
+        useProviderStore.getState().setProviders(provRes.providers);
+      }
+
       const devRes = await this.call("device.list", {});
       useDeviceStore.getState().setDevices(devRes.devices);
 
-      const modelRes = await this.call("model.list", {});
+      const activeProviderId = useProviderStore.getState().selectedProviderId;
+      const modelRes = await this.call("model.list", { providerId: activeProviderId });
       if (modelRes.models) {
         useModelStore
           .getState()
           .setModels(
             modelRes.models,
             modelRes.currentModel,
-            modelRes.currentReasoningEffort
+            modelRes.currentReasoningEffort,
+            activeProviderId
           );
+      }
+
+      // Background pre-warm models for other providers for instant 0ms switching
+      if (provRes?.providers) {
+        for (const p of provRes.providers) {
+          if (p.id !== activeProviderId) {
+            this.loadModels(p.id).catch(() => {});
+          }
+        }
       }
     } catch (err) {
       console.error("[CanywhereClient] Bootstrap failed", err);
@@ -140,6 +164,9 @@ export class CanywhereClient {
         if (!isStillRunning) {
           useChatStore.getState().setActiveTurn(chatId, null);
         }
+        if (res.chat.providerId) {
+          this.loadModels(res.chat.providerId).catch(console.error);
+        }
       }
 
       const safeMessages = (res.messages || []).map((m: any) =>
@@ -160,12 +187,13 @@ export class CanywhereClient {
     }
   }
 
-  async createWorkspace(name: string, rootPath: string, subPaths?: string[]): Promise<any> {
+  async createWorkspace(name: string, rootPath: string, subPaths?: string[], providerId?: string): Promise<any> {
+    const resolvedProviderId = providerId || getFallbackProviderId();
     const res = await this.call("workspace.create", {
       name,
       rootPath,
       subPaths,
-      providerId: "codex"
+      providerId: resolvedProviderId,
     });
     useWorkspaceStore.getState().addWorkspace(res.workspace);
     return res.workspace;
@@ -278,13 +306,18 @@ export class CanywhereClient {
 
   openDraftChat(workspaceId?: string | null): void {
     useChatStore.getState().openDraftChat(workspaceId);
+    const activeProviderId = getFallbackProviderId();
+    if (activeProviderId) {
+      this.loadModels(activeProviderId).catch(console.error);
+    }
   }
 
-  async createChat(workspaceId?: string, title?: string, prompt?: string): Promise<any> {
+  async createChat(workspaceId?: string, title?: string, prompt?: string, providerId?: string): Promise<any> {
+    const resolvedProviderId = providerId || getFallbackProviderId();
     const res = await this.call("chat.create", {
       kind: workspaceId ? "workspace" : "standalone",
       workspaceId,
-      providerId: "codex",
+      providerId: resolvedProviderId,
       title: title || "New Chat",
       initialPrompt: prompt
     });
@@ -405,6 +438,18 @@ export class CanywhereClient {
 
   async compactChat(chatId: string): Promise<any> {
     return await this.call("chat.compact", { chatId });
+  }
+
+  async executeCommand(chatId: string, command: string, args?: string): Promise<any> {
+    try {
+      useChatStore.getState().setChatStatus(chatId, "running");
+      const res = await this.call("chat.executeCommand", { chatId, command, args });
+      return res;
+    } catch (err: any) {
+      console.error(`[CanywhereClient] chat.executeCommand failed for '${command}'`, err);
+      useChatStore.getState().setChatStatus(chatId, "idle");
+      throw err;
+    }
   }
 
   async deleteChat(chatId: string): Promise<void> {
@@ -605,6 +650,49 @@ export class CanywhereClient {
   }
 
   disconnect(): void {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+  }
+
+  async listProviders(): Promise<import("../types/index.js").Provider[]> {
+    const res = await this.call("provider.list", {});
+    const providers = res?.providers || [];
+    useProviderStore.getState().setProviders(providers);
+    return providers;
+  }
+
+  async switchProvider(providerId: string): Promise<void> {
+    useProviderStore.getState().setSelectedProviderId(providerId);
+    // Instant switch from local cache (0ms)
+    useModelStore.getState().switchProviderCache(providerId);
+    await this.loadModels(providerId);
+  }
+
+  async loadModels(providerId: string): Promise<void> {
+    try {
+      const modelRes = await this.call("model.list", { providerId });
+      if (modelRes?.models) {
+        useModelStore
+          .getState()
+          .setModels(
+            modelRes.models,
+            modelRes.currentModel,
+            modelRes.currentReasoningEffort,
+            providerId
+          );
+      }
+    } catch (err) {
+      console.error("[CanywhereClient] Failed to load models for provider", providerId, err);
+    }
+  }
+
+  destroy(): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

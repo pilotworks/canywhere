@@ -9,42 +9,87 @@ import {
   Sparkles,
   Loader2,
   CornerDownLeft,
+  Target,
+  BookOpen,
+  HelpCircle,
+  Globe,
+  Terminal,
 } from "lucide-react";
-import { FuzzyFileMatchItem } from "../../types/index.js";
+import { FuzzyFileMatchItem, ProviderCommand } from "../../types/index.js";
 
 export interface SlashCommandDefinition {
   cmd: string;
   desc: string;
-  category: "codex" | "chat";
+  category: "agent" | "chat";
   icon: React.ReactNode;
+  requiresArgs?: boolean;
 }
 
-export const CANYWHERE_SLASH_COMMANDS: SlashCommandDefinition[] = [
-  {
-    cmd: "/review",
-    desc: "Run automated git review on uncommitted changes via Codex app-server",
-    category: "codex",
-    icon: <GitCompare className="w-3.5 h-3.5 text-amber-400" />,
-  },
-  {
-    cmd: "/compact",
-    desc: "Compact conversational context & summarize thread history via Codex",
-    category: "codex",
-    icon: <Minimize2 className="w-3.5 h-3.5 text-purple-400" />,
-  },
+export function renderCommandIcon(iconName?: string | null): React.ReactNode {
+  switch (iconName) {
+    case "git-compare":
+      return <GitCompare className="w-3.5 h-3.5 text-amber-400" />;
+    case "minimize":
+      return <Minimize2 className="w-3.5 h-3.5 text-purple-400" />;
+    case "target":
+      return <Target className="w-3.5 h-3.5 text-rose-400" />;
+    case "book-open":
+      return <BookOpen className="w-3.5 h-3.5 text-blue-400" />;
+    case "message-circle-question":
+      return <HelpCircle className="w-3.5 h-3.5 text-yellow-400" />;
+    case "globe":
+      return <Globe className="w-3.5 h-3.5 text-cyan-400" />;
+    default:
+      return <Terminal className="w-3.5 h-3.5 text-emerald-400" />;
+  }
+}
+
+export const SYSTEM_SLASH_COMMANDS: SlashCommandDefinition[] = [
   {
     cmd: "/reset",
     desc: "Start a clean conversation thread in the current workspace",
     category: "chat",
     icon: <RotateCcw className="w-3.5 h-3.5 text-sky-400" />,
+    requiresArgs: false,
   },
   {
     cmd: "/scratch",
     desc: "Create an ephemeral standalone scratchpad chat",
     category: "chat",
     icon: <Sparkles className="w-3.5 h-3.5 text-emerald-400" />,
+    requiresArgs: false,
   },
 ];
+
+export const CANYWHERE_SLASH_COMMANDS: SlashCommandDefinition[] = [
+  {
+    cmd: "/review",
+    desc: "Run automated git review on uncommitted changes",
+    category: "agent",
+    icon: <GitCompare className="w-3.5 h-3.5 text-amber-400" />,
+    requiresArgs: false,
+  },
+  {
+    cmd: "/compact",
+    desc: "Compact conversational context & summarize thread history",
+    category: "agent",
+    icon: <Minimize2 className="w-3.5 h-3.5 text-purple-400" />,
+    requiresArgs: false,
+  },
+  ...SYSTEM_SLASH_COMMANDS,
+];
+
+export function buildSlashCommands(providerCommands?: ProviderCommand[]): SlashCommandDefinition[] {
+  const dynamicCommands: SlashCommandDefinition[] = (providerCommands || []).map((pc) => ({
+    cmd: pc.name.startsWith("/") ? pc.name : `/${pc.name}`,
+    desc: pc.description,
+    category: "agent",
+    icon: renderCommandIcon(pc.icon),
+    requiresArgs: pc.requiresArgs,
+  }));
+
+  return [...dynamicCommands, ...SYSTEM_SLASH_COMMANDS];
+}
 
 /**
  * Highlights characters in text based on 0-based indices array from Nucleo fuzzy search.

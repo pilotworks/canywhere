@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use canywhere_protocol::models::{Device, DevicePlatform, DeviceTransport};
 use canywhere_protocol::rpc::*;
-use canywhere_server::adapters::CodexAdapter;
+use canywhere_server::adapters::{CodexAdapter, ProviderRegistry};
 use canywhere_server::db::repositories::RepositoryManager;
 use canywhere_server::db::Database;
 use canywhere_server::rpc::RpcDispatcher;
@@ -14,9 +14,12 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     let repo = Arc::new(RepositoryManager::new(db));
     let pairing = Arc::new(PairingSecurityManager::new(Arc::clone(&repo), 7890));
     let (adapter, _) = CodexAdapter::new("mock");
-    let adapter = Arc::new(adapter);
+    let (event_tx, _) = tokio::sync::broadcast::channel(100);
+    let mut registry = ProviderRegistry::new(event_tx);
+    registry.register(Arc::new(adapter));
+    let registry = Arc::new(registry);
 
-    let dispatcher = RpcDispatcher::new(Arc::clone(&repo), adapter, pairing);
+    let dispatcher = RpcDispatcher::new(Arc::clone(&repo), registry, pairing);
 
     // 1. Create Workspace
     let req = RpcRequestEnvelope {
@@ -158,6 +161,37 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     assert!(get_res.error.is_none());
     let get_val = get_res.result.unwrap();
     assert_eq!(get_val["chat"]["id"], chat_id);
+
+    // 6. Provider List should contain dynamic commands and actions
+    let prov_req = RpcRequestEnvelope {
+        id: RpcId::Number(6),
+        method: "provider.list".to_string(),
+        params: None,
+    };
+    let prov_res = dispatcher.dispatch(prov_req).await;
+    assert!(prov_res.error.is_none());
+    let prov_list: ProviderListResult = serde_json::from_value(prov_res.result.unwrap()).unwrap();
+    assert!(!prov_list.providers.is_empty());
+    let codex_prov = prov_list.providers.iter().find(|p| p.id == "codex").unwrap();
+    assert!(codex_prov.commands.iter().any(|c| c.name == "/review"));
+    assert!(codex_prov.commands.iter().any(|c| c.name == "/compact"));
+    assert!(codex_prov.actions.iter().any(|a| a.id == "review"));
+    assert!(codex_prov.actions.iter().any(|a| a.id == "compact"));
+
+    // 7. Chat Execute Command
+    let exec_req = RpcRequestEnvelope {
+        id: RpcId::Number(7),
+        method: "chat.executeCommand".to_string(),
+        params: Some(serde_json::json!({
+            "chatId": chat_id,
+            "command": "/compact",
+            "args": null
+        })),
+    };
+    let exec_res = dispatcher.dispatch(exec_req).await;
+    assert!(exec_res.error.is_none());
+    let exec_val = exec_res.result.unwrap();
+    assert_eq!(exec_val["success"], true);
 }
 
 #[tokio::test]
@@ -260,7 +294,10 @@ async fn test_real_codex_turn_send_via_dispatcher() {
     let db = Database::open_in_memory().unwrap();
     let repo = Arc::new(RepositoryManager::new(db));
     let pairing = Arc::new(PairingSecurityManager::new(Arc::clone(&repo), 7890));
-    let dispatcher = RpcDispatcher::new(Arc::clone(&repo), Arc::clone(&adapter), pairing);
+    let mut registry = ProviderRegistry::new(adapter.event_tx());
+    registry.register(adapter.clone() as Arc<dyn canywhere_server::adapters::CliAdapter>);
+    let registry = Arc::new(registry);
+    let dispatcher = RpcDispatcher::new(Arc::clone(&repo), registry, pairing);
 
     // 1. Create a chat
     let chat_req = RpcRequestEnvelope {

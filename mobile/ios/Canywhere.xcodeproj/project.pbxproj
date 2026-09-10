@@ -15,19 +15,19 @@
 		2DED16680E04AE9E686A2371 /* ConnectionDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C87586AC7FAC744A0719658 /* ConnectionDiagnostics.swift */; };
 		2EBA6C8E30BBD951AB8CB841 /* MarkdownContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 723F5268574ADF80B59A62C9 /* MarkdownContentView.swift */; };
 		35081FE37AB362FDF1389D58 /* ChatViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5A3B9AE36045F63A44CCD31 /* ChatViewModel.swift */; };
+		374B070CE93D079E0DD220D0 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = "TEMP_AD7C1B4A-79DC-4C8B-ADC8-BE0FB9A4129C" /* Assets.xcassets */; };
 		39A689B2B70D68488ADEC7FF /* KeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E72432385C8F4DDA5D48E79 /* KeyManager.swift */; };
 		4034303035A941D33BB67D6E /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975EAAA2972F4D521CC2AC5E /* RootView.swift */; };
 		45401C3285ABCDC59031C324 /* ProtocolModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0E076E07857DA6B5E0E5A54 /* ProtocolModels.swift */; };
 		5CDBC927B42C5B54D97107A1 /* ChatListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD1A12ECCAFBB34E00F09C19 /* ChatListView.swift */; };
 		61498BC82AEB8620AD8D4019 /* ActiveAgentPulseCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B2B415306752715C3CFB484 /* ActiveAgentPulseCard.swift */; };
+		73A629C8AF9C7B295C2C0D93 /* CanywhereApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = "TEMP_EAF2AC65-C3DA-402B-99A0-06BF8C548521" /* CanywhereApp.swift */; };
 		7E52AA1A7218D32F5CF12896 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78A387F71ECE836BE932864C /* ComposerView.swift */; };
 		8670ADCC9902E7FBDDF450A9 /* QRScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 767EDD61BAEF5FDFDF7105B1 /* QRScannerView.swift */; };
 		8E2FC58AD0B12587BD21326B /* ApprovalSheetView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADB7B1E8B17274AE57F3CDA /* ApprovalSheetView.swift */; };
-		8E8C5B91D715EA1118C3BA94 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = "TEMP_67ADEDBF-BB5D-437B-B3A1-2D325D8BAD3D" /* Assets.xcassets */; };
 		95380DEABF064A3A09125693 /* ChatDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D771D49ACDD9E8D6ABC16D9F /* ChatDetailView.swift */; };
 		A347002806DCE85C654203AA /* WorkspacesCarouselView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE85BFD9EE9250E3872588FE /* WorkspacesCarouselView.swift */; };
 		A489D702047B77BE50012CB1 /* ModelExtensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 615D978A3D436E62F92F14F7 /* ModelExtensions.swift */; };
-		A4EF7577259AD59CDF463711 /* CanywhereApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = "TEMP_BB7D3488-A318-438F-BA84-267EB073071C" /* CanywhereApp.swift */; };
 		AA4099ECD4B31CFEA5899600 /* ManualConnectSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603A93F56AF5B6BCF02D94FD /* ManualConnectSheet.swift */; };
 		AC3FFCC1565BC563AF1FD1A9 /* WireMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FBC1FEA0D67A5E523C11BA /* WireMessages.swift */; };
 		B84FCC4EBC41A2A6F2E26E20 /* UITheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E3F4C78B123EA230B5D1F9 /* UITheme.swift */; };
@@ -77,9 +77,9 @@
 		F6AB173E278F9DFEF6EB6982 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
 		FDD67D6DC750DB1CF0B8860D /* CryptoKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CryptoKit.framework; path = System/Library/Frameworks/CryptoKit.framework; sourceTree = SDKROOT; };
 		FE85BFD9EE9250E3872588FE /* WorkspacesCarouselView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspacesCarouselView.swift; sourceTree = "<group>"; };
-		"TEMP_4A789BBF-170B-4E09-B17A-33BA8BC5F748" /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		"TEMP_67ADEDBF-BB5D-437B-B3A1-2D325D8BAD3D" /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		"TEMP_BB7D3488-A318-438F-BA84-267EB073071C" /* CanywhereApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanywhereApp.swift; sourceTree = "<group>"; };
+		"TEMP_AD7C1B4A-79DC-4C8B-ADC8-BE0FB9A4129C" /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		"TEMP_EAF2AC65-C3DA-402B-99A0-06BF8C548521" /* CanywhereApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanywhereApp.swift; sourceTree = "<group>"; };
+		"TEMP_ED3C4ACD-0FDB-4081-8A5B-5A484B8A6C3C" /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -239,12 +239,12 @@
 			path = Chat;
 			sourceTree = "<group>";
 		};
-		"TEMP_94304616-061B-4697-91EF-EE573B17A76B" /* . */ = {
+		"TEMP_65C212D2-0A8B-4EF4-AC25-DC2CFA7B6AE0" /* . */ = {
 			isa = PBXGroup;
 			children = (
-				"TEMP_67ADEDBF-BB5D-437B-B3A1-2D325D8BAD3D" /* Assets.xcassets */,
-				"TEMP_BB7D3488-A318-438F-BA84-267EB073071C" /* CanywhereApp.swift */,
-				"TEMP_4A789BBF-170B-4E09-B17A-33BA8BC5F748" /* Info.plist */,
+				"TEMP_AD7C1B4A-79DC-4C8B-ADC8-BE0FB9A4129C" /* Assets.xcassets */,
+				"TEMP_EAF2AC65-C3DA-402B-99A0-06BF8C548521" /* CanywhereApp.swift */,
+				"TEMP_ED3C4ACD-0FDB-4081-8A5B-5A484B8A6C3C" /* Info.plist */,
 				0926AF52EE9D31E3E951808B /* ViewModels */,
 				72FB53D1C656371ED1D1C51D /* Security */,
 				F3524B19EAC94E626461A190 /* Network */,
@@ -315,7 +315,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8E8C5B91D715EA1118C3BA94 /* Assets.xcassets in Resources */,
+				374B070CE93D079E0DD220D0 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -330,7 +330,7 @@
 				E8CE5F75947ADB7A66F2CCB4 /* AppSessionState.swift in Sources */,
 				8E2FC58AD0B12587BD21326B /* ApprovalSheetView.swift in Sources */,
 				05DA2D86B1E6A5763651D58F /* BonjourBrowser.swift in Sources */,
-				A4EF7577259AD59CDF463711 /* CanywhereApp.swift in Sources */,
+				73A629C8AF9C7B295C2C0D93 /* CanywhereApp.swift in Sources */,
 				95380DEABF064A3A09125693 /* ChatDetailView.swift in Sources */,
 				5CDBC927B42C5B54D97107A1 /* ChatListView.swift in Sources */,
 				35081FE37AB362FDF1389D58 /* ChatViewModel.swift in Sources */,

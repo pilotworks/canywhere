@@ -14,6 +14,8 @@ final class AppSessionState {
 
     var chats: [Chat] = []
     var workspaces: [Workspace] = []
+    var providers: [Provider] = []
+    var selectedProviderId: String = UserDefaults.standard.string(forKey: "selected_provider_id") ?? "codex"
     var models: [ModelInfo] = []
     var selectedModel: String? = "gpt-5-codex"
     var selectedEffort: String = "medium"
@@ -244,6 +246,7 @@ final class AppSessionState {
 
     func refreshAll() async {
         await withTaskGroup(of: Void.self) { group in
+            group.addTask { await self.loadProviders() }
             group.addTask { await self.loadChats() }
             group.addTask { await self.loadWorkspaces() }
             group.addTask { await self.loadModels() }
@@ -375,12 +378,45 @@ final class AppSessionState {
         self.chats.removeAll { $0.workspaceId == id }
     }
 
-    func loadModels() async {
+    func loadProviders() async {
         do {
             struct EmptyParams: Encodable, Sendable {}
+            struct ProviderListResult: Decodable, Sendable {
+                let providers: [Provider]
+            }
+            let result: ProviderListResult = try await connectionManager.sendRequest(
+                method: "provider.list",
+                params: EmptyParams()
+            )
+            self.providers = result.providers
+            if !result.providers.isEmpty {
+                if !result.providers.contains(where: { $0.id == selectedProviderId }) {
+                    self.selectedProviderId = result.providers[0].id
+                    UserDefaults.standard.set(self.selectedProviderId, forKey: "selected_provider_id")
+                }
+            }
+        } catch {
+            print("⚠️ [AppSessionState] Failed to load providers: \(error)")
+        }
+    }
+
+    func selectProvider(_ providerId: String) {
+        self.selectedProviderId = providerId
+        UserDefaults.standard.set(providerId, forKey: "selected_provider_id")
+        Task {
+            await loadModels()
+        }
+    }
+
+    func loadModels(for providerId: String? = nil) async {
+        do {
+            struct ModelListParams: Encodable, Sendable {
+                let providerId: String
+            }
+            let targetProvider = providerId ?? selectedProviderId
             let result: ModelListResult = try await connectionManager.sendRequest(
                 method: "model.list",
-                params: EmptyParams()
+                params: ModelListParams(providerId: targetProvider)
             )
             if !result.models.isEmpty {
                 self.models = result.models
@@ -438,7 +474,7 @@ final class AppSessionState {
         }
     }
 
-    func createChat(title: String, workspaceId: String?) async throws -> Chat {
+    func createChat(title: String, workspaceId: String?, providerId: String? = nil) async throws -> Chat {
         struct CreateChatParams: Encodable, Sendable {
             let kind: String
             let title: String
@@ -450,11 +486,13 @@ final class AppSessionState {
             let chat: Chat
         }
 
+        let resolvedProvider = providerId ?? selectedProviderId
+
         let params = CreateChatParams(
             kind: workspaceId != nil ? "workspace" : "standalone",
             title: title.isEmpty ? "New Chat" : title,
             workspaceId: workspaceId,
-            providerId: "codex"
+            providerId: resolvedProvider
         )
 
         let result: CreateChatResult = try await connectionManager.sendRequest(

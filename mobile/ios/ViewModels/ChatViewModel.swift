@@ -350,6 +350,28 @@ final class ChatViewModel {
         }
     }
 
+    func executeCommand(command: String, args: String? = nil) async {
+        struct ExecuteCommandParams: Encodable, Sendable {
+            let chatId: String
+            let command: String
+            let args: String?
+        }
+        struct ExecuteCommandResult: Decodable, Sendable {
+            let success: Bool
+            let message: String?
+        }
+        do {
+            self.isRunning = true
+            let _: ExecuteCommandResult = try await connectionManager.sendRequest(
+                method: "chat.executeCommand",
+                params: ExecuteCommandParams(chatId: chatId, command: command, args: args)
+            )
+        } catch {
+            print("⚠️ [ChatViewModel] chat.executeCommand failed for \(command): \(error)")
+            self.isRunning = false
+        }
+    }
+
     // MARK: - Event Handlers
 
     func handleNotification(method: String, data: Data) {

@@ -8,20 +8,26 @@ import { ToolCallGroup } from "../src/components/chat/tool-call-group.js";
 import { MessageBlock } from "../src/types/index.js";
 
 describe("Tool Call Formatting & Grouping", () => {
-  it("formats file reading action correctly", () => {
+  it("formats file reading action correctly with filePath and lineRange", () => {
     const action = formatToolAction({
       type: "tool_call",
       callId: "1",
       name: "view_file",
-      args: { AbsolutePath: "/Users/dev/project/src/components/button.tsx" },
+      args: {
+        AbsolutePath: "/Users/dev/project/src/components/button.tsx",
+        StartLine: 10,
+        EndLine: 25,
+      },
       output: null,
       status: "completed",
     });
     expect(action.verb).toBe("Read");
     expect(action.target).toBe("components/button.tsx");
+    expect(action.filePath).toBe("/Users/dev/project/src/components/button.tsx");
+    expect(action.lineRange).toEqual({ start: 10, end: 25 });
   });
 
-  it("formats file editing action correctly", () => {
+  it("formats file editing action correctly with filePath", () => {
     const action = formatToolAction({
       type: "tool_call",
       callId: "2",
@@ -32,6 +38,7 @@ describe("Tool Call Formatting & Grouping", () => {
     });
     expect(action.verb).toBe("Edited");
     expect(action.target).toBe("src/index.ts");
+    expect(action.filePath).toBe("/Users/dev/project/src/index.ts");
   });
 
   it("formats command execution action correctly", () => {
@@ -71,6 +78,43 @@ describe("Tool Call Formatting & Grouping", () => {
     });
     expect(action.verb).toBe("Explored");
     expect(action.target).toBe('"ToolCallBlock"');
+  });
+
+  it("formats list_dir action with DirectoryPath or toolSummary correctly", () => {
+    const action1 = formatToolAction({
+      type: "tool_call",
+      callId: "5",
+      name: "list_dir",
+      args: { DirectoryPath: "/Users/dev/project/crates/canywhere-server" },
+      output: null,
+      status: "completed",
+    });
+    expect(action1.verb).toBe("Listed");
+    expect(action1.target).toBe("crates/canywhere-server");
+
+    const action2 = formatToolAction({
+      type: "tool_call",
+      callId: "6",
+      name: "list_dir",
+      args: { toolSummary: "Check workspace directory" },
+      output: null,
+      status: "running",
+    });
+    expect(action2.verb).toBe("Listing");
+    expect(action2.target).toBe("Check workspace directory");
+  });
+
+  it("summarizes tool group containing list_dir and unknown tools without returning empty string", () => {
+    const blocks: Array<Extract<MessageBlock, { type: "tool_call" | "command_exec" }>> = [
+      { type: "tool_call", callId: "1", name: "list_dir", args: { DirectoryPath: "/repo" }, output: null, status: "completed" },
+      { type: "tool_call", callId: "2", name: "list_dir", args: { DirectoryPath: "/repo/src" }, output: null, status: "completed" },
+    ];
+    expect(summarizeToolGroup(blocks)).toBe("Checked 2 directories");
+
+    const unknownBlocks: Array<Extract<MessageBlock, { type: "tool_call" | "command_exec" }>> = [
+      { type: "tool_call", callId: "3", name: "custom_special_tool", args: {}, output: null, status: "completed" },
+    ];
+    expect(summarizeToolGroup(unknownBlocks)).toBe("Called 1 tool");
   });
 
   it("correctly groups adjacent tool calls into tool_group", () => {

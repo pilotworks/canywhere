@@ -7,6 +7,8 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../ui/colla
 import { FileIcon } from "../ui/file-icon.js";
 import { DiffViewer } from "./diff-viewer.js";
 
+import { parseFileLink, openFileInRightSidebar } from "../../lib/file-link.js";
+
 export type ToolActionBlock = Extract<MessageBlock, { type: "tool_call" | "command_exec" }>;
 
 export const CommandExecItem: React.FC<{
@@ -129,6 +131,18 @@ export const FileDiffItem: React.FC<{
   const addedCount = lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
   const removedCount = lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
 
+  const fileLinkInfo = React.useMemo(() => {
+    return parseFileLink(block.path);
+  }, [block.path]);
+
+  const handleFileClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (fileLinkInfo) {
+      openFileInRightSidebar(fileLinkInfo);
+    }
+  };
+
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="w-full my-0.5 text-xs">
       <CollapsibleTrigger className="group flex items-center gap-1.5 py-0.5 w-full text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer select-none bg-transparent border-none p-0 text-left">
@@ -140,12 +154,27 @@ export const FileDiffItem: React.FC<{
         <span className="text-[12px] font-normal transition-colors shrink-0">
           Edited
         </span>
-        <FileIcon fileName={block.path} className="w-3.5 h-3.5 shrink-0" />
-        <span className="font-mono text-[11.5px] opacity-90 truncate">
-          {block.path}
-        </span>
+        {fileLinkInfo ? (
+          <span
+            onClick={handleFileClick}
+            className="inline-flex items-center gap-1 font-mono text-[11.5px] text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10 px-1 py-0.2 rounded transition-colors cursor-pointer group/link max-w-[calc(100%-100px)] truncate"
+            title={`Preview ${block.path} in right sidebar`}
+          >
+            <FileIcon fileName={block.path} className="w-3.5 h-3.5 shrink-0 pointer-events-none" />
+            <span className="truncate">
+              {block.path}
+            </span>
+          </span>
+        ) : (
+          <>
+            <FileIcon fileName={block.path} className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-mono text-[11.5px] opacity-90 truncate">
+              {block.path}
+            </span>
+          </>
+        )}
         {(addedCount > 0 || removedCount > 0) && (
-          <span className="flex items-center gap-1 font-mono text-[10.5px] font-semibold ml-1">
+          <span className="flex items-center gap-1 font-mono text-[10.5px] font-semibold ml-1 shrink-0">
             {addedCount > 0 && <span className="text-emerald-400">+{addedCount}</span>}
             {removedCount > 0 && <span className="text-rose-400">-{removedCount}</span>}
           </span>

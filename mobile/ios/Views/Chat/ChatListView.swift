@@ -416,27 +416,44 @@ struct ChatListView: View {
 
     private func chatRowCard(_ chat: Chat) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            // Status Icon Indicator
-            ZStack {
-                Circle()
-                    .fill(chatStatusColor(chat.status).opacity(0.12))
-                    .frame(width: 32, height: 32)
+            // Provider Logo & Status Indicator at the head of the item
+            ZStack(alignment: .bottomTrailing) {
+                let provider = session.providers.first(where: { $0.id == chat.providerID })
+                let isAgy = (chat.providerID == "agy")
+                let iconSymbol = provider?.icon ?? (isAgy ? "sparkles" : "terminal.fill")
 
-                switch chat.status {
-                case .running:
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(
+                            isAgy
+                                ? LinearGradient(colors: [Color.indigo.opacity(0.18), Color.purple.opacity(0.24)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                                : LinearGradient(colors: [Color.teal.opacity(0.18), Color.blue.opacity(0.22)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                        .frame(width: 36, height: 36)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .stroke(isAgy ? Color.purple.opacity(0.3) : Color.teal.opacity(0.3), lineWidth: 1)
+                        )
+
+                    ProviderLogoView(providerId: chat.providerID, size: 20)
+                }
+
+                // Status indicator badge
+                if chat.status == .running {
                     PulsingDot(color: .orange)
-                case .awaitingApproval:
-                    Image(systemName: "exclamationmark.shield.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .offset(x: 3, y: 3)
+                } else if chat.status == .awaitingApproval {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.orange)
-                case .error:
+                        .background(Circle().fill(Color(uiColor: .systemBackground)))
+                        .offset(x: 3, y: 3)
+                } else if chat.status == .error {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.red)
-                case .idle:
-                    Image(systemName: "bubble.left.fill")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Color.accentColor)
+                        .background(Circle().fill(Color(uiColor: .systemBackground)))
+                        .offset(x: 3, y: 3)
                 }
             }
             .padding(.top, 2)
@@ -482,6 +499,18 @@ struct ChatListView: View {
                         .foregroundStyle(.secondary)
                         .clipShape(Capsule())
                     }
+
+                    HStack(spacing: 3) {
+                        Image(systemName: chat.providerID == "agy" ? "sparkles" : "terminal.fill")
+                            .font(.system(size: 9))
+                        Text(chat.providerID == "agy" ? "Antigravity" : "Codex")
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2.5)
+                    .background(chat.providerID == "agy" ? Color.purple.opacity(0.12) : Color.blue.opacity(0.12))
+                    .foregroundStyle(chat.providerID == "agy" ? Color.purple : Color.blue)
+                    .clipShape(Capsule())
 
                     if chat.status == .running {
                         HStack(spacing: 3) {
@@ -605,6 +634,42 @@ struct ChatListView: View {
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                                     .stroke(Theme.subtleBorder, lineWidth: 1)
                             )
+                    }
+
+                    if !session.providers.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("AI ASSISTANT")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.secondary)
+
+                            ForEach(session.providers, id: \.id) { p in
+                                let isSelected = (session.selectedProviderId == p.id)
+                                Button {
+                                    Haptics.shared.selection()
+                                    session.selectProvider(p.id)
+                                } label: {
+                                    HStack(spacing: 12) {
+                                        ProviderLogoView(providerId: p.id, size: 22)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(p.name)
+                                                .font(.subheadline.weight(.medium))
+                                                .foregroundStyle(.primary)
+                                            Text(p.description)
+                                                .font(.caption2)
+                                                .foregroundStyle(.secondary)
+                                                .lineLimit(1)
+                                        }
+                                        Spacer()
+                                        if isSelected {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .foregroundStyle(Color.accentColor)
+                                        }
+                                    }
+                                    .padding(14)
+                                    .cardStyle(cornerRadius: 14)
+                                }
+                            }
+                        }
                     }
 
                     if !session.workspaces.isEmpty {

@@ -98,31 +98,85 @@ struct SlashCommandItem: Identifiable, Sendable, Equatable {
     let desc: String
     let category: String
     let iconSystemName: String
+    let requiresArgs: Bool
 
-    static let availableCommands: [SlashCommandItem] = [
-        SlashCommandItem(
-            cmd: "/review",
-            desc: "Run automated git review on uncommitted changes via Codex app-server",
-            category: "codex",
-            iconSystemName: "arrow.triangle.2.circlepath"
-        ),
-        SlashCommandItem(
-            cmd: "/compact",
-            desc: "Compact conversational context & summarize thread history via Codex",
-            category: "codex",
-            iconSystemName: "arrow.down.right.and.arrow.up.left"
-        ),
+    static func iconForName(_ icon: String?) -> String {
+        switch icon {
+        case "git-compare":
+            return "arrow.triangle.2.circlepath"
+        case "minimize":
+            return "arrow.down.right.and.arrow.up.left"
+        case "target":
+            return "scope"
+        case "book-open":
+            return "book"
+        case "message-circle-question":
+            return "questionmark.bubble"
+        case "globe":
+            return "globe"
+        default:
+            return "terminal"
+        }
+    }
+
+    static let systemCommands: [SlashCommandItem] = [
         SlashCommandItem(
             cmd: "/reset",
             desc: "Start a clean conversation thread in the current workspace",
             category: "chat",
-            iconSystemName: "arrow.counterclockwise"
+            iconSystemName: "arrow.counterclockwise",
+            requiresArgs: false
         ),
         SlashCommandItem(
             cmd: "/scratch",
             desc: "Create an ephemeral standalone scratchpad chat",
             category: "chat",
-            iconSystemName: "sparkles"
+            iconSystemName: "sparkles",
+            requiresArgs: false
+        )
+    ]
+
+    static func buildCommands(from providerCommands: [ProviderCommand]?) -> [SlashCommandItem] {
+        let dynamicList: [SlashCommandItem] = (providerCommands ?? []).map { pc in
+            SlashCommandItem(
+                cmd: pc.name.hasPrefix("/") ? pc.name : "/\(pc.name)",
+                desc: pc.description,
+                category: pc.category,
+                iconSystemName: iconForName(pc.icon),
+                requiresArgs: pc.requiresArgs ?? false
+            )
+        }
+        return dynamicList + systemCommands
+    }
+
+    static let availableCommands: [SlashCommandItem] = [
+        SlashCommandItem(
+            cmd: "/review",
+            desc: "Run automated git review on uncommitted changes",
+            category: "agent",
+            iconSystemName: "arrow.triangle.2.circlepath",
+            requiresArgs: false
+        ),
+        SlashCommandItem(
+            cmd: "/compact",
+            desc: "Compact conversational context & summarize thread history",
+            category: "agent",
+            iconSystemName: "arrow.down.right.and.arrow.up.left",
+            requiresArgs: false
+        ),
+        SlashCommandItem(
+            cmd: "/reset",
+            desc: "Start a clean conversation thread in the current workspace",
+            category: "chat",
+            iconSystemName: "arrow.counterclockwise",
+            requiresArgs: false
+        ),
+        SlashCommandItem(
+            cmd: "/scratch",
+            desc: "Create an ephemeral standalone scratchpad chat",
+            category: "chat",
+            iconSystemName: "sparkles",
+            requiresArgs: false
         )
     ]
 }

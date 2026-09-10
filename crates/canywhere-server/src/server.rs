@@ -13,7 +13,7 @@ use tokio::sync::{broadcast, mpsc};
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 
-use crate::adapters::{AgentEvent, CodexAdapter};
+use crate::adapters::{AgentEvent, ProviderRegistry};
 use crate::db::repositories::RepositoryManager;
 use crate::rpc::dispatcher::RpcDispatcher;
 use crate::security::PairingSecurityManager;
@@ -29,20 +29,20 @@ pub struct AppState {
 pub async fn run_server(
     port: u16,
     repo: Arc<RepositoryManager>,
-    adapter: Arc<CodexAdapter>,
+    registry: Arc<ProviderRegistry>,
     pairing: Arc<PairingSecurityManager>,
     event_tx: broadcast::Sender<AgentEvent>,
 ) -> anyhow::Result<()> {
     let dispatcher = Arc::new(RpcDispatcher::new(
         Arc::clone(&repo),
-        Arc::clone(&adapter),
+        Arc::clone(&registry),
         Arc::clone(&pairing),
     ));
     let host_public_key = pairing.host_public_key().to_string();
 
     // Spawn background task to persist agent messages and chat status on turn completion, and auto-dispatch queued prompts
     let repo_persist = Arc::clone(&repo);
-    let adapter_persist = Arc::clone(&adapter);
+    let registry_persist = Arc::clone(&registry);
     let mut persist_rx = event_tx.subscribe();
     tokio::spawn(async move {
         while let Ok(event) = persist_rx.recv().await {
@@ -52,10 +52,26 @@ pub async fn run_server(
                     message_id,
                     turn_id,
                     status,
-                    blocks,
+                    mut blocks,
+                    text_content,
                     ..
                 } => {
                     let _ = repo_persist.update_chat_status(&chat_id, status, None);
+
+                    if let Some(text) = text_content {
+                        if !text.is_empty() {
+                            if let Some(canywhere_protocol::models::MessageBlock::Text { content }) = blocks
+                                .iter_mut()
+                                .rev()
+                                .find(|b| matches!(b, canywhere_protocol::models::MessageBlock::Text { .. }))
+                            {
+                                *content = text;
+                            } else {
+                                blocks.push(canywhere_protocol::models::MessageBlock::Text { content: text });
+                            }
+                        }
+                    }
+
                     if !blocks.is_empty() {
                         let now = std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -94,7 +110,7 @@ pub async fn run_server(
 
                             // Broadcast updated queue state
                             if let Ok(remaining_items) = repo_persist.list_queued_messages(&chat_id) {
-                                let _ = adapter_persist.event_tx().send(AgentEvent::QueueUpdated {
+                                let _ = registry_persist.event_tx().send(AgentEvent::QueueUpdated {
                                     chat_id: chat_id.clone(),
                                     items: remaining_items,
                                 });
@@ -123,7 +139,7 @@ pub async fn run_server(
                                         streaming: false,
                                     };
                                     let _ = repo_persist.record_message(&user_msg);
-                                    let _ = adapter_persist.event_tx().send(AgentEvent::MessageCreated {
+                                    let _ = registry_persist.event_tx().send(AgentEvent::MessageCreated {
                                         message: user_msg,
                                     });
 
@@ -136,7 +152,7 @@ pub async fn run_server(
                                         created_at: now + 1,
                                         streaming: true,
                                     };
-                                    let _ = adapter_persist.event_tx().send(AgentEvent::MessageCreated {
+                                    let _ = registry_persist.event_tx().send(AgentEvent::MessageCreated {
                                         message: agent_placeholder,
                                     });
 
@@ -154,30 +170,37 @@ pub async fn run_server(
                                         let scratch_dir = std::path::PathBuf::from(home)
                                             .join(".canywhere")
                                             .join("scratch")
-                                            .join("codex")
+                                            .join(&chat.provider_id)
                                             .join(&chat.id);
                                         let _ = std::fs::create_dir_all(&scratch_dir);
                                         cwd = scratch_dir.to_string_lossy().to_string();
                                     }
 
-                                    let adapter_clone = Arc::clone(&adapter_persist);
+                                    let adapter = registry_persist.resolve(Some(&chat.provider_id));
                                     let chat_id_clone = chat.id.clone();
                                     let content_clone = next_queue_item.content.clone();
                                     let model_clone = next_queue_item.model.clone();
                                     let effort_clone = next_queue_item.reasoning_effort.clone();
 
                                     tokio::spawn(async move {
-                                        if let Err(e) = adapter_clone.submit_turn(
-                                            &chat_id_clone,
-                                            &thread_id,
-                                            &agent_msg_id,
-                                            &content_clone,
-                                            model_clone.as_deref(),
-                                            effort_clone.as_deref(),
-                                            Some(resolved_perm_mode),
-                                            if cwd.is_empty() { None } else { Some(&cwd) },
-                                        ).await {
-                                            tracing::error!("[HostServer] Failed to submit auto-dispatched turn: {}", e);
+                                        match adapter {
+                                            Ok(adapter) => {
+                                                if let Err(e) = adapter.submit_turn(
+                                                    &chat_id_clone,
+                                                    &thread_id,
+                                                    &agent_msg_id,
+                                                    &content_clone,
+                                                    model_clone.as_deref(),
+                                                    effort_clone.as_deref(),
+                                                    Some(resolved_perm_mode),
+                                                    if cwd.is_empty() { None } else { Some(&cwd) },
+                                                ).await {
+                                                    tracing::error!("[HostServer] Failed to submit auto-dispatched turn: {}", e);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("[HostServer] Failed to resolve adapter for chat {}: {}", chat_id_clone, e);
+                                            }
                                         }
                                     });
                                 }
@@ -187,6 +210,9 @@ pub async fn run_server(
                 }
                 AgentEvent::ChatTitleUpdated { chat_id, title } => {
                     let _ = repo_persist.update_chat_title(&chat_id, &title);
+                }
+                AgentEvent::ChatThreadUpdated { chat_id, thread_id } => {
+                    let _ = repo_persist.update_chat_status(&chat_id, canywhere_protocol::models::ChatStatus::Running, Some(&thread_id));
                 }
                 _ => {}
             }
@@ -464,6 +490,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         "params": {
                             "chatId": chat_id,
                             "items": items
+                        }
+                    })
+                }
+                AgentEvent::ChatThreadUpdated { chat_id, thread_id } => {
+                    info!("🧵 [HostServer] Chat thread updated: {} -> {}", chat_id, thread_id);
+                    serde_json::json!({
+                        "method": "chat.updated",
+                        "params": {
+                            "chatId": chat_id,
+                            "threadId": thread_id
                         }
                     })
                 }

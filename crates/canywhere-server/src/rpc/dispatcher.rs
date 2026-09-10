@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 
-use crate::adapters::{AgentEvent, CodexAdapter};
+use crate::adapters::{AgentEvent, ProviderRegistry};
 use crate::db::repositories::RepositoryManager;
 use crate::security::PairingSecurityManager;
 use canywhere_protocol::models::*;
@@ -9,22 +9,23 @@ use canywhere_protocol::rpc::*;
 
 pub struct RpcDispatcher {
     repo: Arc<RepositoryManager>,
-    adapter: Arc<CodexAdapter>,
+    registry: Arc<ProviderRegistry>,
     pairing: Arc<PairingSecurityManager>,
 }
 
 impl RpcDispatcher {
     pub fn new(
         repo: Arc<RepositoryManager>,
-        adapter: Arc<CodexAdapter>,
+        registry: Arc<ProviderRegistry>,
         pairing: Arc<PairingSecurityManager>,
     ) -> Self {
         Self {
             repo,
-            adapter,
+            registry,
             pairing,
         }
     }
+
 
     pub async fn dispatch(&self, req: RpcRequestEnvelope) -> RpcResponseEnvelope {
         let id = req.id.clone();
@@ -74,7 +75,7 @@ impl RpcDispatcher {
                     params.sub_paths,
                 )?;
                 let ws = updated.ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
-                let _ = self.adapter.event_tx().send(AgentEvent::WorkspaceUpdated {
+                let _ = self.registry.event_tx().send(AgentEvent::WorkspaceUpdated {
                     workspace: ws.clone(),
                 });
                 Ok(serde_json::to_value(WorkspaceUpdateResult {
@@ -86,7 +87,7 @@ impl RpcDispatcher {
                 let params: WorkspaceDeleteParams = serde_json::from_value(p)?;
                 let deleted = self.repo.delete_workspace(&params.workspace_id)?;
                 if deleted {
-                    let _ = self.adapter.event_tx().send(AgentEvent::WorkspaceDeleted {
+                    let _ = self.registry.event_tx().send(AgentEvent::WorkspaceDeleted {
                         workspace_id: params.workspace_id,
                     });
                 }
@@ -154,7 +155,7 @@ impl RpcDispatcher {
                     roots.extend(ws.sub_paths);
                 }
                 let files = self
-                    .adapter
+                    .registry
                     .fuzzy_file_search(roots, &params.query, params.cancellation_token)
                     .await?;
                 Ok(serde_json::to_value(WorkspaceFileSearchResult { files })?)
@@ -315,7 +316,8 @@ end try"#;
                     .get_workspace(&params.workspace_id)?
                     .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
                 let root = std::path::Path::new(&ws.root_path);
-                let message = crate::git::GitService::generate_commit_message(root, self.adapter.codex_bin()).await?;
+                let codex_bin = crate::adapters::codex::CodexAdapter::resolve_binary();
+                let message = crate::git::GitService::generate_commit_message(root, &codex_bin).await?;
                 Ok(serde_json::to_value(GitGenerateCommitMessageResult { message })?)
             }
 
@@ -327,9 +329,21 @@ end try"#;
 
             "chat.create" => {
                 let mut input: ChatCreateInput = serde_json::from_value(p.clone())?;
+                if input.provider_id.trim().is_empty() {
+                    input.provider_id = "codex".to_string();
+                }
                 if input.workspace_id.is_some() {
                     input.kind = ChatKind::Workspace;
                 }
+
+                if input.permission_mode.is_none() {
+                    if let Ok(ad) = self.registry.resolve(Some(&input.provider_id)) {
+                        if !ad.capabilities().supports_approvals {
+                            input.permission_mode = Some(PermissionMode::Auto);
+                        }
+                    }
+                }
+
                 let mut cwd = String::new();
                 let mut sub_paths = None;
 
@@ -347,15 +361,15 @@ end try"#;
                     let scratch_dir = std::path::PathBuf::from(home)
                         .join(".canywhere")
                         .join("scratch")
-                        .join("codex")
+                        .join(&chat.provider_id)
                         .join(&chat.id);
                     let _ = std::fs::create_dir_all(&scratch_dir);
                     cwd = scratch_dir.to_string_lossy().to_string();
                 }
 
-                // Initialize underlying thread in Codex
-                match self
-                    .adapter
+                // Initialize underlying thread in target adapter
+                let adapter = self.registry.resolve(Some(&chat.provider_id))?;
+                match adapter
                     .start_thread(&chat.id, &cwd, sub_paths.as_deref())
                     .await
                 {
@@ -369,13 +383,14 @@ end try"#;
                     }
                     Err(e) => {
                         tracing::warn!(
-                            "[RpcDispatcher] Failed to initialize Codex thread on chat.create: {}",
+                            "[RpcDispatcher] Failed to initialize {} thread on chat.create: {}",
+                            chat.provider_id,
                             e
                         );
                     }
                 }
 
-                let _ = self.adapter.event_tx().send(AgentEvent::ChatCreated {
+                let _ = self.registry.event_tx().send(AgentEvent::ChatCreated {
                     chat: chat.clone(),
                 });
 
@@ -391,13 +406,14 @@ end try"#;
                     .get_chat(chat_id)?
                     .ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
 
-                let streaming_msg = self.adapter.get_active_streaming_message(chat_id).await;
+                let adapter = self.registry.resolve(Some(&chat.provider_id))?;
+                let streaming_msg = adapter.get_active_streaming_message(chat_id).await;
                 if streaming_msg.is_some() {
                     if chat.status != ChatStatus::AwaitingApproval {
                         chat.status = ChatStatus::Running;
                     }
                 } else if chat.status == ChatStatus::Running {
-                    let has_active_turn = self.adapter.get_active_turn(chat_id).await.is_some();
+                    let has_active_turn = adapter.get_active_turn(chat_id).await.is_some();
                     if !has_active_turn {
                         let _ = self.repo.update_chat_status(chat_id, ChatStatus::Idle, None);
                         chat.status = ChatStatus::Idle;
@@ -408,7 +424,7 @@ end try"#;
                 if let Some(s_msg) = streaming_msg {
                     messages.push(s_msg);
                 }
-                let pending_approvals = self.adapter.get_pending_approvals(chat_id).await;
+                let pending_approvals = adapter.get_pending_approvals(chat_id).await;
                 let queued_messages = self.repo.list_queued_messages(chat_id)?;
                 Ok(serde_json::to_value(ChatGetResult {
                     chat,
@@ -422,7 +438,7 @@ end try"#;
                 let params: ChatDeleteParams = serde_json::from_value(p)?;
                 let success = self.repo.delete_chat(&params.chat_id)?;
                 if success {
-                    let _ = self.adapter.event_tx().send(AgentEvent::ChatDeleted {
+                    let _ = self.registry.event_tx().send(AgentEvent::ChatDeleted {
                         chat_id: params.chat_id,
                     });
                 }
@@ -433,7 +449,7 @@ end try"#;
                 let params: ChatSetPermissionParams = serde_json::from_value(p)?;
                 self.repo
                     .update_chat_permission_mode(&params.chat_id, params.permission_mode)?;
-                let _ = self.adapter.event_tx().send(AgentEvent::ChatPermissionUpdated {
+                let _ = self.registry.event_tx().send(AgentEvent::ChatPermissionUpdated {
                     chat_id: params.chat_id.clone(),
                     permission_mode: params.permission_mode,
                 });
@@ -463,14 +479,14 @@ end try"#;
                     let scratch_dir = std::path::PathBuf::from(home)
                         .join(".canywhere")
                         .join("scratch")
-                        .join("codex")
+                        .join(&chat.provider_id)
                         .join(&chat.id);
                     let _ = std::fs::create_dir_all(&scratch_dir);
                     cwd = scratch_dir.to_string_lossy().to_string();
                 }
 
-                let thread_id = self
-                    .adapter
+                let adapter = self.registry.resolve(Some(&chat.provider_id))?;
+                let thread_id = adapter
                     .resume_or_start_thread(
                         &chat.id,
                         chat.external_thread_id.as_deref(),
@@ -484,7 +500,7 @@ end try"#;
                     .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
                 chat.external_thread_id = Some(thread_id.clone());
 
-                let turn_id = self.adapter.start_review(&chat.id, &thread_id).await?;
+                let turn_id = adapter.start_review(&chat.id, &thread_id).await?;
                 Ok(serde_json::json!({
                     "turnId": turn_id,
                     "status": "running"
@@ -499,11 +515,65 @@ end try"#;
                 };
 
                 if let Some(thread_id) = chat.external_thread_id.as_deref() {
-                    self.adapter.compact_thread(thread_id).await?;
+                    let adapter = self.registry.resolve(Some(&chat.provider_id))?;
+                    adapter.compact_thread(thread_id).await?;
                     Ok(serde_json::json!({ "success": true }))
                 } else {
                     anyhow::bail!("No active thread for chat to compact");
                 }
+            }
+
+            "chat.executeCommand" => {
+                let params: ChatExecuteCommandParams = serde_json::from_value(p)?;
+                let mut chat = match self.repo.get_chat(&params.chat_id)? {
+                    Some(c) => c,
+                    None => anyhow::bail!("Chat not found"),
+                };
+
+                let mut cwd = String::new();
+                let mut sub_paths = None;
+                if let Some(ws_id) = &chat.workspace_id {
+                    if let Some(ws) = self.repo.get_workspace(ws_id)? {
+                        cwd = ws.root_path;
+                        sub_paths = Some(ws.sub_paths);
+                    }
+                }
+                if cwd.is_empty() {
+                    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                    let scratch_dir = std::path::PathBuf::from(home)
+                        .join(".canywhere")
+                        .join("scratch")
+                        .join(&chat.provider_id)
+                        .join(&chat.id);
+                    let _ = std::fs::create_dir_all(&scratch_dir);
+                    cwd = scratch_dir.to_string_lossy().to_string();
+                }
+
+                let adapter = self.registry.resolve(Some(&chat.provider_id))?;
+                let thread_id = adapter
+                    .resume_or_start_thread(
+                        &chat.id,
+                        chat.external_thread_id.as_deref(),
+                        &cwd,
+                        sub_paths.as_deref(),
+                    )
+                    .await?;
+
+                let _ = self
+                    .repo
+                    .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
+                chat.external_thread_id = Some(thread_id.clone());
+
+                let result = adapter
+                    .execute_command(
+                        &chat.id,
+                        &thread_id,
+                        &params.command,
+                        params.args.as_deref(),
+                    )
+                    .await?;
+
+                Ok(serde_json::to_value(result)?)
             }
 
             "turn.send" => {
@@ -526,14 +596,14 @@ end try"#;
                     let scratch_dir = std::path::PathBuf::from(home)
                         .join(".canywhere")
                         .join("scratch")
-                        .join("codex")
+                        .join(&chat.provider_id)
                         .join(&chat.id);
                     let _ = std::fs::create_dir_all(&scratch_dir);
                     cwd = scratch_dir.to_string_lossy().to_string();
                 }
 
-                let thread_id = self
-                    .adapter
+                let adapter = self.registry.resolve(Some(&chat.provider_id))?;
+                let thread_id = adapter
                     .resume_or_start_thread(
                         &chat.id,
                         chat.external_thread_id.as_deref(),
@@ -572,7 +642,7 @@ end try"#;
                 if let Err(e) = self.repo.record_message(&user_msg) {
                     tracing::error!("[RpcDispatcher] Failed to record user message: {}", e);
                 }
-                let _ = self.adapter.event_tx().send(AgentEvent::MessageCreated {
+                let _ = self.registry.event_tx().send(AgentEvent::MessageCreated {
                     message: user_msg.clone(),
                 });
 
@@ -586,7 +656,7 @@ end try"#;
                     created_at: now + 1,
                     streaming: true,
                 };
-                let _ = self.adapter.event_tx().send(AgentEvent::MessageCreated {
+                let _ = self.registry.event_tx().send(AgentEvent::MessageCreated {
                     message: agent_placeholder,
                 });
 
@@ -604,7 +674,7 @@ end try"#;
                         if let Some(eff) = &params.reasoning_effort {
                             let _ = self.repo.set_setting("current_reasoning_effort", eff);
                         }
-                        let _ = self.adapter.event_tx().send(AgentEvent::ModelUpdated {
+                        let _ = self.registry.event_tx().send(AgentEvent::ModelUpdated {
                             model: m.clone(),
                             reasoning_effort: params.reasoning_effort.clone(),
                         });
@@ -615,14 +685,13 @@ end try"#;
                 if params.permission_mode.is_some() && params.permission_mode != Some(chat.permission_mode) {
                     let _ = self.repo.update_chat_permission_mode(&chat.id, resolved_perm_mode);
                     chat.permission_mode = resolved_perm_mode;
-                    let _ = self.adapter.event_tx().send(AgentEvent::ChatPermissionUpdated {
+                    let _ = self.registry.event_tx().send(AgentEvent::ChatPermissionUpdated {
                         chat_id: chat.id.clone(),
                         permission_mode: resolved_perm_mode,
                     });
                 }
 
-                let turn_id = self
-                    .adapter
+                let turn_id = adapter
                     .submit_turn(
                         &chat.id,
                         &thread_id,
@@ -631,7 +700,7 @@ end try"#;
                         params.model.as_deref(),
                         params.reasoning_effort.as_deref(),
                         Some(resolved_perm_mode),
-                        if cwd.is_empty() { None } else { Some(&cwd) },
+                        Some(&cwd),
                     )
                     .await?;
 
@@ -651,7 +720,7 @@ end try"#;
                     };
                     if !new_title.is_empty() {
                         let _ = self.repo.update_chat_title(&chat.id, &new_title);
-                        let _ = self.adapter.event_tx().send(AgentEvent::ChatTitleUpdated {
+                        let _ = self.registry.event_tx().send(AgentEvent::ChatTitleUpdated {
                             chat_id: chat.id.clone(),
                             title: new_title,
                         });
@@ -693,12 +762,12 @@ end try"#;
                     streaming: false,
                 };
                 let _ = self.repo.record_message(&user_msg);
-                let _ = self.adapter.event_tx().send(AgentEvent::MessageCreated {
+                let _ = self.registry.event_tx().send(AgentEvent::MessageCreated {
                     message: user_msg.clone(),
                 });
 
-                let steered_turn_id = self
-                    .adapter
+                let adapter = self.registry.resolve(Some(&chat.provider_id))?;
+                let steered_turn_id = adapter
                     .steer_turn(&thread_id, &params.turn_id, &params.content)
                     .await?;
                 Ok(serde_json::to_value(TurnSteerResult {
@@ -721,24 +790,25 @@ end try"#;
                     .get_chat(chat_id)?
                     .ok_or_else(|| anyhow::anyhow!("Chat not found"))?;
                 let thread_id = chat.external_thread_id.unwrap_or_default();
+                let adapter = self.registry.resolve(Some(&chat.provider_id))?;
 
                 if turn_id.is_empty() {
-                    if let Some(t_id) = self.adapter.get_active_turn(chat_id).await {
+                    if let Some(t_id) = adapter.get_active_turn(chat_id).await {
                         turn_id = t_id;
                     }
                 }
 
                 if !thread_id.is_empty() && !turn_id.is_empty() {
-                    let _ = self.adapter.interrupt_turn(&thread_id, &turn_id).await;
+                    let _ = adapter.interrupt_turn(&thread_id, &turn_id).await;
                 }
 
-                self.adapter.clear_active_turn(chat_id).await;
+                adapter.clear_active_turn(chat_id).await;
 
                 let _ = self
                     .repo
                     .update_chat_status(chat_id, ChatStatus::Idle, None);
 
-                let _ = self.adapter.event_tx().send(AgentEvent::TurnCompleted {
+                let _ = self.registry.event_tx().send(AgentEvent::TurnCompleted {
                     chat_id: chat_id.to_string(),
                     message_id: String::new(),
                     turn_id,
@@ -767,7 +837,7 @@ end try"#;
                     params.permission_mode,
                 )?;
                 let items = self.repo.list_queued_messages(&params.chat_id)?;
-                let _ = self.adapter.event_tx().send(AgentEvent::QueueUpdated {
+                let _ = self.registry.event_tx().send(AgentEvent::QueueUpdated {
                     chat_id: params.chat_id,
                     items,
                 });
@@ -778,7 +848,7 @@ end try"#;
                 let params: QueueRemoveParams = serde_json::from_value(p)?;
                 let success = self.repo.remove_queued_message(&params.queue_id)?;
                 let items = self.repo.list_queued_messages(&params.chat_id)?;
-                let _ = self.adapter.event_tx().send(AgentEvent::QueueUpdated {
+                let _ = self.registry.event_tx().send(AgentEvent::QueueUpdated {
                     chat_id: params.chat_id,
                     items,
                 });
@@ -789,7 +859,7 @@ end try"#;
                 let params: QueueUpdateParams = serde_json::from_value(p)?;
                 let success = self.repo.update_queued_message(&params.queue_id, &params.content)?;
                 let items = self.repo.list_queued_messages(&params.chat_id)?;
-                let _ = self.adapter.event_tx().send(AgentEvent::QueueUpdated {
+                let _ = self.registry.event_tx().send(AgentEvent::QueueUpdated {
                     chat_id: params.chat_id,
                     items,
                 });
@@ -802,7 +872,7 @@ end try"#;
                     .ok_or_else(|| anyhow::anyhow!("Queued message not found"))?;
                 self.repo.remove_queued_message(&params.queue_id)?;
                 let items = self.repo.list_queued_messages(&params.chat_id)?;
-                let _ = self.adapter.event_tx().send(AgentEvent::QueueUpdated {
+                let _ = self.registry.event_tx().send(AgentEvent::QueueUpdated {
                     chat_id: params.chat_id.clone(),
                     items,
                 });
@@ -812,7 +882,8 @@ end try"#;
                     None => anyhow::bail!("Chat not found"),
                 };
                 let thread_id = chat.external_thread_id.unwrap_or_default();
-                let active_turn = self.adapter.get_active_turn(&params.chat_id).await;
+                let adapter = self.registry.resolve(Some(&chat.provider_id))?;
+                let active_turn = adapter.get_active_turn(&params.chat_id).await;
 
                 if let Some(turn_id) = active_turn {
                     let message_id = nanoid::nanoid!(16);
@@ -833,12 +904,11 @@ end try"#;
                         streaming: false,
                     };
                     let _ = self.repo.record_message(&user_msg);
-                    let _ = self.adapter.event_tx().send(AgentEvent::MessageCreated {
+                    let _ = self.registry.event_tx().send(AgentEvent::MessageCreated {
                         message: user_msg.clone(),
                     });
 
-                    let steered_turn_id = self
-                        .adapter
+                    let steered_turn_id = adapter
                         .steer_turn(&thread_id, &turn_id, &item.content)
                         .await?;
                     Ok(serde_json::json!({
@@ -852,7 +922,7 @@ end try"#;
             }
 
             "approval.list" => {
-                let approvals = self.adapter.get_all_pending_approvals().await;
+                let approvals = self.registry.get_all_pending_approvals().await;
                 Ok(serde_json::to_value(ApprovalListResult { approvals })?)
             }
 
@@ -862,7 +932,7 @@ end try"#;
                     .ok_or_else(|| anyhow::anyhow!("approvalId required"))?;
                 let decision = p["decision"].as_str().unwrap_or("accept");
                 // Notify adapter of approval decision
-                let _ = self.adapter.respond_approval(approval_id, decision).await;
+                let _ = self.registry.respond_approval(approval_id, decision).await;
                 Ok(
                     serde_json::json!({ "status": "ok", "approvalId": approval_id, "decision": decision }),
                 )
@@ -939,11 +1009,28 @@ end try"#;
             }
 
             "model.list" => {
-                let models = self.adapter.list_models().await?;
-                let current_model = self.repo.get_setting("current_model")?.or_else(|| {
-                    models.iter().find(|m| m.is_default).map(|m| m.model.clone())
-                });
-                let current_reasoning_effort = self.repo.get_setting("current_reasoning_effort")?;
+                let provider_id = p.get("providerId").and_then(|v| v.as_str());
+                let adapter = self.registry.resolve(provider_id)?;
+                let models = adapter.list_models().await?;
+                let provider_key = adapter.id();
+
+                let saved_model = self.repo.get_setting(&format!("{}_current_model", provider_key))?
+                    .or_else(|| self.repo.get_setting("current_model").ok().flatten());
+                let current_model = saved_model
+                    .filter(|sm| models.iter().any(|m| &m.model == sm || &m.id == sm))
+                    .or_else(|| models.iter().find(|m| m.is_default).map(|m| m.model.clone()))
+                    .or_else(|| models.first().map(|m| m.model.clone()));
+
+                let saved_effort = self.repo.get_setting(&format!("{}_current_reasoning_effort", provider_key))?
+                    .or_else(|| self.repo.get_setting("current_reasoning_effort").ok().flatten());
+                let current_reasoning_effort = saved_effort
+                    .or_else(|| {
+                        current_model.as_ref().and_then(|cm| {
+                            models.iter().find(|m| &m.model == cm || &m.id == cm)
+                                .and_then(|m| m.default_reasoning_effort.clone())
+                        })
+                    });
+
                 Ok(serde_json::to_value(ModelListResult {
                     models,
                     current_model,
@@ -961,13 +1048,21 @@ end try"#;
             }
 
             "model.set" => {
+                let provider_id = p.get("providerId").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let params: ModelSetParams = serde_json::from_value(p)?;
+                if let Ok(adapter) = self.registry.resolve(provider_id.as_deref()) {
+                    let provider_key = adapter.id();
+                    self.repo.set_setting(&format!("{}_current_model", provider_key), &params.model)?;
+                    if let Some(effort) = &params.reasoning_effort {
+                        self.repo.set_setting(&format!("{}_current_reasoning_effort", provider_key), effort)?;
+                    }
+                }
                 self.repo.set_setting("current_model", &params.model)?;
                 if let Some(effort) = &params.reasoning_effort {
                     self.repo.set_setting("current_reasoning_effort", effort)?;
                 }
                 let effort = self.repo.get_setting("current_reasoning_effort")?;
-                let _ = self.adapter.event_tx().send(AgentEvent::ModelUpdated {
+                let _ = self.registry.event_tx().send(AgentEvent::ModelUpdated {
                     model: params.model.clone(),
                     reasoning_effort: effort.clone(),
                 });
@@ -979,19 +1074,7 @@ end try"#;
             }
 
             "provider.list" => {
-                let providers = vec![Provider {
-                    id: "codex".to_string(),
-                    name: "OpenAI Codex".to_string(),
-                    description: "Local Codex CLI via app-server --stdio".to_string(),
-                    is_configured: true,
-                    capabilities: AdapterCapabilities {
-                        supports_reasoning_stream: true,
-                        supports_file_diffs: true,
-                        supports_steering: true,
-                        supports_interrupt: true,
-                        supports_session_resumption: true,
-                    },
-                }];
+                let providers = self.registry.list_providers();
                 Ok(serde_json::to_value(ProviderListResult { providers })?)
             }
 
@@ -1003,11 +1086,14 @@ end try"#;
                     .map(|s| s.trim().to_string())
                     .unwrap_or_else(|| "Canywhere Host".to_string());
                 let os = format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH);
-                let active_turns = self.adapter.get_active_turns_count().await;
+                let active_turns = self.registry.get_active_turns_count().await;
+                let default_adapter = self.registry.default_adapter().ok();
+                let agent_ver = default_adapter.as_ref().map(|a| format!("{} CLI", a.name()));
                 Ok(serde_json::to_value(HostInfoResult {
                     host_name,
                     os,
-                    codex_version: Some("Codex CLI".to_string()),
+                    agent_version: agent_ver.clone(),
+                    codex_version: agent_ver,
                     active_turns_count: active_turns as u32,
                     uptime_seconds: 0,
                 })?)

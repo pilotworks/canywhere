@@ -114,7 +114,7 @@ const MarkdownLink: React.FC<{
           fileName={fileLinkInfo.fileName}
           className="w-3.5 h-3.5 inline-block mr-1 align-[-0.18em] shrink-0 pointer-events-none"
         />
-        <span className="underline underline-offset-2 decoration-[var(--border)] group-hover:decoration-transparent">
+        <span>
           {children}
         </span>
         {fileLinkInfo.lineRange && !hasLineNumber && (
@@ -168,6 +168,7 @@ export const MarkdownContent: React.FC<MarkdownContentProps> = ({ content, class
           h1: ({ children }) => <h1 className="text-base font-semibold mt-3 mb-1 text-[var(--foreground)]">{children}</h1>,
           h2: ({ children }) => <h2 className="text-sm font-semibold mt-2.5 mb-1 text-[var(--foreground)]">{children}</h2>,
           h3: ({ children }) => <h3 className="text-xs font-semibold mt-2 mb-1 text-[var(--foreground)]">{children}</h3>,
+          strong: ({ children }) => <strong className="font-medium text-inherit">{children}</strong>,
           blockquote: ({ children }) => (
             <blockquote className="border-l-2 border-[var(--border)] pl-3 italic text-[var(--muted-foreground)] my-1.5">
               {children}

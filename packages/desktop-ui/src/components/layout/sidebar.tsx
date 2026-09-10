@@ -27,6 +27,7 @@ import { PairingModal } from "../pairing/pairing-modal.js";
 import { ThemeToggle } from "../ui/theme-toggle.js";
 import { Button } from "../ui/button.js";
 import { Input } from "../ui/input.js";
+import { ProviderLogo } from "../ui/provider-logo.js";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,8 +65,12 @@ const SidebarChatItem: React.FC<SidebarChatItemProps> = ({ chat, isActive }) => 
           : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60 hover:text-[var(--foreground)]"
       }`}
     >
-      <div className="flex items-center gap-1.5 truncate min-w-0 flex-1 pr-1.5">
-        <MessageSquare className="w-3 h-3 text-[var(--muted-foreground)] shrink-0 opacity-70" />
+      <div className="flex items-center gap-2 truncate min-w-0 flex-1 pr-1.5">
+        <ProviderLogo
+          providerId={chat.providerId}
+          size="sm"
+          className="shrink-0 transition-transform group-hover:scale-110"
+        />
         <span className="truncate" title={chat.title || "New Chat"}>
           {chat.title || "New Chat"}
         </span>
@@ -425,7 +430,7 @@ export const Sidebar: React.FC = () => {
             </span>
           </div>
 
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-1">
             <ThemeToggle />
             <Button
               variant="ghost"

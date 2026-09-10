@@ -8,6 +8,7 @@ pub mod server;
 
 use std::sync::Arc;
 use tracing::{info, warn};
+use crate::adapters::CliAdapter;
 
 pub async fn start_daemon(port: u16) -> anyhow::Result<()> {
     // Initialize standard logging subscriber with EnvFilter (default to info level)
@@ -36,13 +37,13 @@ pub async fn start_daemon(port: u16) -> anyhow::Result<()> {
         pairing.host_public_key()
     );
 
-    let codex_bin = resolve_codex_binary();
+    let (event_tx, _event_rx) = tokio::sync::broadcast::channel(2048);
+    let mut registry = adapters::ProviderRegistry::new(event_tx.clone());
+
+    let codex_bin = adapters::CodexAdapter::resolve_binary();
     info!("🤖 [CanywhereDaemon] Probing Codex CLI at: {}", codex_bin);
-
-    let (adapter, _event_rx) = adapters::CodexAdapter::new(&codex_bin);
-    let adapter = Arc::new(adapter);
-
-    if let Err(e) = adapter.initialize().await {
+    let codex_adapter = Arc::new(adapters::CodexAdapter::with_event_tx(&codex_bin, event_tx.clone()));
+    if let Err(e) = codex_adapter.initialize().await {
         warn!(
             "⚠️  [CanywhereDaemon] Codex initialization warning (is 'codex' installed?): {}",
             e
@@ -50,42 +51,18 @@ pub async fn start_daemon(port: u16) -> anyhow::Result<()> {
     } else {
         info!("✅ [CanywhereDaemon] Codex app-server adapter connected over stdio");
     }
+    registry.register(codex_adapter);
 
-    let event_tx = adapter.event_tx();
-    server::run_server(port, repo, adapter, pairing, event_tx).await
-}
-
-fn resolve_codex_binary() -> String {
-    if let Ok(bin) = std::env::var("CODEX_BIN") {
-        if !bin.trim().is_empty() {
-            return bin;
-        }
+    let agy_bin = adapters::AgyAdapter::resolve_binary();
+    info!("🤖 [CanywhereDaemon] Probing Antigravity (agy) CLI at: {}", agy_bin);
+    let agy_adapter = Arc::new(adapters::AgyAdapter::new(&agy_bin, event_tx.clone()));
+    if agy_adapter.is_configured() {
+        info!("✅ [CanywhereDaemon] Antigravity CLI adapter configured");
+    } else {
+        info!("ℹ️  [CanywhereDaemon] Antigravity CLI not detected (optional)");
     }
+    registry.register(agy_adapter);
 
-    // Try `which codex`
-    if let Ok(output) = std::process::Command::new("which").arg("codex").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !path.is_empty() {
-                return path;
-            }
-        }
-    }
-
-    // Check common user installation directories
-    if let Ok(home) = std::env::var("HOME") {
-        let candidates = [
-            format!("{}/.local/bin/codex", home),
-            format!("{}/.cargo/bin/codex", home),
-            "/opt/homebrew/bin/codex".to_string(),
-            "/usr/local/bin/codex".to_string(),
-        ];
-        for cand in candidates {
-            if std::path::Path::new(&cand).exists() {
-                return cand;
-            }
-        }
-    }
-
-    "codex".to_string()
+    let registry = Arc::new(registry);
+    server::run_server(port, repo, registry, pairing, event_tx).await
 }

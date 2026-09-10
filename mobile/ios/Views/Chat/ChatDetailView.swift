@@ -199,9 +199,27 @@ struct ChatDetailView: View {
                     effort: $viewModel.selectedEffort,
                     permissionMode: $viewModel.permissionMode,
                     models: AppSessionState.shared.models,
+                    commands: {
+                        let pId = viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId
+                        return AppSessionState.shared.providers.first(where: { $0.id == pId })?.commands ?? nil
+                    }(),
+                    actions: {
+                        let pId = viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId
+                        return AppSessionState.shared.providers.first(where: { $0.id == pId })?.actions ?? nil
+                    }(),
                     isRunning: viewModel.isRunning,
                     isSending: viewModel.isSending,
                     hasWorkspace: viewModel.chat?.workspaceID != nil,
+                    providerName: {
+                        let pId = viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId
+                        let p = AppSessionState.shared.providers.first(where: { $0.id == pId })
+                        return p?.name ?? (pId == "agy" ? "Antigravity" : "Codex")
+                    }(),
+                    supportsApprovals: {
+                        let pId = viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId
+                        let p = AppSessionState.shared.providers.first(where: { $0.id == pId })
+                        return p?.capabilities.supportsApprovals ?? (pId != "agy")
+                    }(),
                     onSend: {
                         let text = inputText
                         inputText = ""
@@ -210,6 +228,20 @@ struct ChatDetailView: View {
                         if viewModel.isRunning {
                             viewModel.enqueuePrompt(content: text)
                         } else {
+                            // Check if text is a slash command
+                            let words = text.split(separator: " ")
+                            if let first = words.first, first.hasPrefix("/") {
+                                let cmd = String(first)
+                                let pId = viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId
+                                let providerCmds = AppSessionState.shared.providers.first(where: { $0.id == pId })?.commands ?? []
+                                if providerCmds.contains(where: { $0.name == cmd }) {
+                                    let args = words.count > 1 ? words.dropFirst().joined(separator: " ") : nil
+                                    Task {
+                                        await viewModel.executeCommand(command: cmd, args: args)
+                                    }
+                                    return
+                                }
+                            }
                             Task {
                                 await viewModel.submitTurn(content: text)
                             }
@@ -228,14 +260,19 @@ struct ChatDetailView: View {
                     onSearchFiles: { query in
                         await viewModel.searchWorkspaceFiles(query: query)
                     },
+                    onExecuteCommand: { cmd, args in
+                        Task {
+                            await viewModel.executeCommand(command: cmd, args: args)
+                        }
+                    },
                     onReview: {
                         Task {
-                            await viewModel.reviewChat()
+                            await viewModel.executeCommand(command: "/review")
                         }
                     },
                     onCompact: {
                         Task {
-                            await viewModel.compactChat()
+                            await viewModel.executeCommand(command: "/compact")
                         }
                     },
                     onReset: {
@@ -332,55 +369,125 @@ struct ChatDetailView: View {
                         .clipShape(Capsule())
                     }
 
-                    Menu {
-                        Button {
-                            Haptics.shared.selection()
-                            Task {
-                                await viewModel.setPermissionMode(.onRequest)
-                            }
-                        } label: {
-                            HStack {
-                                Label("Ask for Approval", systemImage: "shield.checkered")
-                                if viewModel.permissionMode == .onRequest {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
+                    let currentProviderForTopBar = AppSessionState.shared.providers.first(where: { $0.id == (viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId) })
+                    let supportsApprovalsTopBar = currentProviderForTopBar?.capabilities.supportsApprovals ?? ((viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId) != "agy")
 
-                        Button {
-                            Haptics.shared.selection()
-                            Task {
-                                await viewModel.setPermissionMode(.readOnly)
-                            }
-                        } label: {
-                            HStack {
-                                Label("Plan Only (Read-Only)", systemImage: "eye")
-                                if viewModel.permissionMode == .readOnly {
-                                    Image(systemName: "checkmark")
+                    if supportsApprovalsTopBar {
+                        Menu {
+                            Button {
+                                Haptics.shared.selection()
+                                Task {
+                                    await viewModel.setPermissionMode(.onRequest)
+                                }
+                            } label: {
+                                HStack {
+                                    Label("Ask for Approval", systemImage: "shield.checkered")
+                                    if viewModel.permissionMode == .onRequest {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
-                        }
 
-                        Button {
-                            Haptics.shared.selection()
-                            Task {
-                                await viewModel.setPermissionMode(.auto)
-                            }
-                        } label: {
-                            HStack {
-                                Label("Full Auto (YOLO)", systemImage: "flame.fill")
-                                if viewModel.permissionMode == .auto {
-                                    Image(systemName: "checkmark")
+                            Button {
+                                Haptics.shared.selection()
+                                Task {
+                                    await viewModel.setPermissionMode(.readOnly)
+                                }
+                            } label: {
+                                HStack {
+                                    Label("Plan Only (Read-Only)", systemImage: "eye")
+                                    if viewModel.permissionMode == .readOnly {
+                                        Image(systemName: "checkmark")
+                                    }
                                 }
                             }
+
+                            Button {
+                                Haptics.shared.selection()
+                                Task {
+                                    await viewModel.setPermissionMode(.auto)
+                                }
+                            } label: {
+                                HStack {
+                                    Label("Full Auto (YOLO)", systemImage: "flame.fill")
+                                    if viewModel.permissionMode == .auto {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: permissionIconName(viewModel.permissionMode))
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(permissionColor(viewModel.permissionMode))
+                                .frame(width: 28, height: 28)
+                                .background(permissionColor(viewModel.permissionMode).opacity(0.12))
+                                .clipShape(Circle())
                         }
-                    } label: {
-                        Image(systemName: permissionIconName(viewModel.permissionMode))
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(permissionColor(viewModel.permissionMode))
-                            .frame(width: 28, height: 28)
-                            .background(permissionColor(viewModel.permissionMode).opacity(0.12))
-                            .clipShape(Circle())
+                    } else {
+                        let currentEffectiveMode: PermissionMode = (viewModel.permissionMode == .readOnly) ? .readOnly : .auto
+                        Menu {
+                            Button {
+                                Haptics.shared.selection()
+                                Task {
+                                    await viewModel.setPermissionMode(.auto)
+                                }
+                            } label: {
+                                HStack {
+                                    Label("Full Auto (YOLO)", systemImage: "flame.fill")
+                                    if currentEffectiveMode == .auto {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+
+                            Button {
+                                Haptics.shared.selection()
+                                Task {
+                                    await viewModel.setPermissionMode(.readOnly)
+                                }
+                            } label: {
+                                HStack {
+                                    Label("Plan Only", systemImage: "eye")
+                                    if currentEffectiveMode == .readOnly {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        } label: {
+                            Image(systemName: currentEffectiveMode == .readOnly ? "eye" : "flame.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(currentEffectiveMode == .readOnly ? Color.purple : Color.orange)
+                                .frame(width: 28, height: 28)
+                                .background((currentEffectiveMode == .readOnly ? Color.purple : Color.orange).opacity(0.12))
+                                .clipShape(Circle())
+                        }
+                    }
+
+                    // Dynamic Provider Actions Menu
+                    let pId = viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId
+                    let providerActions = AppSessionState.shared.providers.first(where: { $0.id == pId })?.actions ?? []
+                    let toolbarActions = providerActions.filter { $0.placement == "toolbar" }
+                    if !toolbarActions.isEmpty {
+                        Menu {
+                            ForEach(toolbarActions, id: \.id) { act in
+                                Button {
+                                    Haptics.shared.selection()
+                                    Task {
+                                        await viewModel.executeCommand(command: act.id)
+                                    }
+                                } label: {
+                                    Label(act.label, systemImage: SlashCommandItem.iconForName(act.icon))
+                                }
+                                .disabled(viewModel.isRunning)
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .frame(width: 28, height: 28)
+                                .background(Color(uiColor: .secondarySystemGroupedBackground))
+                                .clipShape(Circle())
+                        }
                     }
                 }
             }
@@ -388,6 +495,9 @@ struct ChatDetailView: View {
         .task {
             AppSessionState.shared.activeChatViewModel = viewModel
             await viewModel.loadChat()
+            if let pId = viewModel.chat?.providerID {
+                await AppSessionState.shared.loadModels(for: pId)
+            }
         }
         .onDisappear {
             if AppSessionState.shared.activeChatViewModel === viewModel {

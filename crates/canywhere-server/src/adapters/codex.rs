@@ -10,80 +10,8 @@ use tracing::info;
 use canywhere_protocol::models::*;
 use canywhere_protocol::rpc::methods::*;
 
-#[derive(Debug, Clone)]
-pub enum AgentEvent {
-    MessageCreated {
-        message: Message,
-    },
-    TokenDelta {
-        chat_id: String,
-        message_id: String,
-        delta: String,
-    },
-    ReasoningDelta {
-        chat_id: String,
-        message_id: String,
-        delta: String,
-    },
-    BlockStarted {
-        chat_id: String,
-        message_id: String,
-        block_id: String,
-        block: MessageBlock,
-    },
-    BlockCompleted {
-        chat_id: String,
-        message_id: String,
-        block_id: String,
-        block: Option<MessageBlock>,
-    },
-    ApprovalRequested {
-        chat_id: String,
-        request: ApprovalRequest,
-    },
-    ApprovalResolved {
-        approval_id: String,
-        chat_id: Option<String>,
-        decision: String,
-    },
-    TurnCompleted {
-        chat_id: String,
-        message_id: String,
-        turn_id: String,
-        status: ChatStatus,
-        blocks: Vec<MessageBlock>,
-        text_content: Option<String>,
-        reasoning_content: Option<String>,
-    },
-    ChatTitleUpdated {
-        chat_id: String,
-        title: String,
-    },
-    ChatPermissionUpdated {
-        chat_id: String,
-        permission_mode: canywhere_protocol::models::PermissionMode,
-    },
-    ChatDeleted {
-        chat_id: String,
-    },
-    ChatCreated {
-        chat: canywhere_protocol::models::Chat,
-    },
-    ModelUpdated {
-        model: String,
-        reasoning_effort: Option<String>,
-    },
-    WorkspaceUpdated {
-        workspace: canywhere_protocol::models::Workspace,
-    },
-    WorkspaceDeleted {
-        workspace_id: String,
-    },
-    QueueUpdated {
-        chat_id: String,
-        items: Vec<canywhere_protocol::models::QueuedMessage>,
-    },
-}
+use async_trait::async_trait;
+use super::{AgentEvent, CliAdapter};
 
 pub struct CodexAdapter {
     codex_bin: String,
@@ -102,7 +30,12 @@ pub struct CodexAdapter {
 impl CodexAdapter {
     pub fn new(codex_bin: &str) -> (Self, broadcast::Receiver<AgentEvent>) {
         let (event_tx, event_rx) = broadcast::channel(1024);
-        let adapter = Self {
+        let adapter = Self::with_event_tx(codex_bin, event_tx);
+        (adapter, event_rx)
+    }
+
+    pub fn with_event_tx(codex_bin: &str, event_tx: broadcast::Sender<AgentEvent>) -> Self {
+        Self {
             codex_bin: codex_bin.to_string(),
             stdin: Arc::new(Mutex::new(None)),
             next_rpc_id: Arc::new(Mutex::new(1)),
@@ -114,9 +47,39 @@ impl CodexAdapter {
             chat_accumulated_blocks: Arc::new(Mutex::new(HashMap::new())),
             chat_pending_approvals: Arc::new(Mutex::new(HashMap::new())),
             event_tx,
-        };
-        (adapter, event_rx)
+        }
     }
+
+    pub fn resolve_binary() -> String {
+        if let Ok(bin) = std::env::var("CODEX_BIN") {
+            if !bin.trim().is_empty() {
+                return bin;
+            }
+        }
+        if let Ok(output) = std::process::Command::new("which").arg("codex").output() {
+            if output.status.success() {
+                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !path.is_empty() {
+                    return path;
+                }
+            }
+        }
+        if let Some(home) = dirs::home_dir() {
+            let candidates = [
+                format!("{}/.local/bin/codex", home.display()),
+                format!("{}/.cargo/bin/codex", home.display()),
+                "/opt/homebrew/bin/codex".to_string(),
+                "/usr/local/bin/codex".to_string(),
+            ];
+            for cand in candidates {
+                if std::path::Path::new(&cand).exists() {
+                    return cand;
+                }
+            }
+        }
+        "codex".to_string()
+    }
+
 
     pub fn event_tx(&self) -> broadcast::Sender<AgentEvent> {
         self.event_tx.clone()
@@ -208,6 +171,13 @@ impl CodexAdapter {
         cwd: &str,
         sub_paths: Option<&[String]>,
     ) -> Result<String> {
+        if self.stdin.lock().await.is_none() {
+            let mock_id = format!("thread-mock-{}", nanoid::nanoid!(8));
+            let mut t2c = self.thread_to_chat.lock().await;
+            t2c.insert(mock_id.clone(), chat_id.to_string());
+            return Ok(mock_id);
+        }
+
         let res = self
             .send_request(
                 "thread/start",
@@ -242,6 +212,12 @@ impl CodexAdapter {
     }
 
     pub async fn resume_thread(&self, chat_id: &str, thread_id: &str) -> Result<String> {
+        if self.stdin.lock().await.is_none() {
+            let mut t2c = self.thread_to_chat.lock().await;
+            t2c.insert(thread_id.to_string(), chat_id.to_string());
+            return Ok(thread_id.to_string());
+        }
+
         let res = self
             .send_request(
                 "thread/resume",
@@ -458,6 +434,11 @@ impl CodexAdapter {
             blocks.insert(chat_id.to_string(), Vec::new());
         }
 
+        if self.stdin.lock().await.is_none() {
+            tracing::info!("[CodexAdapter] mock mode: start_review simulated for chat {}", chat_id);
+            return Ok(format!("turn-mock-review-{}", nanoid::nanoid!(6)));
+        }
+
         let res = self
             .send_request(
                 "review/start",
@@ -488,6 +469,10 @@ impl CodexAdapter {
     }
 
     pub async fn compact_thread(&self, thread_id: &str) -> Result<()> {
+        if self.stdin.lock().await.is_none() {
+            tracing::info!("[CodexAdapter] mock mode: compact_thread simulated for {}", thread_id);
+            return Ok(());
+        }
         let _ = self
             .send_request(
                 "thread/compact/start",
@@ -1685,3 +1670,207 @@ fn extract_reasoning_text(item: &serde_json::Value) -> String {
         String::new()
     }
 }
+
+#[async_trait]
+impl CliAdapter for CodexAdapter {
+    fn id(&self) -> &'static str {
+        "codex"
+    }
+
+    fn name(&self) -> &'static str {
+        "OpenAI Codex"
+    }
+
+    fn description(&self) -> &'static str {
+        "Local Codex CLI via app-server --stdio"
+    }
+
+    fn is_configured(&self) -> bool {
+        std::path::Path::new(&self.codex_bin).exists()
+            || std::process::Command::new(&self.codex_bin)
+                .arg("--help")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+    }
+
+    fn capabilities(&self) -> AdapterCapabilities {
+        AdapterCapabilities {
+            supports_reasoning_stream: true,
+            supports_file_diffs: true,
+            supports_steering: true,
+            supports_interrupt: true,
+            supports_session_resumption: true,
+            supports_approvals: true,
+            supported_modes: vec![],
+        }
+    }
+
+    async fn start_thread(
+        &self,
+        chat_id: &str,
+        cwd: &str,
+        sub_paths: Option<&[String]>,
+    ) -> Result<String> {
+        self.start_thread(chat_id, cwd, sub_paths).await
+    }
+
+    async fn resume_or_start_thread(
+        &self,
+        chat_id: &str,
+        thread_id: Option<&str>,
+        cwd: &str,
+        sub_paths: Option<&[String]>,
+    ) -> Result<String> {
+        self.resume_or_start_thread(chat_id, thread_id, cwd, sub_paths).await
+    }
+
+    async fn submit_turn(
+        &self,
+        chat_id: &str,
+        thread_id: &str,
+        message_id: &str,
+        prompt: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+        permission_mode: Option<PermissionMode>,
+        cwd: Option<&str>,
+    ) -> Result<String> {
+        self.submit_turn(
+            chat_id,
+            thread_id,
+            message_id,
+            prompt,
+            model,
+            effort,
+            permission_mode,
+            cwd,
+        )
+        .await
+    }
+
+    async fn interrupt_turn(&self, thread_id: &str, turn_id: &str) -> Result<()> {
+        self.interrupt_turn(thread_id, turn_id).await
+    }
+
+    async fn respond_approval(&self, approval_id: &str, decision: &str) -> Result<()> {
+        self.respond_approval(approval_id, decision).await
+    }
+
+    async fn list_models(&self) -> Result<Vec<ModelInfo>> {
+        self.list_models().await
+    }
+
+    async fn get_active_turn(&self, chat_id: &str) -> Option<String> {
+        self.get_active_turn(chat_id).await
+    }
+
+    async fn clear_active_turn(&self, chat_id: &str) {
+        self.clear_active_turn(chat_id).await
+    }
+
+    async fn get_active_turns_count(&self) -> u32 {
+        self.get_active_turns_count().await as u32
+    }
+
+    async fn get_active_streaming_message(&self, chat_id: &str) -> Option<Message> {
+        self.get_active_streaming_message(chat_id).await
+    }
+
+    async fn get_pending_approvals(&self, chat_id: &str) -> Vec<ApprovalRequest> {
+        self.get_pending_approvals(chat_id).await
+    }
+
+    async fn get_all_pending_approvals(&self) -> Vec<ApprovalRequest> {
+        self.get_all_pending_approvals().await
+    }
+
+    async fn steer_turn(&self, thread_id: &str, turn_id: &str, content: &str) -> Result<String> {
+        self.steer_turn(thread_id, turn_id, content).await
+    }
+
+    async fn start_review(&self, chat_id: &str, thread_id: &str) -> Result<String> {
+        self.start_review(chat_id, thread_id).await
+    }
+
+    async fn compact_thread(&self, thread_id: &str) -> Result<()> {
+        self.compact_thread(thread_id).await
+    }
+
+    async fn fuzzy_file_search(
+        &self,
+        roots: Vec<String>,
+        query: &str,
+        cancellation_token: Option<String>,
+    ) -> Result<Vec<canywhere_protocol::rpc::FuzzyFileMatchItem>> {
+        self.fuzzy_file_search(roots, query, cancellation_token).await
+    }
+
+    fn icon(&self) -> Option<String> {
+        Some("/icons/provider_codex.svg".to_string())
+    }
+
+    fn commands(&self) -> Vec<ProviderCommand> {
+        vec![
+            ProviderCommand {
+                name: "/review".to_string(),
+                description: "Run automated git review on uncommitted changes".to_string(),
+                category: "agent".to_string(),
+                icon: Some("git-compare".to_string()),
+                requires_args: false,
+            },
+            ProviderCommand {
+                name: "/compact".to_string(),
+                description: "Compact conversational context & summarize thread history".to_string(),
+                category: "agent".to_string(),
+                icon: Some("minimize".to_string()),
+                requires_args: false,
+            },
+        ]
+    }
+
+    fn actions(&self) -> Vec<ProviderAction> {
+        vec![
+            ProviderAction {
+                id: "review".to_string(),
+                label: "Review Git Changes".to_string(),
+                icon: Some("git-compare".to_string()),
+                placement: "toolbar".to_string(),
+            },
+            ProviderAction {
+                id: "compact".to_string(),
+                label: "Compact Context".to_string(),
+                icon: Some("minimize".to_string()),
+                placement: "toolbar".to_string(),
+            },
+        ]
+    }
+
+    async fn execute_command(
+        &self,
+        chat_id: &str,
+        thread_id: &str,
+        command: &str,
+        _args: Option<&str>,
+    ) -> Result<canywhere_protocol::rpc::ChatExecuteCommandResult> {
+        match command {
+            "/review" | "review" => {
+                let _ = self.start_review(chat_id, thread_id).await?;
+                Ok(canywhere_protocol::rpc::ChatExecuteCommandResult {
+                    success: true,
+                    message: Some("Code review started".to_string()),
+                })
+            }
+            "/compact" | "compact" => {
+                self.compact_thread(thread_id).await?;
+                Ok(canywhere_protocol::rpc::ChatExecuteCommandResult {
+                    success: true,
+                    message: Some("Conversation thread compacted".to_string()),
+                })
+            }
+            _ => anyhow::bail!("Command '{}' is not supported by Codex", command),
+        }
+    }
+}
+
+

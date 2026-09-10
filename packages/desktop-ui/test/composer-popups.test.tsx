@@ -104,7 +104,7 @@ describe("Composer Popups (@ and /)", () => {
     expect(html).toContain("/compact");
     expect(html).toContain("/reset");
     expect(html).toContain("/scratch");
-    expect(html).toContain("codex");
+    expect(html).toContain("agent");
     expect(html).toContain("chat");
   });
 

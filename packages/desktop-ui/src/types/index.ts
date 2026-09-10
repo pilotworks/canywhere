@@ -23,6 +23,8 @@ export * from "./generated/ModelInfo.js";
 export * from "./generated/PermissionMode.js";
 import { PermissionMode } from "./generated/PermissionMode.js";
 export * from "./generated/Provider.js";
+export * from "./generated/ProviderCommand.js";
+export * from "./generated/ProviderAction.js";
 export * from "./generated/ToolCallStatus.js";
 export * from "./generated/Workspace.js";
 export * from "./generated/FuzzyFileMatchItem.js";
