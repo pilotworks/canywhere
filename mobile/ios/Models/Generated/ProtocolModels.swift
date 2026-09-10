@@ -1,40 +1,44 @@
 // This file was generated from JSON Schema using quicktype, do not modify it directly.
 // To parse the JSON, add this file to your project and do:
 //
-//   let hostSettings = try HostSettings(json)
-//   let device = try Device(json)
-//   let provider = try Provider(json)
-//   let pairingResponse = try PairingResponse(json)
-//   let pairingQrPayload = try PairingQrPayload(json)
-//   let chat = try Chat(json)
-//   let workspace = try Workspace(json)
 //   let approvalRequest = try ApprovalRequest(json)
+//   let chat = try Chat(json)
+//   let device = try Device(json)
 //   let message = try Message(json)
+//   let pairingQrPayload = try PairingQrPayload(json)
+//   let pairingResponse = try PairingResponse(json)
+//   let provider = try Provider(json)
+//   let hostSettings = try HostSettings(json)
+//   let workspace = try Workspace(json)
 
 import Foundation
 
-// MARK: - HostSettings
-struct HostSettings: Codable, Sendable {
-    let autoApproveReadOnly: Bool
-    let defaultModel: String
-    let defaultPermissionMode: PermissionMode
-    let defaultProviderID: String
-    let defaultReasoningEffort: String?
-    let enableMdns: Bool
-    let serverPort: Int
+// MARK: - ApprovalRequest
+struct ApprovalRequest: Codable, Sendable {
+    let chatID, externalRequestID, id: String
+    let kind: ApprovalKind
+    let payload: ApprovalPayload
+    let requestedAt: Int
+    let resolvedAt: Int?
+    let resolvedByDeviceID, resolvedByDeviceName: String?
+    let status: ApprovalStatus
+    let turnID: String
 
     enum CodingKeys: String, CodingKey {
-        case autoApproveReadOnly, defaultModel, defaultPermissionMode
-        case defaultProviderID = "defaultProviderId"
-        case defaultReasoningEffort, enableMdns, serverPort
+        case chatID = "chatId"
+        case externalRequestID = "externalRequestId"
+        case id, kind, payload, requestedAt, resolvedAt
+        case resolvedByDeviceID = "resolvedByDeviceId"
+        case resolvedByDeviceName, status
+        case turnID = "turnId"
     }
 }
 
-// MARK: HostSettings convenience initializers and mutators
+// MARK: ApprovalRequest convenience initializers and mutators
 
-extension HostSettings {
+extension ApprovalRequest {
     init(data: Data) throws {
-        self = try newJSONDecoder().decode(HostSettings.self, from: data)
+        self = try newJSONDecoder().decode(ApprovalRequest.self, from: data)
     }
 
     init(_ json: String, using encoding: String.Encoding = .utf8) throws {
@@ -49,22 +53,30 @@ extension HostSettings {
     }
 
     func with(
-        autoApproveReadOnly: Bool? = nil,
-        defaultModel: String? = nil,
-        defaultPermissionMode: PermissionMode? = nil,
-        defaultProviderID: String? = nil,
-        defaultReasoningEffort: String?? = nil,
-        enableMdns: Bool? = nil,
-        serverPort: Int? = nil
-    ) -> HostSettings {
-        return HostSettings(
-            autoApproveReadOnly: autoApproveReadOnly ?? self.autoApproveReadOnly,
-            defaultModel: defaultModel ?? self.defaultModel,
-            defaultPermissionMode: defaultPermissionMode ?? self.defaultPermissionMode,
-            defaultProviderID: defaultProviderID ?? self.defaultProviderID,
-            defaultReasoningEffort: defaultReasoningEffort ?? self.defaultReasoningEffort,
-            enableMdns: enableMdns ?? self.enableMdns,
-            serverPort: serverPort ?? self.serverPort
+        chatID: String? = nil,
+        externalRequestID: String? = nil,
+        id: String? = nil,
+        kind: ApprovalKind? = nil,
+        payload: ApprovalPayload? = nil,
+        requestedAt: Int? = nil,
+        resolvedAt: Int?? = nil,
+        resolvedByDeviceID: String?? = nil,
+        resolvedByDeviceName: String?? = nil,
+        status: ApprovalStatus? = nil,
+        turnID: String? = nil
+    ) -> ApprovalRequest {
+        return ApprovalRequest(
+            chatID: chatID ?? self.chatID,
+            externalRequestID: externalRequestID ?? self.externalRequestID,
+            id: id ?? self.id,
+            kind: kind ?? self.kind,
+            payload: payload ?? self.payload,
+            requestedAt: requestedAt ?? self.requestedAt,
+            resolvedAt: resolvedAt ?? self.resolvedAt,
+            resolvedByDeviceID: resolvedByDeviceID ?? self.resolvedByDeviceID,
+            resolvedByDeviceName: resolvedByDeviceName ?? self.resolvedByDeviceName,
+            status: status ?? self.status,
+            turnID: turnID ?? self.turnID
         )
     }
 
@@ -77,10 +89,165 @@ extension HostSettings {
     }
 }
 
+enum ApprovalKind: String, Codable, Sendable {
+    case command = "command"
+    case fileChange = "file_change"
+    case userInput = "user_input"
+}
+
+// MARK: - ApprovalPayload
+struct ApprovalPayload: Codable, Sendable {
+    let command, cwd, diff: String?
+    let isHighRisk: Bool?
+    let path, prompt, reason: String?
+}
+
+// MARK: ApprovalPayload convenience initializers and mutators
+
+extension ApprovalPayload {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(ApprovalPayload.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        command: String?? = nil,
+        cwd: String?? = nil,
+        diff: String?? = nil,
+        isHighRisk: Bool?? = nil,
+        path: String?? = nil,
+        prompt: String?? = nil,
+        reason: String?? = nil
+    ) -> ApprovalPayload {
+        return ApprovalPayload(
+            command: command ?? self.command,
+            cwd: cwd ?? self.cwd,
+            diff: diff ?? self.diff,
+            isHighRisk: isHighRisk ?? self.isHighRisk,
+            path: path ?? self.path,
+            prompt: prompt ?? self.prompt,
+            reason: reason ?? self.reason
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+enum ApprovalStatus: String, Codable, Sendable {
+    case approved = "approved"
+    case canceled = "canceled"
+    case denied = "denied"
+    case pending = "pending"
+}
+
+// MARK: - Chat
+struct Chat: Codable, Sendable {
+    let createdAt: Int
+    let externalThreadID: String?
+    let id: String
+    let kind: ChatKind
+    let permissionMode: PermissionMode?
+    let providerID: String
+    let status: ChatStatus
+    let title: String
+    let updatedAt: Int
+    let workspaceID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case createdAt
+        case externalThreadID = "externalThreadId"
+        case id, kind, permissionMode
+        case providerID = "providerId"
+        case status, title, updatedAt
+        case workspaceID = "workspaceId"
+    }
+}
+
+// MARK: Chat convenience initializers and mutators
+
+extension Chat {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(Chat.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        createdAt: Int? = nil,
+        externalThreadID: String?? = nil,
+        id: String? = nil,
+        kind: ChatKind? = nil,
+        permissionMode: PermissionMode?? = nil,
+        providerID: String? = nil,
+        status: ChatStatus? = nil,
+        title: String? = nil,
+        updatedAt: Int? = nil,
+        workspaceID: String?? = nil
+    ) -> Chat {
+        return Chat(
+            createdAt: createdAt ?? self.createdAt,
+            externalThreadID: externalThreadID ?? self.externalThreadID,
+            id: id ?? self.id,
+            kind: kind ?? self.kind,
+            permissionMode: permissionMode ?? self.permissionMode,
+            providerID: providerID ?? self.providerID,
+            status: status ?? self.status,
+            title: title ?? self.title,
+            updatedAt: updatedAt ?? self.updatedAt,
+            workspaceID: workspaceID ?? self.workspaceID
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+enum ChatKind: String, Codable, Sendable {
+    case standalone = "standalone"
+    case workspace = "workspace"
+}
+
 enum PermissionMode: String, Codable, Sendable {
     case auto = "auto"
     case onRequest = "onRequest"
     case readOnly = "readOnly"
+}
+
+enum ChatStatus: String, Codable, Sendable {
+    case awaitingApproval = "awaitingApproval"
+    case error = "error"
+    case idle = "idle"
+    case running = "running"
 }
 
 // MARK: - Device
@@ -152,6 +319,282 @@ enum DeviceTransport: String, Codable, Sendable {
 enum DevicePlatform: String, Codable, Sendable {
     case desktop = "desktop"
     case ios = "ios"
+}
+
+// MARK: - Message
+struct Message: Codable, Sendable {
+    let blocks: [MessageBlock]
+    let chatID: String
+    let createdAt: Int
+    let id: String
+    let role: MessageRole
+    let streaming: Bool
+    let turnID: String?
+
+    enum CodingKeys: String, CodingKey {
+        case blocks
+        case chatID = "chatId"
+        case createdAt, id, role, streaming
+        case turnID = "turnId"
+    }
+}
+
+// MARK: Message convenience initializers and mutators
+
+extension Message {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(Message.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        blocks: [MessageBlock]? = nil,
+        chatID: String? = nil,
+        createdAt: Int? = nil,
+        id: String? = nil,
+        role: MessageRole? = nil,
+        streaming: Bool? = nil,
+        turnID: String?? = nil
+    ) -> Message {
+        return Message(
+            blocks: blocks ?? self.blocks,
+            chatID: chatID ?? self.chatID,
+            createdAt: createdAt ?? self.createdAt,
+            id: id ?? self.id,
+            role: role ?? self.role,
+            streaming: streaming ?? self.streaming,
+            turnID: turnID ?? self.turnID
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// MARK: - MessageBlock
+struct MessageBlock: Codable, Sendable {
+    let content: String?
+    let type: TypeEnum
+    let completed: Bool?
+    let args: JSONAny?
+    let callID, name: String?
+    let output: String?
+    let status: Status?
+    let patch, path, command, cwd: String?
+    let exitCode: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case content, type, completed, args
+        case callID = "callId"
+        case name, output, status, patch, path, command, cwd, exitCode
+    }
+}
+
+// MARK: MessageBlock convenience initializers and mutators
+
+extension MessageBlock {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(MessageBlock.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        content: String?? = nil,
+        type: TypeEnum? = nil,
+        completed: Bool?? = nil,
+        args: JSONAny?? = nil,
+        callID: String?? = nil,
+        name: String?? = nil,
+        output: String?? = nil,
+        status: Status?? = nil,
+        patch: String?? = nil,
+        path: String?? = nil,
+        command: String?? = nil,
+        cwd: String?? = nil,
+        exitCode: Int?? = nil
+    ) -> MessageBlock {
+        return MessageBlock(
+            content: content ?? self.content,
+            type: type ?? self.type,
+            completed: completed ?? self.completed,
+            args: args ?? self.args,
+            callID: callID ?? self.callID,
+            name: name ?? self.name,
+            output: output ?? self.output,
+            status: status ?? self.status,
+            patch: patch ?? self.patch,
+            path: path ?? self.path,
+            command: command ?? self.command,
+            cwd: cwd ?? self.cwd,
+            exitCode: exitCode ?? self.exitCode
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+enum Status: String, Codable, Sendable {
+    case applied = "applied"
+    case completed = "completed"
+    case failed = "failed"
+    case pendingApproval = "pendingApproval"
+    case proposed = "proposed"
+    case rejected = "rejected"
+    case running = "running"
+}
+
+enum TypeEnum: String, Codable, Sendable {
+    case commandExec = "command_exec"
+    case fileDiff = "file_diff"
+    case plan = "plan"
+    case reasoning = "reasoning"
+    case text = "text"
+    case toolCall = "tool_call"
+}
+
+enum MessageRole: String, Codable, Sendable {
+    case agent = "agent"
+    case system = "system"
+    case user = "user"
+}
+
+// MARK: - PairingQrPayload
+struct PairingQrPayload: Codable, Sendable {
+    let endpoints: [String]
+    let expiresAt: Int
+    let hostID, hostName, hostPublicKey, token: String
+
+    enum CodingKeys: String, CodingKey {
+        case endpoints, expiresAt
+        case hostID = "hostId"
+        case hostName, hostPublicKey, token
+    }
+}
+
+// MARK: PairingQrPayload convenience initializers and mutators
+
+extension PairingQrPayload {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(PairingQrPayload.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        endpoints: [String]? = nil,
+        expiresAt: Int? = nil,
+        hostID: String? = nil,
+        hostName: String? = nil,
+        hostPublicKey: String? = nil,
+        token: String? = nil
+    ) -> PairingQrPayload {
+        return PairingQrPayload(
+            endpoints: endpoints ?? self.endpoints,
+            expiresAt: expiresAt ?? self.expiresAt,
+            hostID: hostID ?? self.hostID,
+            hostName: hostName ?? self.hostName,
+            hostPublicKey: hostPublicKey ?? self.hostPublicKey,
+            token: token ?? self.token
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// MARK: - PairingResponse
+struct PairingResponse: Codable, Sendable {
+    let authToken, hostID, status: String
+
+    enum CodingKeys: String, CodingKey {
+        case authToken
+        case hostID = "hostId"
+        case status
+    }
+}
+
+// MARK: PairingResponse convenience initializers and mutators
+
+extension PairingResponse {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(PairingResponse.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        authToken: String? = nil,
+        hostID: String? = nil,
+        status: String? = nil
+    ) -> PairingResponse {
+        return PairingResponse(
+            authToken: authToken ?? self.authToken,
+            hostID: hostID ?? self.hostID,
+            status: status ?? self.status
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
 }
 
 // MARK: - Provider
@@ -368,22 +811,28 @@ extension ProviderCommand {
     }
 }
 
-// MARK: - PairingResponse
-struct PairingResponse: Codable, Sendable {
-    let authToken, hostID, status: String
+// MARK: - HostSettings
+struct HostSettings: Codable, Sendable {
+    let autoApproveReadOnly: Bool
+    let defaultModel: String
+    let defaultPermissionMode: PermissionMode
+    let defaultProviderID: String
+    let defaultReasoningEffort: String?
+    let enableMdns: Bool
+    let serverPort: Int
 
     enum CodingKeys: String, CodingKey {
-        case authToken
-        case hostID = "hostId"
-        case status
+        case autoApproveReadOnly, defaultModel, defaultPermissionMode
+        case defaultProviderID = "defaultProviderId"
+        case defaultReasoningEffort, enableMdns, serverPort
     }
 }
 
-// MARK: PairingResponse convenience initializers and mutators
+// MARK: HostSettings convenience initializers and mutators
 
-extension PairingResponse {
+extension HostSettings {
     init(data: Data) throws {
-        self = try newJSONDecoder().decode(PairingResponse.self, from: data)
+        self = try newJSONDecoder().decode(HostSettings.self, from: data)
     }
 
     init(_ json: String, using encoding: String.Encoding = .utf8) throws {
@@ -398,14 +847,22 @@ extension PairingResponse {
     }
 
     func with(
-        authToken: String? = nil,
-        hostID: String? = nil,
-        status: String? = nil
-    ) -> PairingResponse {
-        return PairingResponse(
-            authToken: authToken ?? self.authToken,
-            hostID: hostID ?? self.hostID,
-            status: status ?? self.status
+        autoApproveReadOnly: Bool? = nil,
+        defaultModel: String? = nil,
+        defaultPermissionMode: PermissionMode? = nil,
+        defaultProviderID: String? = nil,
+        defaultReasoningEffort: String?? = nil,
+        enableMdns: Bool? = nil,
+        serverPort: Int? = nil
+    ) -> HostSettings {
+        return HostSettings(
+            autoApproveReadOnly: autoApproveReadOnly ?? self.autoApproveReadOnly,
+            defaultModel: defaultModel ?? self.defaultModel,
+            defaultPermissionMode: defaultPermissionMode ?? self.defaultPermissionMode,
+            defaultProviderID: defaultProviderID ?? self.defaultProviderID,
+            defaultReasoningEffort: defaultReasoningEffort ?? self.defaultReasoningEffort,
+            enableMdns: enableMdns ?? self.enableMdns,
+            serverPort: serverPort ?? self.serverPort
         )
     }
 
@@ -416,152 +873,6 @@ extension PairingResponse {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
-}
-
-// MARK: - PairingQrPayload
-struct PairingQrPayload: Codable, Sendable {
-    let endpoints: [String]
-    let expiresAt: Int
-    let hostID, hostName, hostPublicKey, token: String
-
-    enum CodingKeys: String, CodingKey {
-        case endpoints, expiresAt
-        case hostID = "hostId"
-        case hostName, hostPublicKey, token
-    }
-}
-
-// MARK: PairingQrPayload convenience initializers and mutators
-
-extension PairingQrPayload {
-    init(data: Data) throws {
-        self = try newJSONDecoder().decode(PairingQrPayload.self, from: data)
-    }
-
-    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
-        guard let data = json.data(using: encoding) else {
-            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
-        }
-        try self.init(data: data)
-    }
-
-    init(fromURL url: URL) throws {
-        try self.init(data: try Data(contentsOf: url))
-    }
-
-    func with(
-        endpoints: [String]? = nil,
-        expiresAt: Int? = nil,
-        hostID: String? = nil,
-        hostName: String? = nil,
-        hostPublicKey: String? = nil,
-        token: String? = nil
-    ) -> PairingQrPayload {
-        return PairingQrPayload(
-            endpoints: endpoints ?? self.endpoints,
-            expiresAt: expiresAt ?? self.expiresAt,
-            hostID: hostID ?? self.hostID,
-            hostName: hostName ?? self.hostName,
-            hostPublicKey: hostPublicKey ?? self.hostPublicKey,
-            token: token ?? self.token
-        )
-    }
-
-    func jsonData() throws -> Data {
-        return try newJSONEncoder().encode(self)
-    }
-
-    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
-        return String(data: try self.jsonData(), encoding: encoding)
-    }
-}
-
-// MARK: - Chat
-struct Chat: Codable, Sendable {
-    let createdAt: Int
-    let externalThreadID: String?
-    let id: String
-    let kind: ChatKind
-    let permissionMode: PermissionMode?
-    let providerID: String
-    let status: ChatStatus
-    let title: String
-    let updatedAt: Int
-    let workspaceID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case createdAt
-        case externalThreadID = "externalThreadId"
-        case id, kind, permissionMode
-        case providerID = "providerId"
-        case status, title, updatedAt
-        case workspaceID = "workspaceId"
-    }
-}
-
-// MARK: Chat convenience initializers and mutators
-
-extension Chat {
-    init(data: Data) throws {
-        self = try newJSONDecoder().decode(Chat.self, from: data)
-    }
-
-    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
-        guard let data = json.data(using: encoding) else {
-            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
-        }
-        try self.init(data: data)
-    }
-
-    init(fromURL url: URL) throws {
-        try self.init(data: try Data(contentsOf: url))
-    }
-
-    func with(
-        createdAt: Int? = nil,
-        externalThreadID: String?? = nil,
-        id: String? = nil,
-        kind: ChatKind? = nil,
-        permissionMode: PermissionMode?? = nil,
-        providerID: String? = nil,
-        status: ChatStatus? = nil,
-        title: String? = nil,
-        updatedAt: Int? = nil,
-        workspaceID: String?? = nil
-    ) -> Chat {
-        return Chat(
-            createdAt: createdAt ?? self.createdAt,
-            externalThreadID: externalThreadID ?? self.externalThreadID,
-            id: id ?? self.id,
-            kind: kind ?? self.kind,
-            permissionMode: permissionMode ?? self.permissionMode,
-            providerID: providerID ?? self.providerID,
-            status: status ?? self.status,
-            title: title ?? self.title,
-            updatedAt: updatedAt ?? self.updatedAt,
-            workspaceID: workspaceID ?? self.workspaceID
-        )
-    }
-
-    func jsonData() throws -> Data {
-        return try newJSONEncoder().encode(self)
-    }
-
-    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
-        return String(data: try self.jsonData(), encoding: encoding)
-    }
-}
-
-enum ChatKind: String, Codable, Sendable {
-    case standalone = "standalone"
-    case workspace = "workspace"
-}
-
-enum ChatStatus: String, Codable, Sendable {
-    case awaitingApproval = "awaitingApproval"
-    case error = "error"
-    case idle = "idle"
-    case running = "running"
 }
 
 // MARK: - Workspace
@@ -624,317 +935,6 @@ extension Workspace {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
-}
-
-// MARK: - ApprovalRequest
-struct ApprovalRequest: Codable, Sendable {
-    let chatID, externalRequestID, id: String
-    let kind: ApprovalKind
-    let payload: ApprovalPayload
-    let requestedAt: Int
-    let resolvedAt: Int?
-    let resolvedByDeviceID, resolvedByDeviceName: String?
-    let status: ApprovalStatus
-    let turnID: String
-
-    enum CodingKeys: String, CodingKey {
-        case chatID = "chatId"
-        case externalRequestID = "externalRequestId"
-        case id, kind, payload, requestedAt, resolvedAt
-        case resolvedByDeviceID = "resolvedByDeviceId"
-        case resolvedByDeviceName, status
-        case turnID = "turnId"
-    }
-}
-
-// MARK: ApprovalRequest convenience initializers and mutators
-
-extension ApprovalRequest {
-    init(data: Data) throws {
-        self = try newJSONDecoder().decode(ApprovalRequest.self, from: data)
-    }
-
-    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
-        guard let data = json.data(using: encoding) else {
-            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
-        }
-        try self.init(data: data)
-    }
-
-    init(fromURL url: URL) throws {
-        try self.init(data: try Data(contentsOf: url))
-    }
-
-    func with(
-        chatID: String? = nil,
-        externalRequestID: String? = nil,
-        id: String? = nil,
-        kind: ApprovalKind? = nil,
-        payload: ApprovalPayload? = nil,
-        requestedAt: Int? = nil,
-        resolvedAt: Int?? = nil,
-        resolvedByDeviceID: String?? = nil,
-        resolvedByDeviceName: String?? = nil,
-        status: ApprovalStatus? = nil,
-        turnID: String? = nil
-    ) -> ApprovalRequest {
-        return ApprovalRequest(
-            chatID: chatID ?? self.chatID,
-            externalRequestID: externalRequestID ?? self.externalRequestID,
-            id: id ?? self.id,
-            kind: kind ?? self.kind,
-            payload: payload ?? self.payload,
-            requestedAt: requestedAt ?? self.requestedAt,
-            resolvedAt: resolvedAt ?? self.resolvedAt,
-            resolvedByDeviceID: resolvedByDeviceID ?? self.resolvedByDeviceID,
-            resolvedByDeviceName: resolvedByDeviceName ?? self.resolvedByDeviceName,
-            status: status ?? self.status,
-            turnID: turnID ?? self.turnID
-        )
-    }
-
-    func jsonData() throws -> Data {
-        return try newJSONEncoder().encode(self)
-    }
-
-    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
-        return String(data: try self.jsonData(), encoding: encoding)
-    }
-}
-
-enum ApprovalKind: String, Codable, Sendable {
-    case command = "command"
-    case fileChange = "file_change"
-    case userInput = "user_input"
-}
-
-// MARK: - ApprovalPayload
-struct ApprovalPayload: Codable, Sendable {
-    let command, cwd, diff: String?
-    let isHighRisk: Bool?
-    let path, prompt, reason: String?
-}
-
-// MARK: ApprovalPayload convenience initializers and mutators
-
-extension ApprovalPayload {
-    init(data: Data) throws {
-        self = try newJSONDecoder().decode(ApprovalPayload.self, from: data)
-    }
-
-    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
-        guard let data = json.data(using: encoding) else {
-            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
-        }
-        try self.init(data: data)
-    }
-
-    init(fromURL url: URL) throws {
-        try self.init(data: try Data(contentsOf: url))
-    }
-
-    func with(
-        command: String?? = nil,
-        cwd: String?? = nil,
-        diff: String?? = nil,
-        isHighRisk: Bool?? = nil,
-        path: String?? = nil,
-        prompt: String?? = nil,
-        reason: String?? = nil
-    ) -> ApprovalPayload {
-        return ApprovalPayload(
-            command: command ?? self.command,
-            cwd: cwd ?? self.cwd,
-            diff: diff ?? self.diff,
-            isHighRisk: isHighRisk ?? self.isHighRisk,
-            path: path ?? self.path,
-            prompt: prompt ?? self.prompt,
-            reason: reason ?? self.reason
-        )
-    }
-
-    func jsonData() throws -> Data {
-        return try newJSONEncoder().encode(self)
-    }
-
-    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
-        return String(data: try self.jsonData(), encoding: encoding)
-    }
-}
-
-enum ApprovalStatus: String, Codable, Sendable {
-    case approved = "approved"
-    case canceled = "canceled"
-    case denied = "denied"
-    case pending = "pending"
-}
-
-// MARK: - Message
-struct Message: Codable, Sendable {
-    let blocks: [MessageBlock]
-    let chatID: String
-    let createdAt: Int
-    let id: String
-    let role: MessageRole
-    let streaming: Bool
-    let turnID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case blocks
-        case chatID = "chatId"
-        case createdAt, id, role, streaming
-        case turnID = "turnId"
-    }
-}
-
-// MARK: Message convenience initializers and mutators
-
-extension Message {
-    init(data: Data) throws {
-        self = try newJSONDecoder().decode(Message.self, from: data)
-    }
-
-    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
-        guard let data = json.data(using: encoding) else {
-            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
-        }
-        try self.init(data: data)
-    }
-
-    init(fromURL url: URL) throws {
-        try self.init(data: try Data(contentsOf: url))
-    }
-
-    func with(
-        blocks: [MessageBlock]? = nil,
-        chatID: String? = nil,
-        createdAt: Int? = nil,
-        id: String? = nil,
-        role: MessageRole? = nil,
-        streaming: Bool? = nil,
-        turnID: String?? = nil
-    ) -> Message {
-        return Message(
-            blocks: blocks ?? self.blocks,
-            chatID: chatID ?? self.chatID,
-            createdAt: createdAt ?? self.createdAt,
-            id: id ?? self.id,
-            role: role ?? self.role,
-            streaming: streaming ?? self.streaming,
-            turnID: turnID ?? self.turnID
-        )
-    }
-
-    func jsonData() throws -> Data {
-        return try newJSONEncoder().encode(self)
-    }
-
-    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
-        return String(data: try self.jsonData(), encoding: encoding)
-    }
-}
-
-// MARK: - MessageBlock
-struct MessageBlock: Codable, Sendable {
-    let content: String?
-    let type: TypeEnum
-    let completed: Bool?
-    let args: JSONAny?
-    let callID, name: String?
-    let output: String?
-    let status: Status?
-    let patch, path, command, cwd: String?
-    let exitCode: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case content, type, completed, args
-        case callID = "callId"
-        case name, output, status, patch, path, command, cwd, exitCode
-    }
-}
-
-// MARK: MessageBlock convenience initializers and mutators
-
-extension MessageBlock {
-    init(data: Data) throws {
-        self = try newJSONDecoder().decode(MessageBlock.self, from: data)
-    }
-
-    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
-        guard let data = json.data(using: encoding) else {
-            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
-        }
-        try self.init(data: data)
-    }
-
-    init(fromURL url: URL) throws {
-        try self.init(data: try Data(contentsOf: url))
-    }
-
-    func with(
-        content: String?? = nil,
-        type: TypeEnum? = nil,
-        completed: Bool?? = nil,
-        args: JSONAny?? = nil,
-        callID: String?? = nil,
-        name: String?? = nil,
-        output: String?? = nil,
-        status: Status?? = nil,
-        patch: String?? = nil,
-        path: String?? = nil,
-        command: String?? = nil,
-        cwd: String?? = nil,
-        exitCode: Int?? = nil
-    ) -> MessageBlock {
-        return MessageBlock(
-            content: content ?? self.content,
-            type: type ?? self.type,
-            completed: completed ?? self.completed,
-            args: args ?? self.args,
-            callID: callID ?? self.callID,
-            name: name ?? self.name,
-            output: output ?? self.output,
-            status: status ?? self.status,
-            patch: patch ?? self.patch,
-            path: path ?? self.path,
-            command: command ?? self.command,
-            cwd: cwd ?? self.cwd,
-            exitCode: exitCode ?? self.exitCode
-        )
-    }
-
-    func jsonData() throws -> Data {
-        return try newJSONEncoder().encode(self)
-    }
-
-    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
-        return String(data: try self.jsonData(), encoding: encoding)
-    }
-}
-
-enum Status: String, Codable, Sendable {
-    case applied = "applied"
-    case completed = "completed"
-    case failed = "failed"
-    case pendingApproval = "pendingApproval"
-    case proposed = "proposed"
-    case rejected = "rejected"
-    case running = "running"
-}
-
-enum TypeEnum: String, Codable, Sendable {
-    case commandExec = "command_exec"
-    case fileDiff = "file_diff"
-    case plan = "plan"
-    case reasoning = "reasoning"
-    case text = "text"
-    case toolCall = "tool_call"
-}
-
-enum MessageRole: String, Codable, Sendable {
-    case agent = "agent"
-    case system = "system"
-    case user = "user"
 }
 
 // MARK: - Helper functions for creating encoders and decoders

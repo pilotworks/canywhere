@@ -15,7 +15,8 @@ async function main() {
 
   const schemaFiles = fs
     .readdirSync(schemasDir)
-    .filter((f) => f.endsWith(".schema.json"));
+    .filter((f) => f.endsWith(".schema.json"))
+    .sort();
 
   console.log(`Generating Swift models from ${schemaFiles.length} Rust JSON schemas...`);
 

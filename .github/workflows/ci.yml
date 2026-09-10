@@ -95,6 +95,9 @@ jobs:
       - name: Check Rust Formatting
         run: cargo fmt --all --check
 
+      - name: Ensure Frontend Dist Exists
+        run: mkdir -p packages/desktop-ui/dist
+
       - name: Cargo Check
         run: cargo check --workspace
 
