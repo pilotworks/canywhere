@@ -50,3 +50,8 @@ check: ## Typecheck Desktop UI and cargo check Rust workspace
 clean: ## Clean cargo target and UI dist artifacts
 	cargo clean
 	rm -rf packages/desktop-ui/dist packages/desktop-ui/node_modules
+
+# --- RELEASE ---
+release: ## Bump version, commit, and tag (e.g. make release VERSION=0.2.0)
+	@test -n "$(VERSION)" || (echo "Usage: make release VERSION=x.y.z" && exit 1)
+	bun run release $(VERSION)

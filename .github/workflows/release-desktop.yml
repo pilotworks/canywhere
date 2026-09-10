@@ -63,15 +63,28 @@ jobs:
           bun install --frozen-lockfile
           bun run build
 
+      - name: Extract Release Notes
+        id: release_notes
+        run: |
+          if [ -f .release-notes.md ]; then
+            echo "body<<EOF" >> $GITHUB_OUTPUT
+            cat .release-notes.md >> $GITHUB_OUTPUT
+            echo "" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "body=Automated release for Canywhere ${{ github.ref_name }}." >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and Publish Tauri App
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         with:
           projectPath: packages/desktop-app/src-tauri
           tagName: ${{ github.ref_name }}
           releaseName: "Canywhere ${{ github.ref_name }}"
-          releaseBody: "Automated release for Canywhere ${{ github.ref_name }}."
+          releaseBody: ${{ steps.release_notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
