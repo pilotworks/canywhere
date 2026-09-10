@@ -136,11 +136,11 @@ update_file "Root package.json version" "package.json" \
 
 # Root Cargo.toml
 update_file "Root Cargo.toml workspace version" "Cargo.toml" \
-  "sedi -E 's/(version = )\"[^\"]+\"/\1\"$VERSION\"/' Cargo.toml"
+  "sedi -E 's/^version = \"[^\"]+\"/version = \"$VERSION\"/' Cargo.toml"
 
 # Desktop App Cargo.toml
 update_file "Desktop Tauri Cargo.toml version" "packages/desktop-app/src-tauri/Cargo.toml" \
-  "sedi -E 's/(version = )\"[^\"]+\"/\1\"$VERSION\"/' packages/desktop-app/src-tauri/Cargo.toml"
+  "sedi -E 's/^version = \"[^\"]+\"/version = \"$VERSION\"/' packages/desktop-app/src-tauri/Cargo.toml"
 
 # Desktop App tauri.conf.json
 update_file "Tauri configuration version" "packages/desktop-app/src-tauri/tauri.conf.json" \
