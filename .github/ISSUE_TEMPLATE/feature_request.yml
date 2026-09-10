@@ -1,0 +1,41 @@
+name: ✨ Feature Request
+description: Suggest a new idea, CLI adapter, or capability for Canywhere
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature! Please describe your use case and how this improvement helps developers.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Target Component
+      description: Where would this feature belong?
+      options:
+        - CLI Adapters (New assistant or tool integration)
+        - Host Server & Protocol
+        - Desktop UI & Tauri Client
+        - iOS Client & Mobile Experience
+        - Security & Approval System
+        - Documentation & Tooling
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: Is your feature request related to a problem or limitation? Please describe clearly.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution or user experience you would like to see.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Describe any alternative solutions or workarounds you've considered.
