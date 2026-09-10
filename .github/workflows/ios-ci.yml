@@ -61,11 +61,11 @@ jobs:
         working-directory: mobile/ios
         run: xcodegen generate
 
-      - name: Build iOS Simulator Target
+      - name: Build iOS Target
         run: |
           xcodebuild \
             -project mobile/ios/Canywhere.xcodeproj \
             -scheme Canywhere \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             build
