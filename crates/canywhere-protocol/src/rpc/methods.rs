@@ -283,6 +283,30 @@ pub struct ApprovalRequestedNotification {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
+pub struct ApprovalListResult {
+    pub approvals: Vec<ApprovalRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalResolvedNotification {
+    pub approval_id: String,
+    pub chat_id: Option<String>,
+    pub decision: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct HostInfoResult {
+    pub host_name: String,
+    pub os: String,
+    pub codex_version: Option<String>,
+    pub active_turns_count: u32,
+    pub uptime_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
 pub struct TurnCompletedNotification {
     pub chat_id: String,
     pub turn_id: String,

@@ -16,6 +16,9 @@ targets:
           - project.yml
           - "*.xcodeproj"
           - "*.lock"
+          - "build"
+          - "build/**"
+          - "DerivedData"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.canywhere.mobile

@@ -134,6 +134,24 @@ struct QueueUpdatedPayload: Decodable, Sendable {
     let items: [QueuedMessage]
 }
 
+struct ApprovalListResult: Decodable, Sendable {
+    let approvals: [ApprovalRequest]
+}
+
+struct ApprovalResolvedPayload: Decodable, Sendable {
+    let approvalId: String
+    let chatId: String?
+    let decision: String
+}
+
+struct HostInfoResult: Decodable, Sendable {
+    let hostName: String
+    let os: String
+    let codexVersion: String?
+    let activeTurnsCount: Int
+    let uptimeSeconds: Int
+}
+
 // MARK: - RPC Data Decoding Helpers
 
 extension Data {

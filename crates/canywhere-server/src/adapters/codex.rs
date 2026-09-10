@@ -41,6 +41,11 @@ pub enum AgentEvent {
         chat_id: String,
         request: ApprovalRequest,
     },
+    ApprovalResolved {
+        approval_id: String,
+        chat_id: Option<String>,
+        decision: String,
+    },
     TurnCompleted {
         chat_id: String,
         message_id: String,
@@ -644,13 +649,24 @@ impl CodexAdapter {
             _ => "decline",
         };
 
+        let mut found_chat_id = None;
         // Remove from pending approvals across chats
         {
             let mut approvals = self.chat_pending_approvals.lock().await;
-            for list in approvals.values_mut() {
-                list.retain(|a| a.id != external_request_id && a.external_request_id != external_request_id);
+            for (c_id, list) in approvals.iter_mut() {
+                if let Some(pos) = list.iter().position(|a| a.id == external_request_id || a.external_request_id == external_request_id) {
+                    found_chat_id = Some(c_id.clone());
+                    list.remove(pos);
+                    break;
+                }
             }
         }
+
+        let _ = self.event_tx.send(AgentEvent::ApprovalResolved {
+            approval_id: external_request_id.to_string(),
+            chat_id: found_chat_id,
+            decision: codex_decision.to_string(),
+        });
 
         if let Ok(id) = external_request_id.parse::<i64>() {
             self.send_response(id, serde_json::json!({ "decision": codex_decision }))
@@ -669,6 +685,16 @@ impl CodexAdapter {
     pub async fn get_pending_approvals(&self, chat_id: &str) -> Vec<ApprovalRequest> {
         let approvals = self.chat_pending_approvals.lock().await;
         approvals.get(chat_id).cloned().unwrap_or_default()
+    }
+
+    pub async fn get_all_pending_approvals(&self) -> Vec<ApprovalRequest> {
+        let approvals = self.chat_pending_approvals.lock().await;
+        approvals.values().flatten().cloned().collect()
+    }
+
+    pub async fn get_active_turns_count(&self) -> usize {
+        let turns = self.chat_active_turn.lock().await;
+        turns.len()
     }
 
     pub async fn get_active_streaming_message(&self, chat_id: &str) -> Option<Message> {

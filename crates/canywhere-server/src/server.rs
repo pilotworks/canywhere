@@ -349,6 +349,20 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
+                AgentEvent::ApprovalResolved { approval_id, chat_id, decision } => {
+                    info!(
+                        "✅ [HostServer] Approval resolved: {} ({})",
+                        approval_id, decision
+                    );
+                    serde_json::json!({
+                        "method": "approval.resolved",
+                        "params": {
+                            "approvalId": approval_id,
+                            "chatId": chat_id,
+                            "decision": decision
+                        }
+                    })
+                }
                 AgentEvent::TurnCompleted {
                     chat_id,
                     turn_id,

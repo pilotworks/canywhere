@@ -851,6 +851,11 @@ end try"#;
                 }
             }
 
+            "approval.list" => {
+                let approvals = self.adapter.get_all_pending_approvals().await;
+                Ok(serde_json::to_value(ApprovalListResult { approvals })?)
+            }
+
             "approval.respond" => {
                 let approval_id = p["approvalId"]
                     .as_str()
@@ -988,6 +993,24 @@ end try"#;
                     },
                 }];
                 Ok(serde_json::to_value(ProviderListResult { providers })?)
+            }
+
+            "host.info" => {
+                let host_name = std::process::Command::new("hostname")
+                    .output()
+                    .ok()
+                    .and_then(|o| String::from_utf8(o.stdout).ok())
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_else(|| "Canywhere Host".to_string());
+                let os = format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH);
+                let active_turns = self.adapter.get_active_turns_count().await;
+                Ok(serde_json::to_value(HostInfoResult {
+                    host_name,
+                    os,
+                    codex_version: Some("Codex CLI".to_string()),
+                    active_turns_count: active_turns as u32,
+                    uptime_seconds: 0,
+                })?)
             }
 
             _ => anyhow::bail!("Method not found: {}", method),

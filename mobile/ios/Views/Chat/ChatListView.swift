@@ -13,11 +13,12 @@ struct ChatListView: View {
     @State private var workspaceToDelete: Workspace? = nil
     @State private var showDeleteWorkspaceAlert = false
 
-    init() {}
-
     @State private var selectedFilter: ChatFilter = .all
     @State private var showUnpairConfirmation = false
     @State private var showConnectionsSheet = false
+    @State private var searchText = ""
+
+    init() {}
 
     enum ChatFilter: String, CaseIterable, Identifiable {
         case all = "All"
@@ -27,57 +28,164 @@ struct ChatListView: View {
     }
 
     private var filteredChats: [Chat] {
-        switch selectedFilter {
-        case .all:
-            return session.chats
-        case .workspace:
-            return session.chats.filter { $0.kind == .workspace }
-        case .standalone:
-            return session.chats.filter { $0.kind == .standalone }
+        var result = session.chats
+
+        // Filter by workspace carousel selection
+        if let wsId = selectedWorkspaceId {
+            result = result.filter { $0.workspaceId == wsId }
+        } else {
+            // Filter by segmented chips if no workspace is selected
+            switch selectedFilter {
+            case .all:
+                break
+            case .workspace:
+                result = result.filter { $0.kind == .workspace }
+            case .standalone:
+                result = result.filter { $0.kind == .standalone }
+            }
         }
+
+        // Search text filtering
+        if !searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+            let query = searchText.lowercased()
+            result = result.filter { chat in
+                chat.title.lowercased().contains(query)
+            }
+        }
+
+        return result
+    }
+
+    struct ChatDateGroup: Identifiable {
+        let title: String
+        let chats: [Chat]
+        var id: String { title }
+    }
+
+    private var groupedChats: [ChatDateGroup] {
+        let calendar = Calendar.current
+        let now = Date()
+        let todayStart = calendar.startOfDay(for: now)
+        let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: todayStart) ?? todayStart
+        let weekStart = calendar.date(byAdding: .day, value: -7, to: todayStart) ?? todayStart
+
+        var today: [Chat] = []
+        var yesterday: [Chat] = []
+        var thisWeek: [Chat] = []
+        var earlier: [Chat] = []
+
+        for chat in filteredChats {
+            let date = Date(timeIntervalSince1970: Double(chat.updatedAt) / 1000.0)
+            if date >= todayStart {
+                today.append(chat)
+            } else if date >= yesterdayStart {
+                yesterday.append(chat)
+            } else if date >= weekStart {
+                thisWeek.append(chat)
+            } else {
+                earlier.append(chat)
+            }
+        }
+
+        var groups: [ChatDateGroup] = []
+        if !today.isEmpty { groups.append(ChatDateGroup(title: "Today", chats: today)) }
+        if !yesterday.isEmpty { groups.append(ChatDateGroup(title: "Yesterday", chats: yesterday)) }
+        if !thisWeek.isEmpty { groups.append(ChatDateGroup(title: "This Week", chats: thisWeek)) }
+        if !earlier.isEmpty { groups.append(ChatDateGroup(title: "Earlier", chats: earlier)) }
+        return groups
+    }
+
+    private var runningChats: [Chat] {
+        session.chats.filter { $0.status == .running }
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 16) {
-                // Host Server Status Card
-                hostHeaderCard
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    // Host Server Status Card
+                    hostHeaderCard
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
 
-                // Filter Segmented Chips
-                filterBar
-                    .padding(.horizontal, 16)
+                    // Hero: Priority 0 Pending Approvals Banner
+                    if !session.pendingApprovals.isEmpty {
+                        PendingApprovalsBanner()
+                            .padding(.horizontal, 16)
+                            .transition(.asymmetric(
+                                insertion: .scale(scale: 0.95).combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                    }
 
-                // Conversation List or Empty State
-                if filteredChats.isEmpty {
-                    emptyStateView
-                        .padding(.top, 24)
-                } else {
-                    LazyVStack(spacing: 10) {
-                        ForEach(filteredChats) { chat in
-                            NavigationLink(destination: ChatDetailView(chatId: chat.id)) {
-                                chatRowCard(chat)
+                    // Live Active Agent Pulse Cards
+                    if !runningChats.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(runningChats) { runningChat in
+                                ActiveAgentPulseCard(chat: runningChat)
                             }
-                            .buttonStyle(.plain)
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    Haptics.shared.notification(.warning)
-                                    Task {
-                                        await session.deleteChat(chatId: chat.id)
+                        }
+                        .padding(.horizontal, 16)
+                    }
+
+                    // Workspaces Horizontal Carousel
+                    WorkspacesCarouselView(
+                        selectedWorkspaceId: $selectedWorkspaceId,
+                        onManageWorkspaces: { showWorkspacesSheet = true }
+                    )
+
+                    // Filter Bar (only if no specific workspace is filtered)
+                    if selectedWorkspaceId == nil && searchText.isEmpty {
+                        filterBar
+                            .padding(.horizontal, 16)
+                    }
+
+                    // Conversation List or Empty State
+                    if filteredChats.isEmpty {
+                        emptyStateView
+                            .padding(.top, 16)
+                    } else {
+                        LazyVStack(alignment: .leading, spacing: 18) {
+                            ForEach(groupedChats) { group in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(group.title)
+                                        .font(.system(size: 12, weight: .bold))
+                                        .foregroundStyle(.secondary)
+                                        .padding(.horizontal, 4)
+
+                                    LazyVStack(spacing: 8) {
+                                        ForEach(group.chats) { chat in
+                                            NavigationLink(destination: ChatDetailView(chatId: chat.id)) {
+                                                chatRowCard(chat)
+                                            }
+                                            .buttonStyle(.plain)
+                                            .contextMenu {
+                                                Button(role: .destructive) {
+                                                    Haptics.shared.notification(.warning)
+                                                    Task {
+                                                        await session.deleteChat(chatId: chat.id)
+                                                    }
+                                                } label: {
+                                                    Label("Delete Conversation", systemImage: "trash")
+                                                }
+                                            }
+                                        }
                                     }
-                                } label: {
-                                    Label("Delete Conversation", systemImage: "trash")
                                 }
                             }
                         }
+                        .padding(.horizontal, 16)
                     }
-                    .padding(.horizontal, 16)
                 }
+                .padding(.bottom, 90) // Extra padding for bottom floating action dock
             }
-            .padding(.bottom, 24)
+            .background(Color(uiColor: .systemGroupedBackground))
+            .searchable(text: $searchText, prompt: "Search conversations...")
+
+            // Bottom Floating Action Dock
+            floatingActionDock
+                .padding(.bottom, 16)
         }
-        .background(Color(uiColor: .systemGroupedBackground))
         .navigationTitle("Canywhere")
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -87,7 +195,7 @@ struct ChatListView: View {
                         showWorkspacesSheet = true
                     } label: {
                         Image(systemName: "folder")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(.primary)
                             .padding(8)
                             .background(Color(uiColor: .tertiarySystemFill))
@@ -100,7 +208,7 @@ struct ChatListView: View {
                         showNewChatSheet = true
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .bold))
+                            .font(.system(size: 15, weight: .bold))
                             .padding(8)
                             .background(Color.accentColor.opacity(0.12))
                             .clipShape(Circle())
@@ -151,32 +259,82 @@ struct ChatListView: View {
         }
     }
 
+    // MARK: - Floating Action Dock
+
+    private var floatingActionDock: some View {
+        Button {
+            Haptics.shared.impact(.light)
+            showNewChatSheet = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+
+                Text("New Session")
+                    .font(.subheadline.bold())
+
+                if let model = session.selectedModel {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 5, height: 5)
+                        Text(model)
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.15))
+                    .clipShape(Capsule())
+                }
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(Theme.primaryGradient)
+            .clipShape(Capsule())
+            .shadow(color: Color.blue.opacity(0.35), radius: 12, y: 5)
+        }
+    }
+
     // MARK: - Host Header Card
 
     private var hostHeaderCard: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             ZStack {
                 Circle()
                     .fill(connectionColor.opacity(0.12))
-                    .frame(width: 44, height: 44)
+                    .frame(width: 42, height: 42)
 
                 Image(systemName: "laptopcomputer")
-                    .font(.system(size: 20))
+                    .font(.system(size: 19))
                     .foregroundStyle(connectionColor)
             }
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(session.pairedHostName ?? "Connected Host")
+                    Text(session.hostInfo?.hostName ?? session.pairedHostName ?? "Connected Host")
                         .font(.subheadline.bold())
+                        .lineLimit(1)
                     PulsingDot(color: connectionColor)
                 }
 
-                if let ep = session.pairedEndpoint {
-                    Text(ep)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                HStack(spacing: 6) {
+                    if let ep = session.pairedEndpoint {
+                        let info = EndpointInfo(rawUrl: ep)
+                        Text(info.kind.rawValue)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(info.kind.color)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .background(info.kind.color.opacity(0.12))
+                            .clipShape(Capsule())
+                    }
+
+                    if let os = session.hostInfo?.os {
+                        Text(os)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -187,7 +345,7 @@ struct ChatListView: View {
                     Haptics.shared.selection()
                     showConnectionsSheet = true
                 } label: {
-                    Label("Connection Settings", systemImage: "network")
+                    Label("Connection Diagnostics", systemImage: "network")
                 }
 
                 Button {
@@ -214,8 +372,8 @@ struct ChatListView: View {
                     .clipShape(Circle())
             }
         }
-        .padding(14)
-        .cardStyle(cornerRadius: 18)
+        .padding(12)
+        .cardStyle(cornerRadius: 16)
         .contentShape(Rectangle())
         .onTapGesture {
             Haptics.shared.selection()
@@ -257,42 +415,116 @@ struct ChatListView: View {
     // MARK: - Chat Row Card
 
     private func chatRowCard(_ chat: Chat) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                Text(chat.title)
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                    .lineLimit(2)
+        HStack(alignment: .top, spacing: 12) {
+            // Status Icon Indicator
+            ZStack {
+                Circle()
+                    .fill(chatStatusColor(chat.status).opacity(0.12))
+                    .frame(width: 32, height: 32)
 
-                Spacer()
-
-                statusBadge(chat.status)
-            }
-
-            HStack(spacing: 8) {
-                // Workspace / Standalone chip
-                HStack(spacing: 4) {
-                    Image(systemName: chat.kind == .workspace ? "folder.fill" : "bubble.left.fill")
-                        .font(.system(size: 10))
-                    Text(chat.kind == .workspace ? (workspaceName(for: chat.workspaceID) ?? "Workspace") : "Standalone")
-                        .font(.caption2.weight(.medium))
+                switch chat.status {
+                case .running:
+                    PulsingDot(color: .orange)
+                case .awaitingApproval:
+                    Image(systemName: "exclamationmark.shield.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.orange)
+                case .error:
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(.red)
+                case .idle:
+                    Image(systemName: "bubble.left.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color.accentColor)
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color(uiColor: .tertiarySystemFill))
-                .clipShape(Capsule())
-                .foregroundStyle(.secondary)
+            }
+            .padding(.top, 2)
 
-                Spacer()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .top) {
+                    Text(chat.title)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                        .lineLimit(2)
 
-                // Relative time
-                Text(formattedDate(chat.updatedAt))
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    Spacer()
+
+                    Text(formattedDate(chat.updatedAt))
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                }
+
+                HStack(spacing: 6) {
+                    // Workspace / Standalone chip
+                    if chat.kind == .workspace {
+                        HStack(spacing: 3) {
+                            Image(systemName: "folder.fill")
+                                .font(.system(size: 9))
+                            Text(workspaceName(for: chat.workspaceId) ?? "Workspace")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(Color.indigo.opacity(0.12))
+                        .foregroundStyle(.indigo)
+                        .clipShape(Capsule())
+                    } else {
+                        HStack(spacing: 3) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 9))
+                            Text("Standalone")
+                                .font(.system(size: 10, weight: .medium))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(Color(uiColor: .tertiarySystemFill))
+                        .foregroundStyle(.secondary)
+                        .clipShape(Capsule())
+                    }
+
+                    if chat.status == .running {
+                        HStack(spacing: 3) {
+                            PulsingDot(color: .orange)
+                            Text("Running")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(Color.orange.opacity(0.12))
+                        .foregroundStyle(.orange)
+                        .clipShape(Capsule())
+                    }
+
+                    if chat.status == .awaitingApproval {
+                        HStack(spacing: 3) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 9))
+                            Text("Action Needed")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2.5)
+                        .background(Color.red.opacity(0.12))
+                        .foregroundStyle(.red)
+                        .clipShape(Capsule())
+                    }
+
+                    Spacer()
+                }
             }
         }
         .padding(14)
         .cardStyle(cornerRadius: 16)
+    }
+
+    private func chatStatusColor(_ status: ChatStatus) -> Color {
+        switch status {
+        case .running: return .orange
+        case .awaitingApproval: return .red
+        case .error: return .red
+        case .idle: return Color.accentColor
+        }
     }
 
     // MARK: - Empty State View
@@ -302,18 +534,18 @@ struct ChatListView: View {
             ZStack {
                 Circle()
                     .fill(Theme.primaryGradient.opacity(0.12))
-                    .frame(width: 72, height: 72)
+                    .frame(width: 68, height: 68)
 
                 Image(systemName: "sparkles")
-                    .font(.system(size: 30))
+                    .font(.system(size: 28))
                     .foregroundStyle(Theme.primaryGradient)
             }
-            .padding(.top, 24)
+            .padding(.top, 16)
 
             VStack(spacing: 6) {
-                Text("No Conversations Yet")
+                Text("No Conversations")
                     .font(.headline)
-                Text("Start an autonomous coding session or select a prompt starter below.")
+                Text("Start a coding session or pick a prompt starter below.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -325,24 +557,6 @@ struct ChatListView: View {
                 promptStarterChip("Review recent git changes")
                 promptStarterChip("Inspect codebase architecture")
                 promptStarterChip("Write unit test suite")
-            }
-            .padding(.top, 8)
-
-            Button {
-                Haptics.shared.impact(.light)
-                showNewChatSheet = true
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus")
-                    Text("New Conversation")
-                }
-                .font(.subheadline.bold())
-                .foregroundStyle(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(Theme.primaryGradient)
-                .clipShape(Capsule())
-                .shadow(color: Color.blue.opacity(0.3), radius: 8, y: 3)
             }
             .padding(.top, 8)
         }
@@ -514,45 +728,6 @@ struct ChatListView: View {
         case .connected: return .green
         case .connecting, .reconnecting: return .orange
         case .disconnected: return .red
-        }
-    }
-
-    @ViewBuilder
-    private func statusBadge(_ status: ChatStatus) -> some View {
-        switch status {
-        case .running:
-            HStack(spacing: 4) {
-                PulsingDot(color: .orange)
-                Text("Running")
-                    .font(.caption2.bold())
-                    .foregroundStyle(.orange)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Color.orange.opacity(0.12))
-            .clipShape(Capsule())
-        case .awaitingApproval:
-            HStack(spacing: 4) {
-                Image(systemName: "exclamationmark.shield.fill")
-                    .font(.system(size: 10))
-                Text("Action Needed")
-                    .font(.caption2.bold())
-            }
-            .foregroundStyle(.red)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(Color.red.opacity(0.12))
-            .clipShape(Capsule())
-        case .idle:
-            EmptyView()
-        case .error:
-            Text("Error")
-                .font(.caption2.bold())
-                .foregroundStyle(.red)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(Color.red.opacity(0.12))
-                .clipShape(Capsule())
         }
     }
 

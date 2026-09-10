@@ -18,6 +18,7 @@ final class AppSessionState {
     var selectedModel: String? = "gpt-5-codex"
     var selectedEffort: String = "medium"
     var pendingApprovals: [ApprovalRequest] = []
+    var hostInfo: HostInfoResult? = nil
     var errorMessage: String?
 
     private let connectionManager = ConnectionManager.shared
@@ -246,9 +247,57 @@ final class AppSessionState {
             group.addTask { await self.loadChats() }
             group.addTask { await self.loadWorkspaces() }
             group.addTask { await self.loadModels() }
+            group.addTask { await self.loadPendingApprovals() }
+            group.addTask { await self.loadHostInfo() }
         }
         if let active = activeChatViewModel {
             await active.loadChat()
+        }
+    }
+
+    func loadPendingApprovals() async {
+        do {
+            struct EmptyParams: Encodable, Sendable {}
+            let result: ApprovalListResult = try await connectionManager.sendRequest(
+                method: "approval.list",
+                params: EmptyParams()
+            )
+            self.pendingApprovals = result.approvals
+        } catch {
+            print("⚠️ [AppSessionState] Failed to load pending approvals: \(error)")
+        }
+    }
+
+    func loadHostInfo() async {
+        do {
+            struct EmptyParams: Encodable, Sendable {}
+            let result: HostInfoResult = try await connectionManager.sendRequest(
+                method: "host.info",
+                params: EmptyParams()
+            )
+            self.hostInfo = result
+        } catch {
+            print("⚠️ [AppSessionState] Failed to load host info: \(error)")
+        }
+    }
+
+    func interruptTurn(chatId: String) async {
+        struct InterruptParams: Encodable, Sendable {
+            let chatId: String
+        }
+        do {
+            struct InterruptResult: Decodable, Sendable {
+                let status: String
+            }
+            let _: InterruptResult = try await connectionManager.sendRequest(
+                method: "turn.interrupt",
+                params: InterruptParams(chatId: chatId)
+            )
+            if let idx = chats.firstIndex(where: { $0.id == chatId }) {
+                chats[idx] = chats[idx].with(status: .idle)
+            }
+        } catch {
+            print("⚠️ [AppSessionState] Failed to interrupt turn: \(error)")
         }
     }
 
@@ -469,6 +518,11 @@ final class AppSessionState {
                 if !pendingApprovals.contains(where: { $0.id == payload.approval.id }) {
                     self.pendingApprovals.append(payload.approval)
                 }
+            }
+
+        case "approval.resolved":
+            if let payload = try? data.decodeRPCParams(ApprovalResolvedPayload.self) {
+                self.pendingApprovals.removeAll { $0.id == payload.approvalId }
             }
 
         case "chat.created":
