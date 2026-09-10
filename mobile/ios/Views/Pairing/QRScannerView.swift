@@ -94,8 +94,8 @@ class ScannerViewController: UIViewController {
         self.previewLayer = preview
         self.captureSession = session
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            session.startRunning()
+        DispatchQueue.global(qos: .userInitiated).async { [weak session] in
+            session?.startRunning()
         }
     }
 
