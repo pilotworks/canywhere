@@ -1,13 +1,13 @@
-pub mod codex;
 pub mod agy;
+pub mod codex;
 pub mod registry;
 
 use anyhow::Result;
 use async_trait::async_trait;
 use canywhere_protocol::models::*;
 
-pub use codex::CodexAdapter;
 pub use agy::AgyAdapter;
+pub use codex::CodexAdapter;
 pub use registry::ProviderRegistry;
 
 #[derive(Debug, Clone)]

@@ -267,18 +267,12 @@ impl RepositoryManager {
             "DELETE FROM message_blocks WHERE message_id IN (SELECT id FROM messages WHERE chat_id = ?1)",
             params![id],
         )?;
-        conn.execute(
-            "DELETE FROM messages WHERE chat_id = ?1",
-            params![id],
-        )?;
+        conn.execute("DELETE FROM messages WHERE chat_id = ?1", params![id])?;
         conn.execute(
             "DELETE FROM approval_requests WHERE chat_id = ?1",
             params![id],
         )?;
-        let changes = conn.execute(
-            "DELETE FROM chats WHERE id = ?1",
-            params![id],
-        )?;
+        let changes = conn.execute("DELETE FROM chats WHERE id = ?1", params![id])?;
         Ok(changes > 0)
     }
 
@@ -367,10 +361,7 @@ impl RepositoryManager {
 
     pub fn revoke_device(&self, id: &str) -> Result<bool> {
         let conn = self.db.conn();
-        let changes = conn.execute(
-            "UPDATE devices SET revoked = 1 WHERE id = ?1",
-            params![id],
-        )?;
+        let changes = conn.execute("UPDATE devices SET revoked = 1 WHERE id = ?1", params![id])?;
         Ok(changes > 0)
     }
 
@@ -503,28 +494,35 @@ impl RepositoryManager {
     }
 
     pub fn get_host_settings(&self) -> Result<HostSettings> {
-        let default_provider_id = self.get_setting("default_provider_id")?
+        let default_provider_id = self
+            .get_setting("default_provider_id")?
             .unwrap_or_else(|| "codex".to_string());
-        let default_model = self.get_setting("current_model")?
+        let default_model = self
+            .get_setting("current_model")?
             .or_else(|| self.get_setting("default_model").ok().flatten())
             .unwrap_or_else(|| "gpt-5-codex".to_string());
-        let default_reasoning_effort = self.get_setting("current_reasoning_effort")?
+        let default_reasoning_effort = self
+            .get_setting("current_reasoning_effort")?
             .or_else(|| self.get_setting("default_reasoning_effort").ok().flatten())
             .or_else(|| Some("medium".to_string()));
-        let auto_approve_read_only = self.get_setting("auto_approve_read_only")?
+        let auto_approve_read_only = self
+            .get_setting("auto_approve_read_only")?
             .and_then(|v| v.parse::<bool>().ok())
             .unwrap_or(false);
-        let default_permission_mode = self.get_setting("default_permission_mode")?
+        let default_permission_mode = self
+            .get_setting("default_permission_mode")?
             .map(|s| match s.as_str() {
                 "readOnly" => PermissionMode::ReadOnly,
                 "auto" => PermissionMode::Auto,
                 _ => PermissionMode::OnRequest,
             })
             .unwrap_or(PermissionMode::OnRequest);
-        let server_port = self.get_setting("server_port")?
+        let server_port = self
+            .get_setting("server_port")?
             .and_then(|v| v.parse::<u16>().ok())
             .unwrap_or(7890);
-        let enable_mdns = self.get_setting("enable_mdns")?
+        let enable_mdns = self
+            .get_setting("enable_mdns")?
             .and_then(|v| v.parse::<bool>().ok())
             .unwrap_or(true);
 
@@ -729,7 +727,10 @@ impl RepositoryManager {
         };
 
         if let Some(ref item) = next_item {
-            conn.execute("DELETE FROM queued_messages WHERE id = ?1", params![item.id])?;
+            conn.execute(
+                "DELETE FROM queued_messages WHERE id = ?1",
+                params![item.id],
+            )?;
         }
 
         Ok(next_item)

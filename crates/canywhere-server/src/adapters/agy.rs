@@ -9,8 +9,8 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{broadcast, Mutex};
 use uuid::Uuid;
 
-use canywhere_protocol::models::*;
 use super::{AgentEvent, CliAdapter};
+use canywhere_protocol::models::*;
 
 struct AgySession {
     child: Child,
@@ -194,7 +194,9 @@ impl CliAdapter for AgyAdapter {
         _cwd: &str,
         _sub_paths: Option<&[String]>,
     ) -> Result<String> {
-        Ok(thread_id.map(|t| t.to_string()).unwrap_or_else(|| Uuid::new_v4().to_string()))
+        Ok(thread_id
+            .map(|t| t.to_string())
+            .unwrap_or_else(|| Uuid::new_v4().to_string()))
     }
 
     async fn submit_turn(
@@ -211,9 +213,18 @@ impl CliAdapter for AgyAdapter {
         let turn_id = format!("turn-{}", Uuid::new_v4());
 
         // Reset accumulated state
-        self.chat_accumulated_text.lock().await.insert(chat_id.to_string(), String::new());
-        self.chat_accumulated_blocks.lock().await.insert(chat_id.to_string(), Vec::new());
-        self.chat_reasoning.lock().await.insert(chat_id.to_string(), String::new());
+        self.chat_accumulated_text
+            .lock()
+            .await
+            .insert(chat_id.to_string(), String::new());
+        self.chat_accumulated_blocks
+            .lock()
+            .await
+            .insert(chat_id.to_string(), Vec::new());
+        self.chat_reasoning
+            .lock()
+            .await
+            .insert(chat_id.to_string(), String::new());
         self.chat_active_turn.lock().await.insert(
             chat_id.to_string(),
             (thread_id.to_string(), turn_id.clone()),
@@ -243,8 +254,10 @@ impl CliAdapter for AgyAdapter {
 
         if !session_exists {
             let mut cmd = Command::new(&self.agy_bin);
-            cmd.arg("--input-format").arg("stream-json")
-                .arg("--output-format").arg("stream-json")
+            cmd.arg("--input-format")
+                .arg("stream-json")
+                .arg("--output-format")
+                .arg("stream-json")
                 .arg("--print=");
 
             if let Some(PermissionMode::ReadOnly) = permission_mode {
@@ -293,13 +306,12 @@ impl CliAdapter for AgyAdapter {
             let msg_id_str = message_id.to_string();
             let turn_id_str = turn_id.clone();
             let thread_id_str = thread_id.to_string();
-            let captured_conv_id = Arc::new(tokio::sync::Mutex::new(
-                if conversation_exists(thread_id) {
+            let captured_conv_id =
+                Arc::new(tokio::sync::Mutex::new(if conversation_exists(thread_id) {
                     Some(thread_id.to_string())
                 } else {
                     None
-                }
-            ));
+                }));
             let captured_conv_id_clone = Arc::clone(&captured_conv_id);
             let event_tx = self.event_tx.clone();
             let chat_active_turn = Arc::clone(&self.chat_active_turn);
@@ -319,9 +331,12 @@ impl CliAdapter for AgyAdapter {
                         let ev = val.get("event").and_then(|v| v.as_str()).unwrap_or("");
                         match ev {
                             "init" => {
-                                if let Some(conv_id) = val.get("conversation_id").and_then(|v| v.as_str()) {
+                                if let Some(conv_id) =
+                                    val.get("conversation_id").and_then(|v| v.as_str())
+                                {
                                     if !conv_id.is_empty() {
-                                        *captured_conv_id_clone.lock().await = Some(conv_id.to_string());
+                                        *captured_conv_id_clone.lock().await =
+                                            Some(conv_id.to_string());
                                         let _ = event_tx.send(AgentEvent::ChatThreadUpdated {
                                             chat_id: chat_id_str.clone(),
                                             thread_id: conv_id.to_string(),
@@ -331,12 +346,16 @@ impl CliAdapter for AgyAdapter {
                             }
                             "step_update" => {
                                 if let Some(su) = val.get("step_update") {
-                                    let step_type = su.get("step_type").and_then(|v| v.as_str()).unwrap_or("");
-                                    let state = su.get("state").and_then(|v| v.as_str()).unwrap_or("");
-                                    let step_idx = su.get("step_index").and_then(|v| v.as_i64()).unwrap_or(0);
+                                    let step_type =
+                                        su.get("step_type").and_then(|v| v.as_str()).unwrap_or("");
+                                    let state =
+                                        su.get("state").and_then(|v| v.as_str()).unwrap_or("");
+                                    let step_idx =
+                                        su.get("step_index").and_then(|v| v.as_i64()).unwrap_or(0);
 
                                     if step_type == "agent_response" {
-                                        let reasoning_delta = su.get("thinking_delta")
+                                        let reasoning_delta = su
+                                            .get("thinking_delta")
                                             .or_else(|| su.get("thought_delta"))
                                             .or_else(|| su.get("reasoning_delta"))
                                             .or_else(|| su.get("delta_raw_thinking"))
@@ -346,12 +365,22 @@ impl CliAdapter for AgyAdapter {
                                             if !r_delta.is_empty() {
                                                 {
                                                     let mut r_guard = chat_reasoning.lock().await;
-                                                    r_guard.entry(chat_id_str.clone()).or_default().push_str(r_delta);
+                                                    r_guard
+                                                        .entry(chat_id_str.clone())
+                                                        .or_default()
+                                                        .push_str(r_delta);
                                                 }
                                                 {
                                                     let mut blocks_lock = chat_blocks.lock().await;
-                                                    let blocks = blocks_lock.entry(chat_id_str.clone()).or_default();
-                                                    if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                                                    let blocks = blocks_lock
+                                                        .entry(chat_id_str.clone())
+                                                        .or_default();
+                                                    if let Some(MessageBlock::Reasoning {
+                                                        content,
+                                                        completed,
+                                                    }) = blocks.iter_mut().rev().find(|b| {
+                                                        matches!(b, MessageBlock::Reasoning { .. })
+                                                    }) {
                                                         if !*completed {
                                                             content.push_str(r_delta);
                                                         } else {
@@ -375,25 +404,42 @@ impl CliAdapter for AgyAdapter {
                                             }
                                         }
 
-                                        if let Some(delta) = su.get("text_delta").and_then(|v| v.as_str()) {
+                                        if let Some(delta) =
+                                            su.get("text_delta").and_then(|v| v.as_str())
+                                        {
                                             if !delta.is_empty() {
                                                 let current_text = {
                                                     let mut text_guard = chat_text.lock().await;
-                                                    let entry = text_guard.entry(chat_id_str.clone()).or_default();
+                                                    let entry = text_guard
+                                                        .entry(chat_id_str.clone())
+                                                        .or_default();
                                                     entry.push_str(delta);
                                                     entry.clone()
                                                 };
 
                                                 {
                                                     let mut blocks_lock = chat_blocks.lock().await;
-                                                    let blocks = blocks_lock.entry(chat_id_str.clone()).or_default();
-                                                    if let Some(MessageBlock::Reasoning { completed, .. }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                                                    let blocks = blocks_lock
+                                                        .entry(chat_id_str.clone())
+                                                        .or_default();
+                                                    if let Some(MessageBlock::Reasoning {
+                                                        completed,
+                                                        ..
+                                                    }) = blocks.iter_mut().rev().find(|b| {
+                                                        matches!(b, MessageBlock::Reasoning { .. })
+                                                    }) {
                                                         *completed = true;
                                                     }
-                                                    if let Some(MessageBlock::Text { content }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Text { .. })) {
+                                                    if let Some(MessageBlock::Text { content }) =
+                                                        blocks.iter_mut().rev().find(|b| {
+                                                            matches!(b, MessageBlock::Text { .. })
+                                                        })
+                                                    {
                                                         *content = current_text;
                                                     } else {
-                                                        blocks.push(MessageBlock::Text { content: current_text });
+                                                        blocks.push(MessageBlock::Text {
+                                                            content: current_text,
+                                                        });
                                                     }
                                                 }
 
@@ -405,7 +451,8 @@ impl CliAdapter for AgyAdapter {
                                             }
                                         }
                                     } else if step_type == "thinking" || step_type == "reasoning" {
-                                        let r_delta = su.get("text_delta")
+                                        let r_delta = su
+                                            .get("text_delta")
                                             .or_else(|| su.get("thinking_delta"))
                                             .or_else(|| su.get("thought_delta"))
                                             .or_else(|| su.get("reasoning_delta"))
@@ -414,12 +461,22 @@ impl CliAdapter for AgyAdapter {
                                             if !r_delta.is_empty() {
                                                 {
                                                     let mut r_guard = chat_reasoning.lock().await;
-                                                    r_guard.entry(chat_id_str.clone()).or_default().push_str(r_delta);
+                                                    r_guard
+                                                        .entry(chat_id_str.clone())
+                                                        .or_default()
+                                                        .push_str(r_delta);
                                                 }
                                                 {
                                                     let mut blocks_lock = chat_blocks.lock().await;
-                                                    let blocks = blocks_lock.entry(chat_id_str.clone()).or_default();
-                                                    if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                                                    let blocks = blocks_lock
+                                                        .entry(chat_id_str.clone())
+                                                        .or_default();
+                                                    if let Some(MessageBlock::Reasoning {
+                                                        content,
+                                                        completed,
+                                                    }) = blocks.iter_mut().rev().find(|b| {
+                                                        matches!(b, MessageBlock::Reasoning { .. })
+                                                    }) {
                                                         if !*completed {
                                                             content.push_str(r_delta);
                                                         } else {
@@ -445,13 +502,21 @@ impl CliAdapter for AgyAdapter {
                                     } else if step_type == "tool" {
                                         {
                                             let mut blocks_lock = chat_blocks.lock().await;
-                                            let blocks = blocks_lock.entry(chat_id_str.clone()).or_default();
-                                            if let Some(MessageBlock::Reasoning { completed, .. }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                                            let blocks =
+                                                blocks_lock.entry(chat_id_str.clone()).or_default();
+                                            if let Some(MessageBlock::Reasoning {
+                                                completed, ..
+                                            }) = blocks.iter_mut().rev().find(|b| {
+                                                matches!(b, MessageBlock::Reasoning { .. })
+                                            }) {
                                                 *completed = true;
                                             }
                                         }
 
-                                        let tool_name = su.get("tool_name").and_then(|v| v.as_str()).unwrap_or("tool");
+                                        let tool_name = su
+                                            .get("tool_name")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("tool");
                                         let block_id = format!("{}-step-{}", chat_id_str, step_idx);
                                         let tool_info = su.get("tool_info");
 
@@ -498,7 +563,10 @@ impl CliAdapter for AgyAdapter {
                                             });
 
                                             let mut blocks_guard = chat_blocks.lock().await;
-                                            blocks_guard.entry(chat_id_str.clone()).or_default().push(block);
+                                            blocks_guard
+                                                .entry(chat_id_str.clone())
+                                                .or_default()
+                                                .push(block);
                                         } else if state == "DONE" {
                                             let output = tool_info
                                                 .and_then(|ti| ti.get("output"))
@@ -540,11 +608,19 @@ impl CliAdapter for AgyAdapter {
                                             });
 
                                             let mut blocks_guard = chat_blocks.lock().await;
-                                            let list = blocks_guard.entry(chat_id_str.clone()).or_default();
+                                            let list = blocks_guard
+                                                .entry(chat_id_str.clone())
+                                                .or_default();
                                             if let Some(pos) = list.iter().rposition(|b| match b {
-                                                MessageBlock::ToolCall { call_id, .. } => call_id == &block_id,
+                                                MessageBlock::ToolCall { call_id, .. } => {
+                                                    call_id == &block_id
+                                                }
                                                 MessageBlock::CommandExec { command, .. } => {
-                                                    if let MessageBlock::CommandExec { command: cmd2, .. } = &block {
+                                                    if let MessageBlock::CommandExec {
+                                                        command: cmd2,
+                                                        ..
+                                                    } = &block
+                                                    {
                                                         command == cmd2
                                                     } else {
                                                         false
@@ -561,7 +637,8 @@ impl CliAdapter for AgyAdapter {
                                 }
                             }
                             "result" => {
-                                let status = val.get("result")
+                                let status = val
+                                    .get("result")
                                     .and_then(|r| r.get("status"))
                                     .and_then(|s| s.as_str())
                                     .unwrap_or("SUCCESS");
@@ -579,7 +656,8 @@ impl CliAdapter for AgyAdapter {
                                     .unwrap_or_else(|| thread_id_str.clone());
 
                                 let disk_thinking = extract_last_thinking(&active_conv_id);
-                                let mut reasoning = chat_reasoning.lock().await.get(&chat_id_str).cloned();
+                                let mut reasoning =
+                                    chat_reasoning.lock().await.get(&chat_id_str).cloned();
                                 if reasoning.as_ref().map_or(true, |r| r.trim().is_empty()) {
                                     reasoning = disk_thinking;
                                 }
@@ -587,23 +665,39 @@ impl CliAdapter for AgyAdapter {
                                 if let Some(ref r_text) = reasoning {
                                     if !r_text.trim().is_empty() {
                                         let mut blocks_guard = chat_blocks.lock().await;
-                                        let blocks = blocks_guard.entry(chat_id_str.clone()).or_default();
-                                        if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                                        let blocks =
+                                            blocks_guard.entry(chat_id_str.clone()).or_default();
+                                        if let Some(MessageBlock::Reasoning {
+                                            content,
+                                            completed,
+                                        }) = blocks
+                                            .iter_mut()
+                                            .rev()
+                                            .find(|b| matches!(b, MessageBlock::Reasoning { .. }))
+                                        {
                                             if content.trim().is_empty() {
                                                 *content = r_text.clone();
                                             }
                                             *completed = true;
                                         } else {
-                                            blocks.insert(0, MessageBlock::Reasoning {
-                                                content: r_text.clone(),
-                                                completed: true,
-                                            });
+                                            blocks.insert(
+                                                0,
+                                                MessageBlock::Reasoning {
+                                                    content: r_text.clone(),
+                                                    completed: true,
+                                                },
+                                            );
                                         }
                                     }
                                 }
 
                                 let final_text = chat_text.lock().await.get(&chat_id_str).cloned();
-                                let mut final_blocks = chat_blocks.lock().await.get(&chat_id_str).cloned().unwrap_or_default();
+                                let mut final_blocks = chat_blocks
+                                    .lock()
+                                    .await
+                                    .get(&chat_id_str)
+                                    .cloned()
+                                    .unwrap_or_default();
 
                                 if let Some(ref text) = final_text {
                                     if !text.is_empty() {
@@ -765,7 +859,11 @@ impl CliAdapter for AgyAdapter {
     }
 
     async fn get_active_turn(&self, chat_id: &str) -> Option<String> {
-        self.chat_active_turn.lock().await.get(chat_id).map(|(_, t)| t.clone())
+        self.chat_active_turn
+            .lock()
+            .await
+            .get(chat_id)
+            .map(|(_, t)| t.clone())
     }
 
     async fn clear_active_turn(&self, chat_id: &str) {
@@ -779,8 +877,20 @@ impl CliAdapter for AgyAdapter {
     async fn get_active_streaming_message(&self, chat_id: &str) -> Option<Message> {
         let active = self.chat_active_turn.lock().await.get(chat_id).cloned();
         if let Some((_, turn_id)) = active {
-            let text = self.chat_accumulated_text.lock().await.get(chat_id).cloned().unwrap_or_default();
-            let blocks = self.chat_accumulated_blocks.lock().await.get(chat_id).cloned().unwrap_or_default();
+            let text = self
+                .chat_accumulated_text
+                .lock()
+                .await
+                .get(chat_id)
+                .cloned()
+                .unwrap_or_default();
+            let blocks = self
+                .chat_accumulated_blocks
+                .lock()
+                .await
+                .get(chat_id)
+                .cloned()
+                .unwrap_or_default();
             let mut final_blocks = blocks;
             if !text.is_empty() {
                 final_blocks.push(MessageBlock::Text { content: text });
@@ -825,14 +935,16 @@ impl CliAdapter for AgyAdapter {
             },
             ProviderCommand {
                 name: "/learn".to_string(),
-                description: "Persist learned preferences and behaviors for future tasks".to_string(),
+                description: "Persist learned preferences and behaviors for future tasks"
+                    .to_string(),
                 category: "agent".to_string(),
                 icon: Some("book-open".to_string()),
                 requires_args: true,
             },
             ProviderCommand {
                 name: "/grill-me".to_string(),
-                description: "Interactive interview to align on design decisions and trade-offs".to_string(),
+                description: "Interactive interview to align on design decisions and trade-offs"
+                    .to_string(),
                 category: "agent".to_string(),
                 icon: Some("message-circle-question".to_string()),
                 requires_args: false,
@@ -848,14 +960,12 @@ impl CliAdapter for AgyAdapter {
     }
 
     fn actions(&self) -> Vec<ProviderAction> {
-        vec![
-            ProviderAction {
-                id: "grill-me".to_string(),
-                label: "Grill Me (Plan Interview)".to_string(),
-                icon: Some("message-circle-question".to_string()),
-                placement: "toolbar".to_string(),
-            },
-        ]
+        vec![ProviderAction {
+            id: "grill-me".to_string(),
+            label: "Grill Me (Plan Interview)".to_string(),
+            icon: Some("message-circle-question".to_string()),
+            placement: "toolbar".to_string(),
+        }]
     }
 
     async fn execute_command(
@@ -898,10 +1008,24 @@ impl CliAdapter for AgyAdapter {
         };
 
         let message_id = nanoid::nanoid!(16);
-        let turn_id = self.submit_turn(chat_id, thread_id, &message_id, &prompt, None, None, None, None).await?;
+        let turn_id = self
+            .submit_turn(
+                chat_id,
+                thread_id,
+                &message_id,
+                &prompt,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
         Ok(canywhere_protocol::rpc::ChatExecuteCommandResult {
             success: true,
-            message: Some(format!("Executed AGY command '{}' (turn: {})", command, turn_id)),
+            message: Some(format!(
+                "Executed AGY command '{}' (turn: {})",
+                command, turn_id
+            )),
         })
     }
 }
@@ -989,7 +1113,14 @@ fn parse_agy_models_output(text: &str) -> Vec<ModelInfo> {
         // Clean display name by stripping (High), (Medium), (Low) if effort is present
         let clean_display_name = if effort.is_some() {
             let mut name = raw_display_name;
-            for suffix in &[" (High)", " (high)", " (Medium)", " (medium)", " (Low)", " (low)"] {
+            for suffix in &[
+                " (High)",
+                " (high)",
+                " (Medium)",
+                " (medium)",
+                " (Low)",
+                " (low)",
+            ] {
                 if let Some(stripped) = name.strip_suffix(suffix) {
                     name = stripped;
                     break;
@@ -1204,7 +1335,10 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
         }
 
         // list_models should return immediately from cache without calling binary
-        let models = adapter.list_models().await.expect("list_models should succeed");
+        let models = adapter
+            .list_models()
+            .await
+            .expect("list_models should succeed");
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "test-model");
     }

@@ -1,6 +1,8 @@
-use std::path::Path;
 use anyhow::{Context, Result};
-use canywhere_protocol::models::{GitBranchesResult, GitCommitItem, GitFileChange, GitStatusResult};
+use canywhere_protocol::models::{
+    GitBranchesResult, GitCommitItem, GitFileChange, GitStatusResult,
+};
+use std::path::Path;
 use tokio::process::Command;
 
 pub struct GitService;
@@ -15,7 +17,9 @@ impl GitService {
             .await;
 
         match output {
-            Ok(out) => out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "true",
+            Ok(out) => {
+                out.status.success() && String::from_utf8_lossy(&out.stdout).trim() == "true"
+            }
             Err(_) => false,
         }
     }
@@ -40,7 +44,9 @@ impl GitService {
             .await
             .context("Failed to get current git branch")?;
 
-        let mut branch = String::from_utf8_lossy(&branch_out.stdout).trim().to_string();
+        let mut branch = String::from_utf8_lossy(&branch_out.stdout)
+            .trim()
+            .to_string();
         if branch.is_empty() {
             // Fallback for detached HEAD
             let head_out = Command::new("git")
@@ -227,7 +233,10 @@ impl GitService {
             }
         }
 
-        let output = cmd.output().await.context("Failed to run git restore --staged")?;
+        let output = cmd
+            .output()
+            .await
+            .context("Failed to run git restore --staged")?;
         if !output.status.success() {
             // Fallback for older git versions: git reset HEAD --
             let mut fallback_cmd = Command::new("git");
@@ -317,7 +326,9 @@ impl GitService {
             .await
             .context("Failed to get current branch")?;
 
-        let current = String::from_utf8_lossy(&current_out.stdout).trim().to_string();
+        let current = String::from_utf8_lossy(&current_out.stdout)
+            .trim()
+            .to_string();
 
         let list_out = Command::new("git")
             .args(["branch", "--list", "--format=%(refname:short)"])
@@ -344,7 +355,10 @@ impl GitService {
             cmd.args(["checkout", branch]);
         }
 
-        let output = cmd.output().await.context("Failed to execute git checkout")?;
+        let output = cmd
+            .output()
+            .await
+            .context("Failed to execute git checkout")?;
         if !output.status.success() {
             anyhow::bail!(
                 "git checkout failed: {}",
@@ -357,7 +371,12 @@ impl GitService {
     pub async fn log(root: &Path, max_count: u32) -> Result<Vec<GitCommitItem>> {
         let limit_str = max_count.to_string();
         let output = Command::new("git")
-            .args(["log", "-n", &limit_str, "--pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%s"])
+            .args([
+                "log",
+                "-n",
+                &limit_str,
+                "--pretty=format:%H%x1f%h%x1f%an%x1f%ar%x1f%s",
+            ])
             .current_dir(root)
             .output()
             .await
@@ -500,9 +519,15 @@ impl GitService {
             .map(|f| f.path.as_str())
             .collect();
 
-        let prefix = if changed_files.iter().all(|p| p.contains("test") || p.ends_with("_test.rs")) {
+        let prefix = if changed_files
+            .iter()
+            .all(|p| p.contains("test") || p.ends_with("_test.rs"))
+        {
             "test"
-        } else if changed_files.iter().all(|p| p.ends_with(".md") || p.contains("docs/")) {
+        } else if changed_files
+            .iter()
+            .all(|p| p.ends_with(".md") || p.contains("docs/"))
+        {
             "docs"
         } else if changed_files.iter().any(|p| p.contains("fix")) {
             "fix"
@@ -514,7 +539,10 @@ impl GitService {
             "(desktop-ui)"
         } else if changed_files.iter().all(|p| p.contains("canywhere-server")) {
             "(canywhere-server)"
-        } else if changed_files.iter().all(|p| p.contains("canywhere-protocol")) {
+        } else if changed_files
+            .iter()
+            .all(|p| p.contains("canywhere-protocol"))
+        {
             "(canywhere-protocol)"
         } else {
             ""

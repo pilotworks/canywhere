@@ -746,5 +746,6 @@ export const useUiStore = create<UiState>((set) => ({
 }));
 
 export * from "./settings.js";
+export * from "./update-store.js";
 
 

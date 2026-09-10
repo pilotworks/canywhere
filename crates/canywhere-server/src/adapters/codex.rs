@@ -10,8 +10,8 @@ use tracing::info;
 use canywhere_protocol::models::*;
 use canywhere_protocol::rpc::methods::*;
 
-use async_trait::async_trait;
 use super::{AgentEvent, CliAdapter};
+use async_trait::async_trait;
 
 pub struct CodexAdapter {
     codex_bin: String,
@@ -85,7 +85,6 @@ impl CodexAdapter {
         }
         "codex".to_string()
     }
-
 
     pub fn event_tx(&self) -> broadcast::Sender<AgentEvent> {
         self.event_tx.clone()
@@ -401,9 +400,11 @@ impl CodexAdapter {
                 let file_name = file["fileName"].as_str().unwrap_or("").to_string();
                 let match_type = file["matchType"].as_str().unwrap_or("file").to_string();
                 let score = file["score"].as_u64().unwrap_or(0) as u32;
-                let indices = file["indices"]
-                    .as_array()
-                    .map(|arr| arr.iter().filter_map(|v| v.as_u64().map(|i| i as u32)).collect());
+                let indices = file["indices"].as_array().map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_u64().map(|i| i as u32))
+                        .collect()
+                });
 
                 list.push(FuzzyFileMatchItem {
                     path,
@@ -422,10 +423,7 @@ impl CodexAdapter {
         let message_id = uuid::Uuid::new_v4().to_string();
         {
             let mut active = self.chat_active_turn.lock().await;
-            active.insert(
-                chat_id.to_string(),
-                (String::new(), message_id.to_string()),
-            );
+            active.insert(chat_id.to_string(), (String::new(), message_id.to_string()));
         }
         {
             let mut t2c = self.thread_to_chat.lock().await;
@@ -445,7 +443,10 @@ impl CodexAdapter {
         }
 
         if self.stdin.lock().await.is_none() {
-            tracing::info!("[CodexAdapter] mock mode: start_review simulated for chat {}", chat_id);
+            tracing::info!(
+                "[CodexAdapter] mock mode: start_review simulated for chat {}",
+                chat_id
+            );
             return Ok(format!("turn-mock-review-{}", nanoid::nanoid!(6)));
         }
 
@@ -480,7 +481,10 @@ impl CodexAdapter {
 
     pub async fn compact_thread(&self, thread_id: &str) -> Result<()> {
         if self.stdin.lock().await.is_none() {
-            tracing::info!("[CodexAdapter] mock mode: compact_thread simulated for {}", thread_id);
+            tracing::info!(
+                "[CodexAdapter] mock mode: compact_thread simulated for {}",
+                thread_id
+            );
             return Ok(());
         }
         let _ = self
@@ -566,10 +570,7 @@ impl CodexAdapter {
         // Pre-register mappings before sending request to eliminate streaming delta race conditions
         {
             let mut active = self.chat_active_turn.lock().await;
-            active.insert(
-                chat_id.to_string(),
-                (String::new(), message_id.to_string()),
-            );
+            active.insert(chat_id.to_string(), (String::new(), message_id.to_string()));
         }
         {
             let mut t2c = self.thread_to_chat.lock().await;
@@ -649,7 +650,9 @@ impl CodexAdapter {
         {
             let mut approvals = self.chat_pending_approvals.lock().await;
             for (c_id, list) in approvals.iter_mut() {
-                if let Some(pos) = list.iter().position(|a| a.id == external_request_id || a.external_request_id == external_request_id) {
+                if let Some(pos) = list.iter().position(|a| {
+                    a.id == external_request_id || a.external_request_id == external_request_id
+                }) {
                     found_chat_id = Some(c_id.clone());
                     list.remove(pos);
                     break;
@@ -713,9 +716,7 @@ impl CodexAdapter {
                 });
             }
             if !text.trim().is_empty() {
-                blocks.push(MessageBlock::Text {
-                    content: text,
-                });
+                blocks.push(MessageBlock::Text { content: text });
             }
         }
 
@@ -727,7 +728,11 @@ impl CodexAdapter {
         Some(Message {
             id: message_id.clone(),
             chat_id: chat_id.to_string(),
-            turn_id: if turn_id.is_empty() { None } else { Some(turn_id.clone()) },
+            turn_id: if turn_id.is_empty() {
+                None
+            } else {
+                Some(turn_id.clone())
+            },
             role: MessageRole::Agent,
             blocks,
             created_at: now,
@@ -749,14 +754,15 @@ impl CodexAdapter {
 
     pub async fn interrupt_turn(&self, thread_id: &str, turn_id: &str) -> Result<()> {
         if !turn_id.is_empty() {
-            let res = self.send_request(
-                "turn/interrupt",
-                serde_json::json!({
-                    "threadId": thread_id,
-                    "turnId": turn_id
-                }),
-            )
-            .await;
+            let res = self
+                .send_request(
+                    "turn/interrupt",
+                    serde_json::json!({
+                        "threadId": thread_id,
+                        "turnId": turn_id
+                    }),
+                )
+                .await;
             if let Err(e) = res {
                 tracing::warn!("[CodexAdapter] turn/interrupt warning: {}", e);
             }
@@ -887,7 +893,11 @@ impl CodexAdapter {
             {
                 let mut blocks_lock = chat_blocks.lock().await;
                 let blocks = blocks_lock.entry(chat_id.clone()).or_default();
-                if let Some(MessageBlock::Reasoning { completed, .. }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                if let Some(MessageBlock::Reasoning { completed, .. }) = blocks
+                    .iter_mut()
+                    .rev()
+                    .find(|b| matches!(b, MessageBlock::Reasoning { .. }))
+                {
                     *completed = true;
                 }
                 if let Some(MessageBlock::Text { content }) = blocks.last_mut() {
@@ -903,7 +913,9 @@ impl CodexAdapter {
                 message_id: msg_id,
                 delta,
             });
-        } else if method == "item/reasoning/textDelta" || method == "item/reasoning/summaryTextDelta" {
+        } else if method == "item/reasoning/textDelta"
+            || method == "item/reasoning/summaryTextDelta"
+        {
             let delta = params["delta"].as_str().unwrap_or("").to_string();
             let msg_id = active_turn
                 .as_ref()
@@ -911,15 +923,16 @@ impl CodexAdapter {
                 .unwrap_or_else(|| nanoid::nanoid!(16));
             {
                 let mut r_lock = chat_reasoning.lock().await;
-                r_lock
-                    .entry(chat_id.clone())
-                    .or_default()
-                    .push_str(&delta);
+                r_lock.entry(chat_id.clone()).or_default().push_str(&delta);
             }
             {
                 let mut blocks_lock = chat_blocks.lock().await;
                 let blocks = blocks_lock.entry(chat_id.clone()).or_default();
-                if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                if let Some(MessageBlock::Reasoning { content, completed }) = blocks
+                    .iter_mut()
+                    .rev()
+                    .find(|b| matches!(b, MessageBlock::Reasoning { .. }))
+                {
                     if !*completed {
                         content.push_str(&delta);
                     } else {
@@ -961,7 +974,11 @@ impl CodexAdapter {
             if need_newline {
                 let mut blocks_lock = chat_blocks.lock().await;
                 let blocks = blocks_lock.entry(chat_id.clone()).or_default();
-                if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                if let Some(MessageBlock::Reasoning { content, completed }) = blocks
+                    .iter_mut()
+                    .rev()
+                    .find(|b| matches!(b, MessageBlock::Reasoning { .. }))
+                {
                     if !*completed && !content.ends_with("\n\n") {
                         if content.ends_with('\n') {
                             content.push('\n');
@@ -1005,7 +1022,11 @@ impl CodexAdapter {
             {
                 let mut blocks_lock = chat_blocks.lock().await;
                 let blocks = blocks_lock.entry(chat_id.clone()).or_default();
-                if let Some(MessageBlock::Reasoning { completed, .. }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                if let Some(MessageBlock::Reasoning { completed, .. }) = blocks
+                    .iter_mut()
+                    .rev()
+                    .find(|b| matches!(b, MessageBlock::Reasoning { .. }))
+                {
                     *completed = true;
                 }
             }
@@ -1042,7 +1063,11 @@ impl CodexAdapter {
                 let name = item["tool"]
                     .as_str()
                     .or_else(|| item["name"].as_str())
-                    .unwrap_or(if item_type == "webSearch" { "webSearch" } else { "tool" })
+                    .unwrap_or(if item_type == "webSearch" {
+                        "webSearch"
+                    } else {
+                        "tool"
+                    })
                     .to_string();
                 let args = item
                     .get("arguments")
@@ -1177,9 +1202,8 @@ impl CodexAdapter {
             {
                 let status_str = item["status"].as_str().unwrap_or("");
                 let success = item.get("success").and_then(|s| s.as_bool());
-                let is_failed = status_str == "failed"
-                    || item.get("error").is_some()
-                    || success == Some(false);
+                let is_failed =
+                    status_str == "failed" || item.get("error").is_some() || success == Some(false);
                 let status = if is_failed {
                     ToolCallStatus::Failed
                 } else {
@@ -1328,8 +1352,14 @@ impl CodexAdapter {
 
                 let mut blocks_lock = chat_blocks.lock().await;
                 let blocks = blocks_lock.entry(chat_id.clone()).or_default();
-                if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
-                    if !best_reasoning.is_empty() && (content.is_empty() || best_reasoning.len() > content.len()) {
+                if let Some(MessageBlock::Reasoning { content, completed }) = blocks
+                    .iter_mut()
+                    .rev()
+                    .find(|b| matches!(b, MessageBlock::Reasoning { .. }))
+                {
+                    if !best_reasoning.is_empty()
+                        && (content.is_empty() || best_reasoning.len() > content.len())
+                    {
                         *content = best_reasoning;
                     }
                     *completed = true;
@@ -1425,7 +1455,10 @@ impl CodexAdapter {
             };
             {
                 let mut app_lock = chat_approvals.lock().await;
-                app_lock.entry(chat_id.clone()).or_default().push(approval.clone());
+                app_lock
+                    .entry(chat_id.clone())
+                    .or_default()
+                    .push(approval.clone());
             }
             let _ = tx.send(AgentEvent::ApprovalRequested {
                 chat_id,
@@ -1471,7 +1504,10 @@ impl CodexAdapter {
             };
             {
                 let mut app_lock = chat_approvals.lock().await;
-                app_lock.entry(chat_id.clone()).or_default().push(approval.clone());
+                app_lock
+                    .entry(chat_id.clone())
+                    .or_default()
+                    .push(approval.clone());
             }
             let _ = tx.send(AgentEvent::ApprovalRequested {
                 chat_id,
@@ -1482,15 +1518,27 @@ impl CodexAdapter {
             let active_pair = chat_turn.lock().await.remove(&chat_id);
             let text_content = chat_text.lock().await.remove(&chat_id);
             let reasoning_content = chat_reasoning.lock().await.remove(&chat_id);
-            let mut blocks = chat_blocks.lock().await.remove(&chat_id).unwrap_or_default();
+            let mut blocks = chat_blocks
+                .lock()
+                .await
+                .remove(&chat_id)
+                .unwrap_or_default();
 
             // Extract any completed reasoning from turn items if available
-            if let Some(items) = params.get("turn").and_then(|t| t.get("items")).and_then(|i| i.as_array()) {
+            if let Some(items) = params
+                .get("turn")
+                .and_then(|t| t.get("items"))
+                .and_then(|i| i.as_array())
+            {
                 for it in items {
                     if it.get("type").and_then(|t| t.as_str()) == Some("reasoning") {
                         let text = extract_reasoning_text(it);
                         if !text.is_empty() {
-                            if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                            if let Some(MessageBlock::Reasoning { content, completed }) = blocks
+                                .iter_mut()
+                                .rev()
+                                .find(|b| matches!(b, MessageBlock::Reasoning { .. }))
+                            {
                                 if content.is_empty() || text.len() > content.len() {
                                     *content = text;
                                 }
@@ -1510,7 +1558,11 @@ impl CodexAdapter {
             if let Some(r) = reasoning_content.as_ref() {
                 let r_trimmed = r.trim();
                 if !r_trimmed.is_empty() {
-                    if let Some(MessageBlock::Reasoning { content, completed }) = blocks.iter_mut().rev().find(|b| matches!(b, MessageBlock::Reasoning { .. })) {
+                    if let Some(MessageBlock::Reasoning { content, completed }) = blocks
+                        .iter_mut()
+                        .rev()
+                        .find(|b| matches!(b, MessageBlock::Reasoning { .. }))
+                    {
                         if content.is_empty() || r_trimmed.len() > content.len() {
                             *content = r.clone();
                         }
@@ -1530,7 +1582,9 @@ impl CodexAdapter {
                             *status = ToolCallStatus::Completed;
                         }
                     }
-                    MessageBlock::CommandExec { status, exit_code, .. } => {
+                    MessageBlock::CommandExec {
+                        status, exit_code, ..
+                    } => {
                         if *status == CommandExecStatus::Running {
                             *status = if exit_code.unwrap_or(0) == 0 {
                                 CommandExecStatus::Completed
@@ -1555,9 +1609,7 @@ impl CodexAdapter {
                 }
                 if let Some(t) = text_content.as_ref() {
                     if !t.trim().is_empty() {
-                        blocks.push(MessageBlock::Text {
-                            content: t.clone(),
-                        });
+                        blocks.push(MessageBlock::Text { content: t.clone() });
                     }
                 }
             }
@@ -1621,7 +1673,12 @@ impl CodexAdapter {
             "params": params
         });
 
-        tracing::info!("[CodexSendRequest] id={}, method={}, params={}", id, method, params);
+        tracing::info!(
+            "[CodexSendRequest] id={}, method={}, params={}",
+            id,
+            method,
+            params
+        );
         self.write_line(&payload).await?;
         let res = rx.await?;
         tracing::info!("[CodexRecvResponse] id={}, res={}", id, res);
@@ -1775,7 +1832,8 @@ impl CliAdapter for CodexAdapter {
         cwd: &str,
         sub_paths: Option<&[String]>,
     ) -> Result<String> {
-        self.resume_or_start_thread(chat_id, thread_id, cwd, sub_paths).await
+        self.resume_or_start_thread(chat_id, thread_id, cwd, sub_paths)
+            .await
     }
 
     async fn submit_turn(
@@ -1856,7 +1914,8 @@ impl CliAdapter for CodexAdapter {
         query: &str,
         cancellation_token: Option<String>,
     ) -> Result<Vec<canywhere_protocol::rpc::FuzzyFileMatchItem>> {
-        self.fuzzy_file_search(roots, query, cancellation_token).await
+        self.fuzzy_file_search(roots, query, cancellation_token)
+            .await
     }
 
     fn icon(&self) -> Option<String> {
@@ -1874,7 +1933,8 @@ impl CliAdapter for CodexAdapter {
             },
             ProviderCommand {
                 name: "/compact".to_string(),
-                description: "Compact conversational context & summarize thread history".to_string(),
+                description: "Compact conversational context & summarize thread history"
+                    .to_string(),
                 category: "agent".to_string(),
                 icon: Some("minimize".to_string()),
                 requires_args: false,
@@ -1952,11 +2012,9 @@ pub fn is_read_only_command(cmd: &str) -> bool {
 
     // Single-word commands that are pure inspection/read-only
     let safe_tools = [
-        "ls", "dir", "pwd", "which", "where", "whoami",
-        "cat", "head", "tail", "less", "more",
-        "grep", "rg", "ag", "find", "fd",
-        "echo", "file", "stat", "wc", "readlink",
-        "env", "printenv",
+        "ls", "dir", "pwd", "which", "where", "whoami", "cat", "head", "tail", "less", "more",
+        "grep", "rg", "ag", "find", "fd", "echo", "file", "stat", "wc", "readlink", "env",
+        "printenv",
     ];
     if safe_tools.contains(&first) {
         return true;
@@ -1966,12 +2024,27 @@ pub fn is_read_only_command(cmd: &str) -> bool {
     if first == "git" && tokens.len() >= 2 {
         let sub = tokens[1];
         let safe_git_subs = [
-            "status", "diff", "log", "show", "branch",
-            "tag", "describe", "remote", "rev-parse",
+            "status",
+            "diff",
+            "log",
+            "show",
+            "branch",
+            "tag",
+            "describe",
+            "remote",
+            "rev-parse",
         ];
         if safe_git_subs.contains(&sub) {
             // Ensure no mutating flags or arguments
-            let mutating_args = ["-D", "-m", "-M", "--delete", "--prune", "--add", "--set-upstream"];
+            let mutating_args = [
+                "-D",
+                "-m",
+                "-M",
+                "--delete",
+                "--prune",
+                "--add",
+                "--set-upstream",
+            ];
             if !tokens.iter().any(|t| mutating_args.contains(t)) {
                 return true;
             }
@@ -2020,5 +2093,3 @@ mod tests {
         assert!(!is_read_only_command("echo hello; rm -rf /"));
     }
 }
-
-

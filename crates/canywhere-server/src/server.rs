@@ -60,14 +60,16 @@ pub async fn run_server(
 
                     if let Some(text) = text_content {
                         if !text.is_empty() {
-                            if let Some(canywhere_protocol::models::MessageBlock::Text { content }) = blocks
-                                .iter_mut()
-                                .rev()
-                                .find(|b| matches!(b, canywhere_protocol::models::MessageBlock::Text { .. }))
-                            {
+                            if let Some(canywhere_protocol::models::MessageBlock::Text {
+                                content,
+                            }) = blocks.iter_mut().rev().find(|b| {
+                                matches!(b, canywhere_protocol::models::MessageBlock::Text { .. })
+                            }) {
                                 *content = text;
                             } else {
-                                blocks.push(canywhere_protocol::models::MessageBlock::Text { content: text });
+                                blocks.push(canywhere_protocol::models::MessageBlock::Text {
+                                    content: text,
+                                });
                             }
                         }
                     }
@@ -101,7 +103,9 @@ pub async fn run_server(
 
                     // Auto-dispatch next queued message for this chat if available
                     if status == canywhere_protocol::models::ChatStatus::Idle {
-                        if let Ok(Some(next_queue_item)) = repo_persist.pop_next_queued_message(&chat_id) {
+                        if let Ok(Some(next_queue_item)) =
+                            repo_persist.pop_next_queued_message(&chat_id)
+                        {
                             tracing::info!(
                                 "🚀 [HostServer] Auto-dispatching queued message {} for chat {}",
                                 next_queue_item.id,
@@ -109,11 +113,13 @@ pub async fn run_server(
                             );
 
                             // Broadcast updated queue state
-                            if let Ok(remaining_items) = repo_persist.list_queued_messages(&chat_id) {
-                                let _ = registry_persist.event_tx().send(AgentEvent::QueueUpdated {
-                                    chat_id: chat_id.clone(),
-                                    items: remaining_items,
-                                });
+                            if let Ok(remaining_items) = repo_persist.list_queued_messages(&chat_id)
+                            {
+                                let _ =
+                                    registry_persist.event_tx().send(AgentEvent::QueueUpdated {
+                                        chat_id: chat_id.clone(),
+                                        items: remaining_items,
+                                    });
                             }
 
                             // Retrieve chat info to submit next turn
@@ -123,7 +129,8 @@ pub async fn run_server(
                                     let now = std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .unwrap_or_default()
-                                        .as_millis() as i64;
+                                        .as_millis()
+                                        as i64;
                                     let user_msg_id = nanoid::nanoid!(16);
                                     let agent_msg_id = nanoid::nanoid!(16);
 
@@ -132,16 +139,18 @@ pub async fn run_server(
                                         chat_id: chat.id.clone(),
                                         turn_id: None,
                                         role: canywhere_protocol::models::MessageRole::User,
-                                        blocks: vec![canywhere_protocol::models::MessageBlock::Text {
-                                            content: next_queue_item.content.clone(),
-                                        }],
+                                        blocks: vec![
+                                            canywhere_protocol::models::MessageBlock::Text {
+                                                content: next_queue_item.content.clone(),
+                                            },
+                                        ],
                                         created_at: now,
                                         streaming: false,
                                     };
                                     let _ = repo_persist.record_message(&user_msg);
-                                    let _ = registry_persist.event_tx().send(AgentEvent::MessageCreated {
-                                        message: user_msg,
-                                    });
+                                    let _ = registry_persist
+                                        .event_tx()
+                                        .send(AgentEvent::MessageCreated { message: user_msg });
 
                                     let agent_placeholder = canywhere_protocol::models::Message {
                                         id: agent_msg_id.clone(),
@@ -152,13 +161,21 @@ pub async fn run_server(
                                         created_at: now + 1,
                                         streaming: true,
                                     };
-                                    let _ = registry_persist.event_tx().send(AgentEvent::MessageCreated {
-                                        message: agent_placeholder,
-                                    });
+                                    let _ = registry_persist.event_tx().send(
+                                        AgentEvent::MessageCreated {
+                                            message: agent_placeholder,
+                                        },
+                                    );
 
-                                    let _ = repo_persist.update_chat_status(&chat.id, canywhere_protocol::models::ChatStatus::Running, Some(&thread_id));
+                                    let _ = repo_persist.update_chat_status(
+                                        &chat.id,
+                                        canywhere_protocol::models::ChatStatus::Running,
+                                        Some(&thread_id),
+                                    );
 
-                                    let resolved_perm_mode = next_queue_item.permission_mode.unwrap_or(chat.permission_mode);
+                                    let resolved_perm_mode = next_queue_item
+                                        .permission_mode
+                                        .unwrap_or(chat.permission_mode);
                                     let mut cwd = String::new();
                                     if let Some(ws_id) = &chat.workspace_id {
                                         if let Ok(Some(ws)) = repo_persist.get_workspace(ws_id) {
@@ -166,7 +183,8 @@ pub async fn run_server(
                                         }
                                     }
                                     if cwd.is_empty() {
-                                        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                                        let home = std::env::var("HOME")
+                                            .unwrap_or_else(|_| ".".to_string());
                                         let scratch_dir = std::path::PathBuf::from(home)
                                             .join(".canywhere")
                                             .join("scratch")
@@ -185,16 +203,23 @@ pub async fn run_server(
                                     tokio::spawn(async move {
                                         match adapter {
                                             Ok(adapter) => {
-                                                if let Err(e) = adapter.submit_turn(
-                                                    &chat_id_clone,
-                                                    &thread_id,
-                                                    &agent_msg_id,
-                                                    &content_clone,
-                                                    model_clone.as_deref(),
-                                                    effort_clone.as_deref(),
-                                                    Some(resolved_perm_mode),
-                                                    if cwd.is_empty() { None } else { Some(&cwd) },
-                                                ).await {
+                                                if let Err(e) = adapter
+                                                    .submit_turn(
+                                                        &chat_id_clone,
+                                                        &thread_id,
+                                                        &agent_msg_id,
+                                                        &content_clone,
+                                                        model_clone.as_deref(),
+                                                        effort_clone.as_deref(),
+                                                        Some(resolved_perm_mode),
+                                                        if cwd.is_empty() {
+                                                            None
+                                                        } else {
+                                                            Some(&cwd)
+                                                        },
+                                                    )
+                                                    .await
+                                                {
                                                     tracing::error!("[HostServer] Failed to submit auto-dispatched turn: {}", e);
                                                 }
                                             }
@@ -212,7 +237,11 @@ pub async fn run_server(
                     let _ = repo_persist.update_chat_title(&chat_id, &title);
                 }
                 AgentEvent::ChatThreadUpdated { chat_id, thread_id } => {
-                    let _ = repo_persist.update_chat_status(&chat_id, canywhere_protocol::models::ChatStatus::Running, Some(&thread_id));
+                    let _ = repo_persist.update_chat_status(
+                        &chat_id,
+                        canywhere_protocol::models::ChatStatus::Running,
+                        Some(&thread_id),
+                    );
                 }
                 AgentEvent::SettingsUpdated { settings } => {
                     if let Ok(adapter) = registry_persist.resolve(Some("codex")) {
@@ -220,7 +249,10 @@ pub async fn run_server(
                         tokio::spawn(async move {
                             adapter.set_auto_approve_read_only(auto_read_only).await;
                         });
-                        tracing::info!("[HostServer] Settings updated: auto_approve_read_only={}", settings.auto_approve_read_only);
+                        tracing::info!(
+                            "[HostServer] Settings updated: auto_approve_read_only={}",
+                            settings.auto_approve_read_only
+                        );
                     }
                 }
                 _ => {}
@@ -241,7 +273,10 @@ pub async fn run_server(
         .with_state(state);
 
     let addr = format!("0.0.0.0:{}", port);
-    info!("[HostServer] Listening on http://{} (LAN & Tailscale accessible)", addr);
+    info!(
+        "[HostServer] Listening on http://{} (LAN & Tailscale accessible)",
+        addr
+    );
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;
@@ -281,7 +316,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         while let Ok(event) = event_rx.recv().await {
             let notification = match event {
                 AgentEvent::MessageCreated { message } => {
-                    info!("💬 [HostServer] Message created: {} in chat {}", message.id, message.chat_id);
+                    info!(
+                        "💬 [HostServer] Message created: {} in chat {}",
+                        message.id, message.chat_id
+                    );
                     serde_json::json!({
                         "method": "message.created",
                         "params": {
@@ -328,7 +366,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     let mut block_payload = serde_json::to_value(&block).unwrap_or_default();
                     if let Some(obj) = block_payload.as_object_mut() {
                         if !block_id.is_empty() {
-                            obj.insert("id".to_string(), serde_json::Value::String(block_id.clone()));
+                            obj.insert(
+                                "id".to_string(),
+                                serde_json::Value::String(block_id.clone()),
+                            );
                         }
                     }
                     serde_json::json!({
@@ -355,10 +396,16 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     if let Some(obj) = block_payload.as_object_mut() {
                         if !block_id.is_empty() {
                             if !obj.contains_key("id") {
-                                obj.insert("id".to_string(), serde_json::Value::String(block_id.clone()));
+                                obj.insert(
+                                    "id".to_string(),
+                                    serde_json::Value::String(block_id.clone()),
+                                );
                             }
                             if !obj.contains_key("callId") {
-                                obj.insert("callId".to_string(), serde_json::Value::String(block_id.clone()));
+                                obj.insert(
+                                    "callId".to_string(),
+                                    serde_json::Value::String(block_id.clone()),
+                                );
                             }
                         }
                     }
@@ -384,7 +431,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
-                AgentEvent::ApprovalResolved { approval_id, chat_id, decision } => {
+                AgentEvent::ApprovalResolved {
+                    approval_id,
+                    chat_id,
+                    decision,
+                } => {
                     info!(
                         "✅ [HostServer] Approval resolved: {} ({})",
                         approval_id, decision
@@ -464,8 +515,14 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         }
                     })
                 }
-                AgentEvent::ModelUpdated { model, reasoning_effort } => {
-                    info!("🤖 [HostServer] Model updated: {} (effort: {:?})", model, reasoning_effort);
+                AgentEvent::ModelUpdated {
+                    model,
+                    reasoning_effort,
+                } => {
+                    info!(
+                        "🤖 [HostServer] Model updated: {} (effort: {:?})",
+                        model, reasoning_effort
+                    );
                     serde_json::json!({
                         "method": "model.updated",
                         "params": {
@@ -493,7 +550,11 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     })
                 }
                 AgentEvent::QueueUpdated { chat_id, items } => {
-                    info!("📋 [HostServer] Queue updated for chat {}: {} items", chat_id, items.len());
+                    info!(
+                        "📋 [HostServer] Queue updated for chat {}: {} items",
+                        chat_id,
+                        items.len()
+                    );
                     serde_json::json!({
                         "method": "queue.updated",
                         "params": {
@@ -503,7 +564,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     })
                 }
                 AgentEvent::ChatThreadUpdated { chat_id, thread_id } => {
-                    info!("🧵 [HostServer] Chat thread updated: {} -> {}", chat_id, thread_id);
+                    info!(
+                        "🧵 [HostServer] Chat thread updated: {} -> {}",
+                        chat_id, thread_id
+                    );
                     serde_json::json!({
                         "method": "chat.updated",
                         "params": {
@@ -513,7 +577,10 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     })
                 }
                 AgentEvent::SettingsUpdated { settings } => {
-                    info!("⚙️  [HostServer] Settings updated: default_provider={}, default_model={}", settings.default_provider_id, settings.default_model);
+                    info!(
+                        "⚙️  [HostServer] Settings updated: default_provider={}, default_model={}",
+                        settings.default_provider_id, settings.default_model
+                    );
                     serde_json::json!({
                         "method": "settings.updated",
                         "params": {

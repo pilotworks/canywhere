@@ -1,0 +1,14 @@
+{
+  "name": "canywhere",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "codegen": "cargo test -p canywhere-protocol --test export_types && bun run scripts/codegen-swift.ts"
+  },
+  "devDependencies": {
+    "quicktype-core": "^26.0.0",
+    "tsx": "^4.23.13",
+    "typescript": "^5.7.3"
+  }
+}

@@ -20,6 +20,8 @@ import {
   ExternalLink,
   Save,
   Loader2,
+  Sparkles,
+  DownloadCloud,
 } from "lucide-react";
 import type { ModelInfo, PermissionMode } from "../../types/index.js";
 import {
@@ -29,6 +31,7 @@ import {
   useModelStore,
   useDeviceStore,
   useConnectionStore,
+  useUpdateStore,
 } from "../../store/index.js";
 import { useThemeStore } from "../../store/theme-store.js";
 import { client } from "../../network/client.js";
@@ -69,6 +72,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const models = useModelStore((s) => s.models);
   const devices = useDeviceStore((s) => s.devices);
   const connectionStatus = useConnectionStore((s) => s.status);
+
+  const {
+    currentVersion,
+    availableVersion,
+    status: updateStatus,
+    checkForUpdates,
+    openModal: openUpdateModal,
+    restartApp,
+  } = useUpdateStore();
 
   // Form states for host settings
   const [defaultProviderId, setDefaultProviderId] = useState<string>("codex");
@@ -643,8 +655,65 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   <div className="p-4 rounded-xl border border-[var(--border)] bg-[var(--card)] space-y-3 text-xs leading-relaxed">
                     <div className="flex items-center justify-between pb-2 border-b border-[var(--border)]">
-                      <span className="font-semibold text-[var(--foreground)]">Version</span>
-                      <span className="font-mono">0.1.0</span>
+                      <div className="space-y-0.5">
+                        <span className="font-semibold text-[var(--foreground)]">Version</span>
+                        <div className="font-mono text-[var(--muted-foreground)]">v{currentVersion}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {updateStatus === "checking" && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-purple-400">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Checking...</span>
+                          </div>
+                        )}
+                        {updateStatus === "up-to-date" && (
+                          <div className="flex items-center gap-1 text-[11px] text-emerald-400 font-medium">
+                            <Check className="w-3 h-3" />
+                            <span>Up to date</span>
+                          </div>
+                        )}
+                        {updateStatus === "available" && (
+                          <Badge className="bg-purple-500/15 text-purple-400 font-mono text-[10px] px-2 py-0.5">
+                            v{availableVersion} available
+                          </Badge>
+                        )}
+                        {updateStatus === "ready" && (
+                          <Badge className="bg-emerald-500/15 text-emerald-400 text-[10px] px-2 py-0.5">
+                            Ready to restart
+                          </Badge>
+                        )}
+
+                        {updateStatus === "ready" ? (
+                          <Button
+                            size="sm"
+                            onClick={restartApp}
+                            className="h-7 text-xs px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1"
+                          >
+                            <RotateCw className="w-3 h-3" />
+                            <span>Restart</span>
+                          </Button>
+                        ) : updateStatus === "available" ? (
+                          <Button
+                            size="sm"
+                            onClick={openUpdateModal}
+                            className="h-7 text-xs px-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg flex items-center gap-1"
+                          >
+                            <Sparkles className="w-3 h-3" />
+                            <span>Update Now</span>
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={updateStatus === "checking"}
+                            onClick={() => checkForUpdates(true)}
+                            className="h-7 text-xs px-2.5 text-[var(--foreground)]"
+                          >
+                            <RotateCw className={`w-3 h-3 mr-1 ${updateStatus === "checking" ? "animate-spin" : ""}`} />
+                            <span>Check for Updates</span>
+                          </Button>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center justify-between pb-2 border-b border-[var(--border)]">
                       <span className="font-semibold text-[var(--foreground)]">Architecture</span>

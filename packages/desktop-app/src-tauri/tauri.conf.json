@@ -26,6 +26,13 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/pilotworks/canywhere/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": false,
     "icon": [

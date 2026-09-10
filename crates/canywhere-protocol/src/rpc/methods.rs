@@ -2,12 +2,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
+pub use crate::models::git::*;
+pub use crate::models::settings::*;
 use crate::models::{
     ApprovalRequest, Chat, ChatStatus, Device, FileTreeNode, Message, MessageBlock, ModelInfo,
     Provider, Workspace,
 };
-pub use crate::models::git::*;
-pub use crate::models::settings::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]

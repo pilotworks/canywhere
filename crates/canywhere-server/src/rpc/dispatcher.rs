@@ -26,7 +26,6 @@ impl RpcDispatcher {
         }
     }
 
-
     pub async fn dispatch(&self, req: RpcRequestEnvelope) -> RpcResponseEnvelope {
         let id = req.id.clone();
         match self.handle_method(&req.method, req.params).await {
@@ -212,7 +211,9 @@ end try"#;
                     .get_workspace(&params.workspace_id)?
                     .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
                 let root = std::path::Path::new(&ws.root_path);
-                let diff = crate::git::GitService::diff(root, params.path.as_deref(), params.staged).await?;
+                let diff =
+                    crate::git::GitService::diff(root, params.path.as_deref(), params.staged)
+                        .await?;
                 Ok(serde_json::to_value(GitDiffResult { diff })?)
             }
 
@@ -293,7 +294,8 @@ end try"#;
                     .get_workspace(&params.workspace_id)?
                     .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
                 let root = std::path::Path::new(&ws.root_path);
-                let commits = crate::git::GitService::log(root, params.max_count.unwrap_or(15)).await?;
+                let commits =
+                    crate::git::GitService::log(root, params.max_count.unwrap_or(15)).await?;
                 Ok(serde_json::to_value(GitLogResult { commits })?)
             }
 
@@ -317,8 +319,11 @@ end try"#;
                     .ok_or_else(|| anyhow::anyhow!("Workspace not found"))?;
                 let root = std::path::Path::new(&ws.root_path);
                 let codex_bin = crate::adapters::codex::CodexAdapter::resolve_binary();
-                let message = crate::git::GitService::generate_commit_message(root, &codex_bin).await?;
-                Ok(serde_json::to_value(GitGenerateCommitMessageResult { message })?)
+                let message =
+                    crate::git::GitService::generate_commit_message(root, &codex_bin).await?;
+                Ok(serde_json::to_value(GitGenerateCommitMessageResult {
+                    message,
+                })?)
             }
 
             "chat.list" => {
@@ -398,9 +403,10 @@ end try"#;
                     }
                 }
 
-                let _ = self.registry.event_tx().send(AgentEvent::ChatCreated {
-                    chat: chat.clone(),
-                });
+                let _ = self
+                    .registry
+                    .event_tx()
+                    .send(AgentEvent::ChatCreated { chat: chat.clone() });
 
                 Ok(serde_json::json!({ "chat": chat }))
             }
@@ -423,7 +429,9 @@ end try"#;
                 } else if chat.status == ChatStatus::Running {
                     let has_active_turn = adapter.get_active_turn(chat_id).await.is_some();
                     if !has_active_turn {
-                        let _ = self.repo.update_chat_status(chat_id, ChatStatus::Idle, None);
+                        let _ = self
+                            .repo
+                            .update_chat_status(chat_id, ChatStatus::Idle, None);
                         chat.status = ChatStatus::Idle;
                     }
                 }
@@ -457,10 +465,13 @@ end try"#;
                 let params: ChatSetPermissionParams = serde_json::from_value(p)?;
                 self.repo
                     .update_chat_permission_mode(&params.chat_id, params.permission_mode)?;
-                let _ = self.registry.event_tx().send(AgentEvent::ChatPermissionUpdated {
-                    chat_id: params.chat_id.clone(),
-                    permission_mode: params.permission_mode,
-                });
+                let _ = self
+                    .registry
+                    .event_tx()
+                    .send(AgentEvent::ChatPermissionUpdated {
+                        chat_id: params.chat_id.clone(),
+                        permission_mode: params.permission_mode,
+                    });
                 Ok(serde_json::to_value(ChatSetPermissionResult {
                     success: true,
                     permission_mode: params.permission_mode,
@@ -503,9 +514,9 @@ end try"#;
                     )
                     .await?;
 
-                let _ = self
-                    .repo
-                    .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
+                let _ =
+                    self.repo
+                        .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
                 chat.external_thread_id = Some(thread_id.clone());
 
                 let turn_id = adapter.start_review(&chat.id, &thread_id).await?;
@@ -567,9 +578,9 @@ end try"#;
                     )
                     .await?;
 
-                let _ = self
-                    .repo
-                    .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
+                let _ =
+                    self.repo
+                        .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
                 chat.external_thread_id = Some(thread_id.clone());
 
                 let result = adapter
@@ -620,9 +631,9 @@ end try"#;
                     )
                     .await?;
 
-                let _ = self
-                    .repo
-                    .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
+                let _ =
+                    self.repo
+                        .update_chat_status(&chat.id, ChatStatus::Running, Some(&thread_id));
                 chat.external_thread_id = Some(thread_id.clone());
 
                 let user_msg_id = params
@@ -690,13 +701,20 @@ end try"#;
                 }
 
                 let resolved_perm_mode = params.permission_mode.unwrap_or(chat.permission_mode);
-                if params.permission_mode.is_some() && params.permission_mode != Some(chat.permission_mode) {
-                    let _ = self.repo.update_chat_permission_mode(&chat.id, resolved_perm_mode);
+                if params.permission_mode.is_some()
+                    && params.permission_mode != Some(chat.permission_mode)
+                {
+                    let _ = self
+                        .repo
+                        .update_chat_permission_mode(&chat.id, resolved_perm_mode);
                     chat.permission_mode = resolved_perm_mode;
-                    let _ = self.registry.event_tx().send(AgentEvent::ChatPermissionUpdated {
-                        chat_id: chat.id.clone(),
-                        permission_mode: resolved_perm_mode,
-                    });
+                    let _ = self
+                        .registry
+                        .event_tx()
+                        .send(AgentEvent::ChatPermissionUpdated {
+                            chat_id: chat.id.clone(),
+                            permission_mode: resolved_perm_mode,
+                        });
                 }
 
                 let turn_id = adapter
@@ -788,7 +806,8 @@ end try"#;
                 let chat_id = p["chatId"]
                     .as_str()
                     .ok_or_else(|| anyhow::anyhow!("chatId required"))?;
-                let mut turn_id = p.get("turnId")
+                let mut turn_id = p
+                    .get("turnId")
                     .and_then(|t| t.as_str())
                     .unwrap_or("")
                     .to_string();
@@ -865,7 +884,9 @@ end try"#;
 
             "queue.update" => {
                 let params: QueueUpdateParams = serde_json::from_value(p)?;
-                let success = self.repo.update_queued_message(&params.queue_id, &params.content)?;
+                let success = self
+                    .repo
+                    .update_queued_message(&params.queue_id, &params.content)?;
                 let items = self.repo.list_queued_messages(&params.chat_id)?;
                 let _ = self.registry.event_tx().send(AgentEvent::QueueUpdated {
                     chat_id: params.chat_id,
@@ -876,7 +897,9 @@ end try"#;
 
             "queue.steer" => {
                 let params: QueueSteerParams = serde_json::from_value(p)?;
-                let item = self.repo.get_queued_message(&params.queue_id)?
+                let item = self
+                    .repo
+                    .get_queued_message(&params.queue_id)?
                     .ok_or_else(|| anyhow::anyhow!("Queued message not found"))?;
                 self.repo.remove_queued_message(&params.queue_id)?;
                 let items = self.repo.list_queued_messages(&params.chat_id)?;
@@ -972,10 +995,7 @@ end try"#;
                     .or_else(|| p.get("name"))
                     .and_then(|v| v.as_str())
                     .unwrap_or("iOS Client");
-                let platform_str = p
-                    .get("platform")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("ios");
+                let platform_str = p.get("platform").and_then(|v| v.as_str()).unwrap_or("ios");
                 let platform = match platform_str.to_lowercase().as_str() {
                     "desktop" => DevicePlatform::Desktop,
                     _ => DevicePlatform::Ios,
@@ -1022,22 +1042,37 @@ end try"#;
                 let models = adapter.list_models().await?;
                 let provider_key = adapter.id();
 
-                let saved_model = self.repo.get_setting(&format!("{}_current_model", provider_key))?
+                let saved_model = self
+                    .repo
+                    .get_setting(&format!("{}_current_model", provider_key))?
                     .or_else(|| self.repo.get_setting("current_model").ok().flatten());
                 let current_model = saved_model
                     .filter(|sm| models.iter().any(|m| &m.model == sm || &m.id == sm))
-                    .or_else(|| models.iter().find(|m| m.is_default).map(|m| m.model.clone()))
+                    .or_else(|| {
+                        models
+                            .iter()
+                            .find(|m| m.is_default)
+                            .map(|m| m.model.clone())
+                    })
                     .or_else(|| models.first().map(|m| m.model.clone()));
 
-                let saved_effort = self.repo.get_setting(&format!("{}_current_reasoning_effort", provider_key))?
-                    .or_else(|| self.repo.get_setting("current_reasoning_effort").ok().flatten());
-                let current_reasoning_effort = saved_effort
+                let saved_effort = self
+                    .repo
+                    .get_setting(&format!("{}_current_reasoning_effort", provider_key))?
                     .or_else(|| {
-                        current_model.as_ref().and_then(|cm| {
-                            models.iter().find(|m| &m.model == cm || &m.id == cm)
-                                .and_then(|m| m.default_reasoning_effort.clone())
-                        })
+                        self.repo
+                            .get_setting("current_reasoning_effort")
+                            .ok()
+                            .flatten()
                     });
+                let current_reasoning_effort = saved_effort.or_else(|| {
+                    current_model.as_ref().and_then(|cm| {
+                        models
+                            .iter()
+                            .find(|m| &m.model == cm || &m.id == cm)
+                            .and_then(|m| m.default_reasoning_effort.clone())
+                    })
+                });
 
                 Ok(serde_json::to_value(ModelListResult {
                     models,
@@ -1047,8 +1082,14 @@ end try"#;
             }
 
             "model.get" => {
-                let model = self.repo.get_setting("current_model")?.unwrap_or_else(|| "gpt-5-codex".to_string());
-                let reasoning_effort = self.repo.get_setting("current_reasoning_effort")?.or_else(|| Some("medium".to_string()));
+                let model = self
+                    .repo
+                    .get_setting("current_model")?
+                    .unwrap_or_else(|| "gpt-5-codex".to_string());
+                let reasoning_effort = self
+                    .repo
+                    .get_setting("current_reasoning_effort")?
+                    .or_else(|| Some("medium".to_string()));
                 Ok(serde_json::to_value(ModelGetResult {
                     model,
                     reasoning_effort,
@@ -1056,13 +1097,20 @@ end try"#;
             }
 
             "model.set" => {
-                let provider_id = p.get("providerId").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let provider_id = p
+                    .get("providerId")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
                 let params: ModelSetParams = serde_json::from_value(p)?;
                 if let Ok(adapter) = self.registry.resolve(provider_id.as_deref()) {
                     let provider_key = adapter.id();
-                    self.repo.set_setting(&format!("{}_current_model", provider_key), &params.model)?;
+                    self.repo
+                        .set_setting(&format!("{}_current_model", provider_key), &params.model)?;
                     if let Some(effort) = &params.reasoning_effort {
-                        self.repo.set_setting(&format!("{}_current_reasoning_effort", provider_key), effort)?;
+                        self.repo.set_setting(
+                            &format!("{}_current_reasoning_effort", provider_key),
+                            effort,
+                        )?;
                     }
                 }
                 self.repo.set_setting("current_model", &params.model)?;
@@ -1096,7 +1144,9 @@ end try"#;
                 let os = format!("{} ({})", std::env::consts::OS, std::env::consts::ARCH);
                 let active_turns = self.registry.get_active_turns_count().await;
                 let default_adapter = self.registry.default_adapter().ok();
-                let agent_ver = default_adapter.as_ref().map(|a| format!("{} CLI", a.name()));
+                let agent_ver = default_adapter
+                    .as_ref()
+                    .map(|a| format!("{} CLI", a.name()));
                 Ok(serde_json::to_value(HostInfoResult {
                     host_name,
                     os,

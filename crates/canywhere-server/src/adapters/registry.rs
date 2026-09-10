@@ -1,9 +1,9 @@
+use super::{AgentEvent, CliAdapter};
+use anyhow::{bail, Result};
+use canywhere_protocol::models::*;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use anyhow::{bail, Result};
-use canywhere_protocol::models::*;
-use super::{AgentEvent, CliAdapter};
 
 pub struct ProviderRegistry {
     adapters: HashMap<String, Arc<dyn CliAdapter>>,
@@ -83,7 +83,10 @@ impl ProviderRegistry {
                 return adapter.respond_approval(approval_id, decision).await;
             }
         }
-        bail!("Approval request '{}' not found in any active adapter", approval_id)
+        bail!(
+            "Approval request '{}' not found in any active adapter",
+            approval_id
+        )
     }
 
     pub fn default_adapter(&self) -> Result<Arc<dyn CliAdapter>> {
@@ -97,6 +100,8 @@ impl ProviderRegistry {
         cancellation_token: Option<String>,
     ) -> Result<Vec<canywhere_protocol::rpc::FuzzyFileMatchItem>> {
         let adapter = self.default_adapter()?;
-        adapter.fuzzy_file_search(roots, query, cancellation_token).await
+        adapter
+            .fuzzy_file_search(roots, query, cancellation_token)
+            .await
     }
 }

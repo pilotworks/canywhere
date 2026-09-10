@@ -59,7 +59,8 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     };
     let update_res = dispatcher.dispatch(update_req).await;
     assert!(update_res.error.is_none());
-    let updated: WorkspaceUpdateResult = serde_json::from_value(update_res.result.unwrap()).unwrap();
+    let updated: WorkspaceUpdateResult =
+        serde_json::from_value(update_res.result.unwrap()).unwrap();
     assert_eq!(updated.workspace.name, "Updated Rust Monorepo");
 
     // 2c. Delete Workspace
@@ -72,15 +73,18 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     };
     let delete_res = dispatcher.dispatch(delete_req).await;
     assert!(delete_res.error.is_none());
-    let deleted: WorkspaceDeleteResult = serde_json::from_value(delete_res.result.unwrap()).unwrap();
+    let deleted: WorkspaceDeleteResult =
+        serde_json::from_value(delete_res.result.unwrap()).unwrap();
     assert!(deleted.success);
 
     // Verify empty list
-    let list_res2 = dispatcher.dispatch(RpcRequestEnvelope {
-        id: RpcId::Number(23),
-        method: "workspace.list".to_string(),
-        params: None,
-    }).await;
+    let list_res2 = dispatcher
+        .dispatch(RpcRequestEnvelope {
+            id: RpcId::Number(23),
+            method: "workspace.list".to_string(),
+            params: None,
+        })
+        .await;
     let list2: WorkspaceListResult = serde_json::from_value(list_res2.result.unwrap()).unwrap();
     assert_eq!(list2.workspaces.len(), 0);
 
@@ -104,7 +108,8 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
         last_seen_at: 1000,
         last_transport: DeviceTransport::Lan,
         revoked: false,
-    }).unwrap();
+    })
+    .unwrap();
 
     let dev_list_req = RpcRequestEnvelope {
         id: RpcId::Number(31),
@@ -127,12 +132,15 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     assert!(revoke_res.error.is_none());
     assert_eq!(revoke_res.result.unwrap()["revoked"], true);
 
-    let dev_list_res2 = dispatcher.dispatch(RpcRequestEnvelope {
-        id: RpcId::Number(33),
-        method: "device.list".to_string(),
-        params: None,
-    }).await;
-    let dev_list2: DeviceListResult = serde_json::from_value(dev_list_res2.result.unwrap()).unwrap();
+    let dev_list_res2 = dispatcher
+        .dispatch(RpcRequestEnvelope {
+            id: RpcId::Number(33),
+            method: "device.list".to_string(),
+            params: None,
+        })
+        .await;
+    let dev_list2: DeviceListResult =
+        serde_json::from_value(dev_list_res2.result.unwrap()).unwrap();
     assert!(dev_list2.devices[0].revoked);
 
     // 4. Create Standalone Chat
@@ -172,7 +180,11 @@ async fn test_rpc_dispatcher_workspaces_and_chats() {
     assert!(prov_res.error.is_none());
     let prov_list: ProviderListResult = serde_json::from_value(prov_res.result.unwrap()).unwrap();
     assert!(!prov_list.providers.is_empty());
-    let codex_prov = prov_list.providers.iter().find(|p| p.id == "codex").unwrap();
+    let codex_prov = prov_list
+        .providers
+        .iter()
+        .find(|p| p.id == "codex")
+        .unwrap();
     assert!(codex_prov.commands.iter().any(|c| c.name == "/review"));
     assert!(codex_prov.commands.iter().any(|c| c.name == "/compact"));
     assert!(codex_prov.actions.iter().any(|a| a.id == "review"));
@@ -311,7 +323,10 @@ async fn test_real_codex_turn_send_via_dispatcher() {
     };
     let chat_res = dispatcher.dispatch(chat_req).await;
     assert!(chat_res.error.is_none());
-    let chat_id = chat_res.result.unwrap()["chat"]["id"].as_str().unwrap().to_string();
+    let chat_id = chat_res.result.unwrap()["chat"]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // 2. Dispatch turn.send
     let turn_req = RpcRequestEnvelope {
@@ -324,8 +339,15 @@ async fn test_real_codex_turn_send_via_dispatcher() {
         })),
     };
     let turn_res = dispatcher.dispatch(turn_req).await;
-    assert!(turn_res.error.is_none(), "turn.send must succeed: {:?}", turn_res.error);
-    let turn_id = turn_res.result.unwrap()["turnId"].as_str().unwrap().to_string();
+    assert!(
+        turn_res.error.is_none(),
+        "turn.send must succeed: {:?}",
+        turn_res.error
+    );
+    let turn_id = turn_res.result.unwrap()["turnId"]
+        .as_str()
+        .unwrap()
+        .to_string();
     assert!(!turn_id.is_empty(), "turnId must not be empty");
     println!("Successfully dispatched turn.send: turn_id={}", turn_id);
 
@@ -453,7 +475,10 @@ async fn test_turn_blocks_persistence() {
             assert_eq!(command, "cargo check");
             assert_eq!(output.as_deref(), Some("Finished dev profile"));
             assert_eq!(*exit_code, Some(0));
-            assert_eq!(*status, canywhere_protocol::models::CommandExecStatus::Completed);
+            assert_eq!(
+                *status,
+                canywhere_protocol::models::CommandExecStatus::Completed
+            );
         }
         b => panic!("Expected CommandExec block, got {:?}", b),
     }
@@ -469,7 +494,10 @@ async fn test_turn_blocks_persistence() {
             assert_eq!(call_id, "call_abc");
             assert_eq!(name, "read_file");
             assert_eq!(output.as_deref(), Some("fn main() {}"));
-            assert_eq!(*status, canywhere_protocol::models::ToolCallStatus::Completed);
+            assert_eq!(
+                *status,
+                canywhere_protocol::models::ToolCallStatus::Completed
+            );
         }
         b => panic!("Expected ToolCall block, got {:?}", b),
     }

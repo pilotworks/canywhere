@@ -1,0 +1,58 @@
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/ios/**"
+      - "crates/canywhere-protocol/**"
+      - "scripts/**"
+      - "schemas/**"
+      - ".github/workflows/ios-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "mobile/ios/**"
+      - "crates/canywhere-protocol/**"
+      - "scripts/**"
+      - "schemas/**"
+      - ".github/workflows/ios-ci.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-simulator:
+    name: iOS Simulator Build
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install root dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Swift Models from Schemas
+        run: bun run scripts/codegen-swift.ts
+
+      - name: Generate Xcode Project
+        working-directory: mobile/ios
+        run: xcodegen generate
+
+      - name: Build iOS Simulator Target
+        run: |
+          xcodebuild \
+            -project mobile/ios/Canywhere.xcodeproj \
+            -scheme Canywhere \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build

@@ -41,15 +41,42 @@ fn export_typescript_and_json_schema() {
     fs::create_dir_all(schema_dir).unwrap();
 
     let schemas: Vec<(&str, serde_json::Value)> = vec![
-        ("chat.schema.json", serde_json::to_value(schemars::schema_for!(Chat)).unwrap()),
-        ("message.schema.json", serde_json::to_value(schemars::schema_for!(Message)).unwrap()),
-        ("workspace.schema.json", serde_json::to_value(schemars::schema_for!(Workspace)).unwrap()),
-        ("approval.schema.json", serde_json::to_value(schemars::schema_for!(ApprovalRequest)).unwrap()),
-        ("device.schema.json", serde_json::to_value(schemars::schema_for!(Device)).unwrap()),
-        ("pairing_qr.schema.json", serde_json::to_value(schemars::schema_for!(PairingQrPayload)).unwrap()),
-        ("pairing_response.schema.json", serde_json::to_value(schemars::schema_for!(PairingResponse)).unwrap()),
-        ("provider.schema.json", serde_json::to_value(schemars::schema_for!(Provider)).unwrap()),
-        ("settings.schema.json", serde_json::to_value(schemars::schema_for!(HostSettings)).unwrap()),
+        (
+            "chat.schema.json",
+            serde_json::to_value(schemars::schema_for!(Chat)).unwrap(),
+        ),
+        (
+            "message.schema.json",
+            serde_json::to_value(schemars::schema_for!(Message)).unwrap(),
+        ),
+        (
+            "workspace.schema.json",
+            serde_json::to_value(schemars::schema_for!(Workspace)).unwrap(),
+        ),
+        (
+            "approval.schema.json",
+            serde_json::to_value(schemars::schema_for!(ApprovalRequest)).unwrap(),
+        ),
+        (
+            "device.schema.json",
+            serde_json::to_value(schemars::schema_for!(Device)).unwrap(),
+        ),
+        (
+            "pairing_qr.schema.json",
+            serde_json::to_value(schemars::schema_for!(PairingQrPayload)).unwrap(),
+        ),
+        (
+            "pairing_response.schema.json",
+            serde_json::to_value(schemars::schema_for!(PairingResponse)).unwrap(),
+        ),
+        (
+            "provider.schema.json",
+            serde_json::to_value(schemars::schema_for!(Provider)).unwrap(),
+        ),
+        (
+            "settings.schema.json",
+            serde_json::to_value(schemars::schema_for!(HostSettings)).unwrap(),
+        ),
     ];
 
     for (filename, schema) in schemas {
