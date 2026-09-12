@@ -1110,6 +1110,35 @@ impl CodexAdapter {
                     block_id: item_id,
                     block,
                 });
+            } else if item_type == "fileChange" {
+                if let Some(changes) = item.get("changes").and_then(|c| c.as_array()) {
+                    for change in changes {
+                        let path = change["path"].as_str().unwrap_or("").to_string();
+                        let patch = change["diff"]
+                            .as_str()
+                            .or_else(|| change["patch"].as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let block = MessageBlock::FileDiff {
+                            path,
+                            patch,
+                            status: FileDiffStatus::Applied,
+                        };
+                        {
+                            let mut blocks_lock = chat_blocks.lock().await;
+                            blocks_lock
+                                .entry(chat_id.clone())
+                                .or_default()
+                                .push(block.clone());
+                        }
+                        let _ = tx.send(AgentEvent::BlockStarted {
+                            chat_id: chat_id.clone(),
+                            message_id: msg_id.clone(),
+                            block_id: item_id.clone(),
+                            block,
+                        });
+                    }
+                }
             }
         } else if method == "item/completed" {
             let item = &params["item"];
@@ -1319,22 +1348,46 @@ impl CodexAdapter {
                             .unwrap_or("")
                             .to_string();
                         let block = MessageBlock::FileDiff {
-                            path,
-                            patch,
+                            path: path.clone(),
+                            patch: patch.clone(),
                             status: FileDiffStatus::Applied,
                         };
+                        let mut already_exists = false;
                         {
                             let mut blocks_lock = chat_blocks.lock().await;
-                            blocks_lock
-                                .entry(chat_id.clone())
-                                .or_default()
-                                .push(block.clone());
+                            let blocks = blocks_lock.entry(chat_id.clone()).or_default();
+                            for b in blocks.iter_mut().rev() {
+                                if let MessageBlock::FileDiff {
+                                    path: b_path,
+                                    patch: b_patch,
+                                    status: b_status,
+                                } = b
+                                {
+                                    if *b_path == path {
+                                        *b_patch = patch.clone();
+                                        *b_status = FileDiffStatus::Applied;
+                                        already_exists = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if !already_exists {
+                                blocks.push(block.clone());
+                            }
                         }
-                        let _ = tx.send(AgentEvent::BlockStarted {
+                        if !already_exists {
+                            let _ = tx.send(AgentEvent::BlockStarted {
+                                chat_id: chat_id.clone(),
+                                message_id: msg_id.clone(),
+                                block_id: item_id.clone(),
+                                block: block.clone(),
+                            });
+                        }
+                        let _ = tx.send(AgentEvent::BlockCompleted {
                             chat_id: chat_id.clone(),
                             message_id: msg_id.clone(),
                             block_id: item_id.clone(),
-                            block,
+                            block: Some(block),
                         });
                     }
                 }

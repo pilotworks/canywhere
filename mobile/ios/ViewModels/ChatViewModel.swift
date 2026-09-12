@@ -474,7 +474,21 @@ final class ChatViewModel {
             do {
                 let payload = try data.decodeRPCParams(ToolStartedPayload.self)
                 guard payload.chatId == chatId else { return }
+                
+                let targetIndex: Int?
                 if let idx = messages.firstIndex(where: { $0.id == payload.messageId }) {
+                    targetIndex = idx
+                } else if let sId = streamingMessageId, let idx = messages.firstIndex(where: { $0.id == sId }) {
+                    targetIndex = idx
+                } else if let idx = messages.lastIndex(where: { $0.role == .agent && $0.streaming }) {
+                    targetIndex = idx
+                } else if let idx = messages.lastIndex(where: { $0.role == .agent }) {
+                    targetIndex = idx
+                } else {
+                    targetIndex = nil
+                }
+
+                if let idx = targetIndex {
                     var blocks = messages[idx].blocks
                     // Finalize any in-progress reasoning blocks
                     for bIdx in blocks.indices {
@@ -483,7 +497,23 @@ final class ChatViewModel {
                         }
                     }
                     blocks.append(payload.block)
-                    messages[idx] = messages[idx].with(blocks: blocks)
+                    messages[idx] = messages[idx].with(blocks: blocks, streaming: true)
+                    self.streamingMessageId = messages[idx].id
+                    self.isRunning = true
+                } else {
+                    // No agent message found; synthesize a streaming placeholder message immediately
+                    let newMsg = Message(
+                        blocks: [payload.block],
+                        chatID: chatId,
+                        createdAt: Int(Date().timeIntervalSince1970 * 1000),
+                        id: payload.messageId,
+                        role: .agent,
+                        streaming: true,
+                        turnID: activeTurnId
+                    )
+                    messages.append(newMsg)
+                    self.streamingMessageId = payload.messageId
+                    self.isRunning = true
                 }
                 scrollTrigger &+= 1
             } catch {

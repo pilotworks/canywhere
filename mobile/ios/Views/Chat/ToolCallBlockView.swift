@@ -62,51 +62,112 @@ struct ToolCallBlockView: View {
         let lower = toolName.lowercased()
         let args = parsedArgs
 
-        // 1. File Diff / File Editing / Writing
+        // 1. Directory Listing (list_dir, dir, ls)
+        if lower == "list_dir" || lower.contains("list_dir") || lower == "dir" || lower == "ls" {
+            let rawPath = (args?["DirectoryPath"] as? String) ?? (args?["directory_path"] as? String) ?? (args?["path"] as? String) ?? (args?["dir"] as? String)
+            let shortPath = rawPath.map { getShortPath($0) }
+            let summary = args?["toolSummary"] as? String
+            let target = shortPath ?? summary ?? "directory"
+            return (isRunning ? "Listing" : "Listed", target, true, "folder")
+        }
+
+        // 2. File Reading
+        if lower.contains("read") || lower.contains("view") || lower == "cat" || lower == "fetch_file" {
+            let rawPath = (args?["AbsolutePath"] as? String) ?? (args?["absolute_path"] as? String) ?? (args?["path"] as? String) ?? (args?["filePath"] as? String) ?? (args?["file"] as? String) ?? (args?["TargetFile"] as? String) ?? block.path
+            var target = rawPath.map { getShortPath($0) } ?? (args?["toolSummary"] as? String) ?? toolName
+
+            // Append line range if present
+            let startLine = (args?["StartLine"] as? Int) ?? (args?["start_line"] as? Int) ?? (args?["startLine"] as? Int) ?? (args?["line"] as? Int)
+            let endLine = (args?["EndLine"] as? Int) ?? (args?["end_line"] as? Int) ?? (args?["endLine"] as? Int)
+            if let start = startLine {
+                if let end = endLine {
+                    target += ":\(start)-\(end)"
+                } else {
+                    target += ":\(start)"
+                }
+            }
+            return (isRunning ? "Reading" : "Read", target, true, "doc.text")
+        }
+
+        // 3. File Diff / File Editing / Writing
         if block.type == .fileDiff || lower.contains("write") || lower.contains("edit") || lower.contains("replace") || lower.contains("patch") {
-            let rawPath = block.path ?? (args?["TargetFile"] as? String) ?? (args?["target_file"] as? String) ?? (args?["targetFile"] as? String) ?? (args?["AbsolutePath"] as? String) ?? (args?["path"] as? String) ?? (args?["filePath"] as? String) ?? (args?["file"] as? String)
-            let target = rawPath.map { getShortPath($0) } ?? toolName
+            let changesArray = args?["changes"] as? [[String: Any]]
+            let firstChangePath = changesArray?.first?["path"] as? String
+            let rawPath = block.path ?? (args?["TargetFile"] as? String) ?? (args?["target_file"] as? String) ?? (args?["targetFile"] as? String) ?? (args?["AbsolutePath"] as? String) ?? (args?["absolute_path"] as? String) ?? (args?["path"] as? String) ?? (args?["filePath"] as? String) ?? (args?["file"] as? String) ?? firstChangePath
+            var target = rawPath.map { getShortPath($0) } ?? (args?["toolSummary"] as? String) ?? toolName
+
+            // Append line range if present
+            let startLine = (args?["StartLine"] as? Int) ?? (args?["start_line"] as? Int) ?? (args?["startLine"] as? Int)
+            let endLine = (args?["EndLine"] as? Int) ?? (args?["end_line"] as? Int) ?? (args?["endLine"] as? Int)
+            if let start = startLine {
+                if let end = endLine {
+                    target += ":\(start)-\(end)"
+                } else {
+                    target += ":\(start)"
+                }
+            }
             return (isRunning ? "Editing" : "Edited", target, true, "doc.text")
         }
 
-        // 2. Command Execution
-        if block.type == .commandExec || lower.contains("command") || lower.contains("bash") || lower.contains("terminal") || lower.contains("exec") {
-            let cmd = block.command ?? (args?["CommandLine"] as? String) ?? (args?["command"] as? String) ?? (args?["cmd"] as? String)
-            let displayCmd = cmd.map { "$ \(truncate($0, limit: 45))" }
-            return (isRunning ? "Running" : "Ran", displayCmd, true, nil)
+        // 4. Command Execution
+        if block.type == .commandExec || lower.contains("command") || lower.contains("bash") || lower.contains("terminal") || lower.contains("exec") || lower.contains("shell") {
+            let cmd = block.command ?? (args?["CommandLine"] as? String) ?? (args?["command"] as? String) ?? (args?["cmd"] as? String) ?? (args?["script"] as? String)
+            if let c = cmd, !c.isEmpty {
+                return (isRunning ? "Running" : "Ran", "$ \(truncate(c, limit: 50))", true, "terminal")
+            }
+            let summary = args?["toolSummary"] as? String
+            return (isRunning ? "Running" : "Ran", summary ?? toolName, true, "terminal")
         }
 
-        // 3. Reading
-        if lower.contains("read") || lower.contains("view") || lower == "cat" {
-            let rawPath = (args?["AbsolutePath"] as? String) ?? (args?["path"] as? String) ?? (args?["TargetFile"] as? String) ?? (args?["target_file"] as? String) ?? (args?["filePath"] as? String) ?? (args?["file"] as? String) ?? block.path
-            let target = rawPath.map { getShortPath($0) } ?? toolName
-            return (isRunning ? "Reading" : "Read", target, true, nil)
-        }
-
-        // 4. CodeGraph Exploration
+        // 5. CodeGraph Exploration
         if lower.contains("codegraph_explore") || lower.contains("explore") {
             let q = (args?["query"] as? String) ?? (args?["Query"] as? String)
-            return (isRunning ? "Exploring" : "Explored", q.map { "\"\(truncate($0, limit: 35))\"" }, false, nil)
+            let target = q != nil && !q!.isEmpty ? "\"\(truncate(q!, limit: 45))\"" : nil
+            return (isRunning ? "Exploring" : "Explored", target, false, "sparkles")
         }
 
-        // 5. Grep / Find / Search
+        // 6. Search / Grep / Find
         if lower.contains("grep") || lower.contains("find") || lower.contains("search") {
-            let q = (args?["Query"] as? String) ?? (args?["query"] as? String) ?? (args?["Pattern"] as? String)
-            return (isRunning ? "Searching" : "Searched", q.map { "for \"\(truncate($0, limit: 35))\"" }, false, nil)
+            let q = (args?["Query"] as? String) ?? (args?["query"] as? String) ?? (args?["Pattern"] as? String) ?? (args?["pattern"] as? String)
+            let target = q != nil && !q!.isEmpty ? "for \"\(truncate(q!, limit: 40))\"" : "codebase"
+            return (isRunning ? "Searching" : "Searched", target, false, "magnifyingglass")
         }
 
-        // 6. Web / Browse
-        if let u = (args?["Url"] as? String) ?? (args?["url"] as? String) {
-            return (isRunning ? "Fetching" : "Fetched", truncate(u, limit: 35), true, nil)
+        // 7. MCP Tools
+        if lower.contains("mcp") {
+            let mcpTool = (args?["ToolName"] as? String) ?? (args?["tool_name"] as? String) ?? ""
+            let mcpServer = (args?["ServerName"] as? String) ?? (args?["server_name"] as? String) ?? ""
+            let summary = (args?["toolSummary"] as? String) ?? (!mcpTool.isEmpty ? mcpTool : "MCP tool")
+            let target = !mcpServer.isEmpty && !mcpTool.isEmpty ? "\(mcpServer)/\(mcpTool)" : summary
+            return (isRunning ? "Calling" : "Called", target, true, "wrench.and.screwdriver")
         }
 
-        // Fallback
-        if let q = (args?["query"] as? String) ?? (args?["Query"] as? String) {
-            return (isRunning ? "Calling" : "Called", "\(toolName) \"\(truncate(q, limit: 30))\"", false, nil)
+        // 8. Tasks / Subagents
+        if lower.contains("subagent") || lower.contains("task") {
+            let subagentsArray = args?["Subagents"] as? [Any]
+            let action = (args?["Action"] as? String) ?? (args?["toolSummary"] as? String) ?? (subagentsArray != nil ? "\(subagentsArray!.count) subagents" : nil)
+            return (isRunning ? "Running" : "Completed", action ?? toolName, false, "person.2")
         }
 
-        let firstVal = args?.values.compactMap { $0 as? String }.first
-        let target = firstVal != nil ? "\(toolName) (\(truncate(firstVal!, limit: 25)))" : toolName
+        // 9. Web / Browse / Fetch (with URL)
+        let hasUrl = (args?["Url"] as? String) ?? (args?["url"] as? String) ?? (args?["link"] as? String)
+        if let u = hasUrl, (lower.contains("web") || lower.contains("browse") || lower.contains("fetch") || lower.contains("url")) {
+            return (isRunning ? "Fetching" : "Fetched", truncate(u, limit: 40), true, "globe")
+        }
+
+        // 10. General query parameter if present
+        if let q = (args?["query"] as? String) ?? (args?["Query"] as? String), !q.isEmpty {
+            return (isRunning ? "Calling" : "Called", "\(toolName) \"\(truncate(q, limit: 35))\"", false, nil)
+        }
+
+        // 11. Tool summary if present
+        if let summary = args?["toolSummary"] as? String, !summary.isEmpty {
+            return (isRunning ? "Running" : "Completed", summary, false, nil)
+        }
+
+        // 12. Default fallback
+        let firstVal = args?.values.compactMap { $0 as? String }.first(where: { !$0.isEmpty })
+        let target = firstVal != nil ? "\(toolName) (\(truncate(firstVal!, limit: 35)))" : toolName
         return (isRunning ? "Calling" : "Called", target, true, nil)
     }
 
@@ -586,6 +647,7 @@ struct ToolCallGroupView: View {
         var commands = 0
         var searches = 0
         var explores = 0
+        var directories = 0
         var fetches = 0
         var other = 0
 
@@ -597,6 +659,8 @@ struct ToolCallGroupView: View {
             let lower = (block.name ?? block.command ?? "").lowercased()
             if lower.contains("command") || lower.contains("bash") || lower.contains("exec") || lower.contains("terminal") || lower.contains("shell") {
                 commands += 1
+            } else if lower == "list_dir" || lower.contains("list_dir") || lower == "dir" || lower == "ls" {
+                directories += 1
             } else if lower.contains("read") || lower.contains("view") || lower == "cat" {
                 filesRead += 1
             } else if lower.contains("write") || lower.contains("edit") || lower.contains("replace") || lower.contains("patch") {
@@ -613,6 +677,7 @@ struct ToolCallGroupView: View {
         }
 
         var parts: [String] = []
+        // 1. Files explored / read
         if explores > 0 && filesRead == 0 {
             parts.append(explores == 1 ? "explored 1 file" : "explored \(explores) files")
         } else if filesRead > 0 && explores == 0 {
@@ -621,27 +686,40 @@ struct ToolCallGroupView: View {
             parts.append("explored \(filesRead + explores) files")
         }
 
+        // 2. Directories checked / listed
+        if directories > 0 {
+            parts.append(directories == 1 ? "checked 1 directory" : "checked \(directories) directories")
+        }
+
+        // 3. Searches
         if searches > 0 {
             parts.append(searches == 1 ? "1 search" : "\(searches) searches")
         }
 
+        // 4. Commands
         if commands > 0 {
             parts.append(commands == 1 ? "ran 1 command" : "ran \(commands) commands")
         }
 
+        // 5. Edits
         if filesEdited > 0 {
             parts.append(filesEdited == 1 ? "edited 1 file" : "edited \(filesEdited) files")
         }
 
+        // 6. Fetches
         if fetches > 0 {
             parts.append(fetches == 1 ? "1 fetch" : "\(fetches) fetches")
         }
 
-        if other > 0 && parts.isEmpty {
-            parts.append(other == 1 ? "1 action" : "\(other) actions")
+        // 7. Other actions
+        if parts.isEmpty && other > 0 {
+            parts.append(other == 1 ? "called 1 tool" : "called \(other) tools")
         }
 
-        guard !parts.isEmpty else { return "" }
+        if parts.isEmpty {
+            return "Called \(blocks.count) tool\(blocks.count == 1 ? "" : "s")"
+        }
+
         let joined = parts.joined(separator: ", ")
         return joined.prefix(1).uppercased() + joined.dropFirst()
     }
