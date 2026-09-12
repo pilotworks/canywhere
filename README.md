@@ -177,6 +177,7 @@ Canywhere includes a standardized `Makefile` to streamline development:
 | `make server` | Run the Host Server Daemon |
 | `make ui-dev` | Launch Desktop UI Vite development server |
 | `make desktop` | Build and run Desktop Tauri application |
+| `make desktop-bundle` | Bundle release Desktop application (options: `BUNDLES=app,dmg` on macOS) |
 | `make ios-project` | Regenerate `Canywhere.xcodeproj` via `xcodegen` |
 | `make ios-build` | Build the iOS client for Simulator |
 | `make clean` | Clean cargo build artifacts, dist folders, and caches |

@@ -68,7 +68,10 @@ make ui-dev
 # 6. Launch Desktop Tauri client
 make desktop
 
-# 7. Generate iOS Xcode project & compile for Simulator
+# 7. Bundle Desktop release application
+make desktop-bundle
+
+# 8. Generate iOS Xcode project & compile for Simulator
 make ios-build
 ```
 

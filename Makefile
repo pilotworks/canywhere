@@ -1,4 +1,10 @@
-.PHONY: all build test dev codegen clean help ui-dev ui-build server desktop ui-test check
+.PHONY: all build test dev codegen clean help ui-dev ui-build server desktop desktop-bundle ui-test check
+
+ifeq ($(shell uname -s),Darwin)
+BUNDLES ?= app
+else
+BUNDLES ?=
+endif
 
 help: ## Show help for all commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -14,6 +20,9 @@ icons: ## Download official vscode-icons assets and generate theme manifest
 # --- BUILD ---
 ui-build: ## Build Desktop UI with Bun + Vite
 	cd packages/desktop-ui && bun install && bun run build
+
+desktop-bundle: ui-build ## Bundle Desktop application (options: BUNDLES=app,dmg or TAURI_ARGS="--debug")
+	cd packages/desktop-app/src-tauri && bunx @tauri-apps/cli build $(if $(BUNDLES),--bundles $(BUNDLES),) $(TAURI_ARGS)
 
 ios-project: codegen ## Generate iOS Xcode project via xcodegen
 	cd mobile/ios && xcodegen generate
