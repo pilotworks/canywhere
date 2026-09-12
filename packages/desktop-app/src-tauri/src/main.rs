@@ -4,6 +4,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|_app| {
             // Spawn Canywhere daemon in a background tokio thread
             let port = std::env::var("PORT")

@@ -1,13 +1,17 @@
 import { create } from "zustand";
 import type { HostSettings } from "../types/index.js";
 
-export type SettingsTab = "general" | "ai" | "security" | "devices" | "network" | "about";
+export type SettingsTab = "general" | "ai" | "notifications" | "security" | "devices" | "network" | "about";
 
 export interface LocalClientSettings {
   codeFontSize: number;
   fontFamily: string;
   soundEnabled: boolean;
   wordWrap: boolean;
+  notificationsEnabled: boolean;
+  notifyOnApproval: boolean;
+  notifyOnCompletion: boolean;
+  notifyOnlyBackground: boolean;
 }
 
 const DEFAULT_LOCAL_SETTINGS: LocalClientSettings = {
@@ -15,6 +19,10 @@ const DEFAULT_LOCAL_SETTINGS: LocalClientSettings = {
   fontFamily: "JetBrains Mono, monospace",
   soundEnabled: true,
   wordWrap: false,
+  notificationsEnabled: true,
+  notifyOnApproval: true,
+  notifyOnCompletion: true,
+  notifyOnlyBackground: true,
 };
 
 const STORAGE_KEY_LOCAL_SETTINGS = "canywhere:client_settings";

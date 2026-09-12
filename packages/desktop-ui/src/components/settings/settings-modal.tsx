@@ -22,6 +22,7 @@ import {
   Loader2,
   Sparkles,
   DownloadCloud,
+  Bell,
 } from "lucide-react";
 import type { ModelInfo, PermissionMode } from "../../types/index.js";
 import {
@@ -36,6 +37,11 @@ import {
 import { useThemeStore } from "../../store/theme-store.js";
 import { client } from "../../network/client.js";
 import {
+  ensureNotificationPermission,
+  dispatchDesktopNotification,
+  playChime,
+} from "../../lib/notifications.js";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -46,6 +52,7 @@ import { Button } from "../ui/button.js";
 import { Badge } from "../ui/badge.js";
 import { Input } from "../ui/input.js";
 import { ProviderLogo } from "../ui/provider-logo.js";
+import { Switch } from "../ui/switch.js";
 
 interface SettingsModalProps {
   open: boolean;
@@ -96,6 +103,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   // Dynamic models for currently selected provider in Settings
   const [availableModels, setAvailableModels] = useState<ModelInfo[]>(models);
   const [isLoadingModels, setIsLoadingModels] = useState<boolean>(false);
+  const [testingNotif, setTestingNotif] = useState<boolean>(false);
 
   // Sync state from store when modal opens or hostSettings updates
   useEffect(() => {
@@ -193,6 +201,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const navItems: { id: SettingsTab; label: string; icon: React.ReactNode }[] = [
     { id: "general", label: "General & Display", icon: <Sliders className="w-4 h-4" /> },
     { id: "ai", label: "AI & Providers", icon: <Cpu className="w-4 h-4" /> },
+    { id: "notifications", label: "Notifications", icon: <Bell className="w-4 h-4" /> },
     { id: "security", label: "Security & Guardrails", icon: <ShieldAlert className="w-4 h-4" /> },
     { id: "devices", label: "Connected Devices", icon: <Smartphone className="w-4 h-4" /> },
     { id: "network", label: "Network & Host", icon: <Network className="w-4 h-4" /> },
@@ -326,11 +335,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Wrap long lines in diff views and code blocks instead of horizontal scrolling.
                       </span>
                     </div>
-                    <input
-                      type="checkbox"
+                    <Switch
                       checked={localSettings.wordWrap}
-                      onChange={(e) => updateLocalSettings({ wordWrap: e.target.checked })}
-                      className="w-4 h-4 rounded accent-[var(--primary)] cursor-pointer"
+                      onCheckedChange={(checked) => updateLocalSettings({ wordWrap: checked })}
                     />
                   </div>
 
@@ -349,12 +356,151 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Play subtle audio cue when agent turns complete or require approvals.
                       </span>
                     </div>
-                    <input
-                      type="checkbox"
+                    <Switch
                       checked={localSettings.soundEnabled}
-                      onChange={(e) => updateLocalSettings({ soundEnabled: e.target.checked })}
-                      className="w-4 h-4 rounded accent-[var(--primary)] cursor-pointer"
+                      onCheckedChange={(checked) => updateLocalSettings({ soundEnabled: checked })}
                     />
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: NOTIFICATIONS */}
+              {activeTab === "notifications" && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-base font-semibold">Notifications</h3>
+                    <p className="text-xs text-[var(--muted-foreground)]">
+                      Control system alerts, action reviews, and task completion notifications.
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Enable Desktop Notifications */}
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--card)]">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 text-xs font-semibold">
+                          <Bell className="w-3.5 h-3.5 text-[var(--primary)]" />
+                          <span>Desktop Notifications</span>
+                        </div>
+                        <span className="text-[11px] text-[var(--muted-foreground)]">
+                          Send native system notifications for important agent events.
+                        </span>
+                      </div>
+                      <Switch
+                        checked={localSettings.notificationsEnabled}
+                        onCheckedChange={async (checked) => {
+                          if (checked) {
+                            await ensureNotificationPermission();
+                          }
+                          updateLocalSettings({ notificationsEnabled: checked });
+                        }}
+                      />
+                    </div>
+
+                    {/* Notify on Approval Requests */}
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--card)]">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 text-xs font-semibold">
+                          <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                          <span>Action Review Required</span>
+                        </div>
+                        <span className="text-[11px] text-[var(--muted-foreground)]">
+                          Notify immediately when an agent requests permission to run a command or modify files.
+                        </span>
+                      </div>
+                      <Switch
+                        disabled={!localSettings.notificationsEnabled}
+                        checked={localSettings.notifyOnApproval}
+                        onCheckedChange={(checked) => updateLocalSettings({ notifyOnApproval: checked })}
+                      />
+                    </div>
+
+                    {/* Notify on Task Completion */}
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--card)]">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 text-xs font-semibold">
+                          <Check className="w-3.5 h-3.5 text-emerald-500" />
+                          <span>Task Completed or Failed</span>
+                        </div>
+                        <span className="text-[11px] text-[var(--muted-foreground)]">
+                          Notify when the agent completes its turn or encounters a terminal error.
+                        </span>
+                      </div>
+                      <Switch
+                        disabled={!localSettings.notificationsEnabled}
+                        checked={localSettings.notifyOnCompletion}
+                        onCheckedChange={(checked) => updateLocalSettings({ notifyOnCompletion: checked })}
+                      />
+                    </div>
+
+                    {/* Only When Backgrounded */}
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--card)]">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 text-xs font-semibold">
+                          <Laptop className="w-3.5 h-3.5 text-[var(--primary)]" />
+                          <span>Only Notify in Background</span>
+                        </div>
+                        <span className="text-[11px] text-[var(--muted-foreground)]">
+                          Suppress system notification banners while you are actively focused on the Canywhere window.
+                        </span>
+                      </div>
+                      <Switch
+                        disabled={!localSettings.notificationsEnabled}
+                        checked={localSettings.notifyOnlyBackground}
+                        onCheckedChange={(checked) => updateLocalSettings({ notifyOnlyBackground: checked })}
+                      />
+                    </div>
+
+                    {/* Notification Chimes */}
+                    <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border)] bg-[var(--card)]">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 text-xs font-semibold">
+                          <Volume2 className="w-3.5 h-3.5 text-[var(--primary)]" />
+                          <span>Audio Alerts</span>
+                        </div>
+                        <span className="text-[11px] text-[var(--muted-foreground)]">
+                          Play synthesizer audio chime when events occur.
+                        </span>
+                      </div>
+                      <Switch
+                        checked={localSettings.soundEnabled}
+                        onCheckedChange={(checked) => updateLocalSettings({ soundEnabled: checked })}
+                      />
+                    </div>
+
+                    {/* Test Notification Button */}
+                    <div className="pt-2 flex items-center justify-between">
+                      <span className="text-xs text-[var(--muted-foreground)]">
+                        Test your notification permissions and audio chimes.
+                      </span>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={testingNotif}
+                        onClick={async () => {
+                          setTestingNotif(true);
+                          try {
+                            await ensureNotificationPermission();
+                            await dispatchDesktopNotification({
+                              title: "Canywhere Notification Test",
+                              body: "System notifications and audio chimes are operating correctly.",
+                              soundType: "approval",
+                              force: true,
+                            });
+                          } finally {
+                            setTimeout(() => setTestingNotif(false), 800);
+                          }
+                        }}
+                        className="gap-1.5 text-xs font-mono"
+                      >
+                        {testingNotif ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Bell className="w-3.5 h-3.5" />
+                        )}
+                        <span>Send Test Notification</span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -469,11 +615,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           Automatically approves inspection commands (<code className="text-[10px] bg-[var(--secondary)] px-1 rounded">git status</code>, <code className="text-[10px] bg-[var(--secondary)] px-1 rounded">git diff</code>, <code className="text-[10px] bg-[var(--secondary)] px-1 rounded">ls</code>, <code className="text-[10px] bg-[var(--secondary)] px-1 rounded">grep</code>, <code className="text-[10px] bg-[var(--secondary)] px-1 rounded">cat</code>) without halting turns for confirmation.
                         </p>
                       </div>
-                      <input
-                        type="checkbox"
+                      <Switch
                         checked={autoApproveReadOnly}
-                        onChange={(e) => setAutoApproveReadOnly(e.target.checked)}
-                        className="w-4 h-4 rounded accent-[var(--primary)] cursor-pointer mt-0.5"
+                        onCheckedChange={(checked) => setAutoApproveReadOnly(checked)}
+                        className="mt-0.5"
                       />
                     </div>
                   </div>

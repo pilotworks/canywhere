@@ -47,6 +47,34 @@ final class AppSessionState {
         get { UserDefaults.standard.string(forKey: "app_theme") ?? "system" }
         set { UserDefaults.standard.set(newValue, forKey: "app_theme") }
     }
+    var notificationsEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "notifications_enabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "notifications_enabled")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "notifications_enabled") }
+    }
+    var liveActivitiesEnabled: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "live_activities_enabled") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "live_activities_enabled")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "live_activities_enabled") }
+    }
+    var notifyOnApproval: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "notify_on_approval") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "notify_on_approval")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "notify_on_approval") }
+    }
+    var notifyOnTurnCompleted: Bool {
+        get {
+            if UserDefaults.standard.object(forKey: "notify_on_turn_completed") == nil { return true }
+            return UserDefaults.standard.bool(forKey: "notify_on_turn_completed")
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "notify_on_turn_completed") }
+    }
 
     private let connectionManager = ConnectionManager.shared
 
@@ -629,11 +657,46 @@ final class AppSessionState {
                 if !pendingApprovals.contains(where: { $0.id == payload.approval.id }) {
                     self.pendingApprovals.append(payload.approval)
                 }
+
+                if notificationsEnabled && notifyOnApproval {
+                    let chat = chats.first(where: { $0.id == payload.approval.chatID })
+                    let ws = workspaces.first(where: { $0.id == chat?.workspaceId })
+                    NotificationManager.shared.scheduleApprovalNotification(
+                        approval: payload.approval,
+                        chatTitle: chat?.title,
+                        workspaceName: ws?.name
+                    )
+                }
+
+                if liveActivitiesEnabled {
+                    LiveActivityManager.shared.updateApproval(
+                        chatId: payload.approval.chatID,
+                        approvalId: payload.approval.id,
+                        command: payload.approval.payload.command
+                    )
+                }
             }
 
         case "approval.resolved":
             if let payload = try? data.decodeRPCParams(ApprovalResolvedPayload.self) {
                 self.pendingApprovals.removeAll { $0.id == payload.approvalId }
+                NotificationManager.shared.dismissApprovalNotification(approvalId: payload.approvalId)
+
+                if liveActivitiesEnabled, let cid = payload.chatId {
+                    LiveActivityManager.shared.resolveApproval(chatId: cid)
+                }
+            }
+
+        case "tool.started":
+            if let payload = try? data.decodeRPCParams(ToolStartedPayload.self) {
+                if liveActivitiesEnabled {
+                    let step = payload.block.command ?? payload.block.name ?? payload.block.path ?? "Running tool..."
+                    LiveActivityManager.shared.updateStep(
+                        chatId: payload.chatId,
+                        stepTitle: step,
+                        activeTool: payload.block.type.rawValue
+                    )
+                }
             }
 
         case "chat.created":
@@ -675,6 +738,25 @@ final class AppSessionState {
                 if let idx = chats.firstIndex(where: { $0.id == payload.chatId }) {
                     chats[idx] = chats[idx].with(status: payload.status)
                 }
+
+                if notificationsEnabled && notifyOnTurnCompleted {
+                    let chat = chats.first(where: { $0.id == payload.chatId })
+                    let ws = workspaces.first(where: { $0.id == chat?.workspaceId })
+                    NotificationManager.shared.scheduleTurnCompletedNotification(
+                        chatId: payload.chatId,
+                        status: payload.status,
+                        chatTitle: chat?.title,
+                        workspaceName: ws?.name,
+                        error: payload.error
+                    )
+                }
+
+                if liveActivitiesEnabled {
+                    LiveActivityManager.shared.endActivity(
+                        chatId: payload.chatId,
+                        status: payload.status.rawValue
+                    )
+                }
             }
 
         case "message.created":
@@ -682,6 +764,17 @@ final class AppSessionState {
                 if payload.message.role == .agent && payload.message.streaming {
                     if let idx = chats.firstIndex(where: { $0.id == payload.chatId }) {
                         chats[idx] = chats[idx].with(status: .running)
+                    }
+
+                    if liveActivitiesEnabled {
+                        let chat = chats.first(where: { $0.id == payload.chatId })
+                        let ws = workspaces.first(where: { $0.id == chat?.workspaceId })
+                        LiveActivityManager.shared.startActivity(
+                            chatId: payload.chatId,
+                            chatTitle: chat?.title ?? "AI Task",
+                            workspaceName: ws?.name ?? "Workstation",
+                            providerName: chat?.providerId ?? selectedProviderId
+                        )
                     }
                 }
             }

@@ -19,6 +19,7 @@ import {
   useProviderStore,
   useSettingsStore,
 } from "../store/index.js";
+import { notifyApprovalRequired, notifyTurnCompleted } from "../lib/notifications.js";
 
 function getFallbackProviderId(): string {
   const store = useProviderStore.getState();
@@ -605,6 +606,15 @@ export class CanywhereClient {
       case "approval.requested": {
         useApprovalStore.getState().addApproval(params.approval);
         useChatStore.getState().setChatStatus(params.chatId, "awaitingApproval");
+        const chat = useChatStore.getState().chats.find((c) => c.id === params.chatId);
+        const workspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === chat?.workspaceId);
+        notifyApprovalRequired({
+          chatId: params.chatId,
+          command: params.approval?.payload?.command,
+          reason: params.approval?.payload?.reason,
+          filesCount: params.approval?.payload?.diff ? 1 : undefined,
+          workspaceName: workspace?.name,
+        });
         break;
       }
 
@@ -612,6 +622,15 @@ export class CanywhereClient {
         this.tokenBuffer.flush();
         useChatStore.getState().setChatStatus(params.chatId, params.status);
         useChatStore.getState().setActiveTurn(params.chatId, null);
+        const chat = useChatStore.getState().chats.find((c) => c.id === params.chatId);
+        const workspace = useWorkspaceStore.getState().workspaces.find((w) => w.id === chat?.workspaceId);
+        notifyTurnCompleted({
+          chatId: params.chatId,
+          status: params.status,
+          title: chat?.title,
+          workspaceName: workspace?.name,
+          error: params.error,
+        });
         if (params.error && (params.status === "error" || params.status === "failed")) {
           const messages = useChatStore.getState().messages[params.chatId] || [];
           const lastMsg = messages[messages.length - 1];

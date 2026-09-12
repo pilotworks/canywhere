@@ -209,6 +209,34 @@ struct SettingsView: View {
                     Text("iPhone Preferences")
                 }
 
+                // MARK: - Notifications & Live Activities
+                Section {
+                    Toggle("Enable Notifications", isOn: Binding(
+                        get: { session.notificationsEnabled },
+                        set: { val in
+                            if val {
+                                Task {
+                                    _ = await NotificationManager.shared.requestAuthorization()
+                                    session.notificationsEnabled = true
+                                }
+                            } else {
+                                session.notificationsEnabled = false
+                            }
+                        }
+                    ))
+
+                    if session.notificationsEnabled {
+                        Toggle("Action Review Alerts", isOn: $session.notifyOnApproval)
+                        Toggle("Task Completion Alerts", isOn: $session.notifyOnTurnCompleted)
+                    }
+
+                    Toggle("Live Activities (Dynamic Island)", isOn: $session.liveActivitiesEnabled)
+                } header: {
+                    Text("Notifications & Live Activities")
+                } footer: {
+                    Text("Real-time progress streaming on Dynamic Island and Lock Screen. Alerts notify you when shell execution or file patches require your confirmation.")
+                }
+
                 // MARK: - System & About
                 Section("About") {
                     HStack {
