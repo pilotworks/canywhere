@@ -102,23 +102,19 @@ export function partitionMessageBlocks(blocks: MessageBlock[]): {
   workBlocks: MessageBlock[];
   finalBlocks: MessageBlock[];
 } {
+  const isWorkBlock = (b: MessageBlock) =>
+    b.type === "reasoning" ||
+    b.type === "tool_call" ||
+    b.type === "command_exec" ||
+    b.type === "file_diff" ||
+    b.type === "plan";
+
   let firstWorkIdx = -1;
-  let lastWorkIdx = -1;
 
   for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i];
-    const isWork =
-      b.type === "reasoning" ||
-      b.type === "tool_call" ||
-      b.type === "command_exec" ||
-      b.type === "file_diff" ||
-      b.type === "plan";
-
-    if (isWork) {
-      if (firstWorkIdx === -1) {
-        firstWorkIdx = i;
-      }
-      lastWorkIdx = i;
+    if (isWorkBlock(blocks[i])) {
+      firstWorkIdx = i;
+      break;
     }
   }
 
@@ -126,10 +122,14 @@ export function partitionMessageBlocks(blocks: MessageBlock[]): {
     return { introBlocks: [], workBlocks: [], finalBlocks: blocks };
   }
 
+  const introBlocks = blocks.slice(0, firstWorkIdx);
+  const workBlocks = blocks.filter(isWorkBlock);
+  const finalBlocks = blocks.slice(firstWorkIdx).filter((b) => !isWorkBlock(b));
+
   return {
-    introBlocks: blocks.slice(0, firstWorkIdx),
-    workBlocks: blocks.slice(firstWorkIdx, lastWorkIdx + 1),
-    finalBlocks: blocks.slice(lastWorkIdx + 1),
+    introBlocks,
+    workBlocks,
+    finalBlocks,
   };
 }
 

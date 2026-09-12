@@ -52,16 +52,15 @@ struct MessageBubbleView: View, Equatable {
     }
 
     private var partitionedBlocks: (introBlocks: [MessageBlock], workBlocks: [MessageBlock], finalBlocks: [MessageBlock]) {
-        var firstWorkIdx = -1
-        var lastWorkIdx = -1
+        let isWorkBlock: (MessageBlock) -> Bool = { block in
+            block.type == .reasoning || block.type == .toolCall || block.type == .commandExec || block.type == .fileDiff || block.type == .plan
+        }
 
+        var firstWorkIdx = -1
         for (idx, block) in message.blocks.enumerated() {
-            let isWork = block.type == .reasoning || block.type == .toolCall || block.type == .commandExec || block.type == .fileDiff || block.type == .plan
-            if isWork {
-                if firstWorkIdx == -1 {
-                    firstWorkIdx = idx
-                }
-                lastWorkIdx = idx
+            if isWorkBlock(block) {
+                firstWorkIdx = idx
+                break
             }
         }
 
@@ -70,8 +69,8 @@ struct MessageBubbleView: View, Equatable {
         }
 
         let intro = Array(message.blocks[0..<firstWorkIdx])
-        let work = Array(message.blocks[firstWorkIdx...lastWorkIdx])
-        let final = Array(message.blocks[(lastWorkIdx + 1)...])
+        let work = message.blocks.filter(isWorkBlock)
+        let final = Array(message.blocks[firstWorkIdx...]).filter { !isWorkBlock($0) }
         return (intro, work, final)
     }
 

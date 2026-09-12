@@ -425,14 +425,13 @@ impl CliAdapter for AgyAdapter {
                                             su.get("text_delta").and_then(|v| v.as_str())
                                         {
                                             if !delta.is_empty() {
-                                                let current_text = {
+                                                {
                                                     let mut text_guard = chat_text.lock().await;
-                                                    let entry = text_guard
+                                                    text_guard
                                                         .entry(chat_id_str.clone())
-                                                        .or_default();
-                                                    entry.push_str(delta);
-                                                    entry.clone()
-                                                };
+                                                        .or_default()
+                                                        .push_str(delta);
+                                                }
 
                                                 {
                                                     let mut blocks_lock = chat_blocks.lock().await;
@@ -448,14 +447,12 @@ impl CliAdapter for AgyAdapter {
                                                         *completed = true;
                                                     }
                                                     if let Some(MessageBlock::Text { content }) =
-                                                        blocks.iter_mut().rev().find(|b| {
-                                                            matches!(b, MessageBlock::Text { .. })
-                                                        })
+                                                        blocks.last_mut()
                                                     {
-                                                        *content = current_text;
+                                                        content.push_str(delta);
                                                     } else {
                                                         blocks.push(MessageBlock::Text {
-                                                            content: current_text,
+                                                            content: delta.to_string(),
                                                         });
                                                     }
                                                 }
@@ -753,10 +750,8 @@ impl CliAdapter for AgyAdapter {
 
                                 if let Some(ref text) = final_text {
                                     if !text.is_empty() {
-                                        if let Some(MessageBlock::Text { content }) = final_blocks
-                                            .iter_mut()
-                                            .rev()
-                                            .find(|b| matches!(b, MessageBlock::Text { .. }))
+                                        if let Some(MessageBlock::Text { content }) =
+                                            final_blocks.last_mut()
                                         {
                                             *content = text.clone();
                                         } else {
@@ -767,28 +762,17 @@ impl CliAdapter for AgyAdapter {
                                     }
                                 }
 
-                                let has_failed_block = final_blocks.iter().any(|b| match b {
-                                    MessageBlock::ToolCall { status, .. } => {
-                                        *status == ToolCallStatus::Failed
-                                    }
-                                    MessageBlock::CommandExec { status, .. } => {
-                                        *status == CommandExecStatus::Failed
-                                    }
-                                    _ => false,
-                                });
-
                                 let is_empty_turn =
                                     final_text.as_ref().map_or(true, |t| t.trim().is_empty())
                                         && final_blocks
                                             .iter()
                                             .all(|b| !matches!(b, MessageBlock::Text { .. }));
 
-                                let chat_status =
-                                    if status == "SUCCESS" && !has_failed_block && !is_empty_turn {
-                                        ChatStatus::Idle
-                                    } else {
-                                        ChatStatus::Error
-                                    };
+                                let chat_status = if status == "SUCCESS" && !is_empty_turn {
+                                    ChatStatus::Idle
+                                } else {
+                                    ChatStatus::Error
+                                };
 
                                 let mut error_msg: Option<String> = None;
                                 if chat_status == ChatStatus::Error {

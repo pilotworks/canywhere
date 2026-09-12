@@ -346,6 +346,27 @@ describe("Tool Call Formatting & Grouping", () => {
     expect(html).toContain("All done!");
   });
 
+  it("renders final response outside WorkedForBlock even if trailing tool calls exist", () => {
+    const blocks: MessageBlock[] = [
+      { type: "reasoning", content: "Investigating...", completed: true },
+      { type: "tool_call", callId: "1", name: "grep_search", args: { query: "foo" }, output: "found", status: "completed" },
+      { type: "text", content: "Here is the full solution and analysis." },
+      { type: "command_exec", command: "git status", cwd: ".", output: "clean", exitCode: 0, status: "completed" },
+    ];
+
+    const partitioned = partitionMessageBlocks(blocks);
+    expect(partitioned.introBlocks.length).toBe(0);
+    expect(partitioned.workBlocks.length).toBe(3); // reasoning, tool_call, command_exec
+    expect(partitioned.finalBlocks.length).toBe(1);
+    expect((partitioned.finalBlocks[0] as any).content).toBe("Here is the full solution and analysis.");
+
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <MessageBlocksRenderer blocks={blocks} isStreaming={false} durationSeconds={60} />
+    );
+    expect(html).toContain("Worked for 1m");
+    expect(html).toContain("Here is the full solution and analysis.");
+  });
+
   it("renders blocks directly without WorkedForBlock while still live streaming", () => {
     const blocks: MessageBlock[] = [
       { type: "reasoning", content: "Thinking live...", completed: false },

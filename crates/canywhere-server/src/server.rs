@@ -78,9 +78,8 @@ pub async fn run_server(
                         if !text.is_empty() {
                             if let Some(canywhere_protocol::models::MessageBlock::Text {
                                 content,
-                            }) = blocks.iter_mut().rev().find(|b| {
-                                matches!(b, canywhere_protocol::models::MessageBlock::Text { .. })
-                            }) {
+                            }) = blocks.last_mut()
+                            {
                                 *content = text;
                             } else {
                                 blocks.push(canywhere_protocol::models::MessageBlock::Text {

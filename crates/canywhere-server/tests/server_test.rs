@@ -513,9 +513,17 @@ async fn test_turn_blocks_persistence() {
 #[tokio::test]
 async fn test_workspace_tree_deep_hierarchy_and_subpath() {
     let temp_root = std::env::temp_dir().join(format!("canywhere_test_{}", nanoid::nanoid!(8)));
-    let deep_dir = temp_root.join("pkg").join("src").join("components").join("layout");
+    let deep_dir = temp_root
+        .join("pkg")
+        .join("src")
+        .join("components")
+        .join("layout");
     std::fs::create_dir_all(&deep_dir).unwrap();
-    std::fs::write(deep_dir.join("header.tsx"), "export const Header = () => null;").unwrap();
+    std::fs::write(
+        deep_dir.join("header.tsx"),
+        "export const Header = () => null;",
+    )
+    .unwrap();
     let empty_dir = temp_root.join("empty_folder");
     std::fs::create_dir_all(&empty_dir).unwrap();
 
@@ -553,13 +561,34 @@ async fn test_workspace_tree_deep_hierarchy_and_subpath() {
     let root = tree_result.root;
 
     // Check empty_folder is genuinely empty
-    let empty_node = root.children.as_ref().unwrap().iter().find(|c| c.name == "empty_folder").unwrap();
+    let empty_node = root
+        .children
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|c| c.name == "empty_folder")
+        .unwrap();
     assert_eq!(empty_node.children.as_ref().map(|v| v.len()), Some(0));
 
     // Check pkg/src node at depth 2 has children: None (indicates has items, needs lazy-load)
-    let pkg_node = root.children.as_ref().unwrap().iter().find(|c| c.name == "pkg").unwrap();
-    let src_node = pkg_node.children.as_ref().unwrap().iter().find(|c| c.name == "src").unwrap();
-    assert!(src_node.children.is_none(), "Expected children to be None for un-expanded non-empty folder");
+    let pkg_node = root
+        .children
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|c| c.name == "pkg")
+        .unwrap();
+    let src_node = pkg_node
+        .children
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|c| c.name == "src")
+        .unwrap();
+    assert!(
+        src_node.children.is_none(),
+        "Expected children to be None for un-expanded non-empty folder"
+    );
 
     // 2. Query subtree via subPath: "pkg/src"
     let req_sub = RpcRequestEnvelope {
@@ -575,9 +604,27 @@ async fn test_workspace_tree_deep_hierarchy_and_subpath() {
     assert!(res_sub.error.is_none());
     let sub_result: WorkspaceTreeResult = serde_json::from_value(res_sub.result.unwrap()).unwrap();
     let sub_root = sub_result.root;
-    let components_node = sub_root.children.as_ref().unwrap().iter().find(|c| c.name == "components").unwrap();
-    let layout_node = components_node.children.as_ref().unwrap().iter().find(|c| c.name == "layout").unwrap();
-    let header_file = layout_node.children.as_ref().unwrap().iter().find(|c| c.name == "header.tsx").unwrap();
+    let components_node = sub_root
+        .children
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|c| c.name == "components")
+        .unwrap();
+    let layout_node = components_node
+        .children
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|c| c.name == "layout")
+        .unwrap();
+    let header_file = layout_node
+        .children
+        .as_ref()
+        .unwrap()
+        .iter()
+        .find(|c| c.name == "header.tsx")
+        .unwrap();
     assert!(!header_file.is_directory);
 
     // 3. Full default tree (maxDepth = 8) reaches header.tsx automatically
@@ -590,7 +637,8 @@ async fn test_workspace_tree_deep_hierarchy_and_subpath() {
     };
     let res_full = dispatcher.dispatch(req_full).await;
     assert!(res_full.error.is_none());
-    let full_result: WorkspaceTreeResult = serde_json::from_value(res_full.result.unwrap()).unwrap();
+    let full_result: WorkspaceTreeResult =
+        serde_json::from_value(res_full.result.unwrap()).unwrap();
     assert!(full_result.root.children.is_some());
 
     // Cleanup
