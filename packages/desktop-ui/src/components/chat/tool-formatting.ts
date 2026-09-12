@@ -8,6 +8,10 @@ export interface FormattedToolAction {
   fullSummary: string;
   filePath?: string;
   lineRange?: LineRange;
+  isEdit?: boolean;
+  diffStats?: { added: number; removed: number };
+  patch?: string;
+  description?: string;
 }
 
 function getShortPath(filePath: string): string {
@@ -141,6 +145,53 @@ export function formatToolAction(
       lineRange = { start, end };
     }
 
+    let diffStats: { added: number; removed: number } | undefined;
+    let patch: string | undefined;
+
+    const description =
+      typeof argsObj.Description === "string"
+        ? argsObj.Description
+        : typeof argsObj.description === "string"
+        ? argsObj.description
+        : typeof argsObj.Instruction === "string"
+        ? argsObj.Instruction
+        : typeof argsObj.instruction === "string"
+        ? argsObj.instruction
+        : undefined;
+
+    if (typeof argsObj.patch === "string" && argsObj.patch.trim()) {
+      patch = argsObj.patch;
+      const lines = patch.split("\n");
+      const added = lines.filter((l: string) => l.startsWith("+") && !l.startsWith("+++")).length;
+      const removed = lines.filter((l: string) => l.startsWith("-") && !l.startsWith("---")).length;
+      diffStats = { added, removed };
+    } else if (argsObj.TargetContent !== undefined || argsObj.ReplacementContent !== undefined) {
+      const targetContent = typeof argsObj.TargetContent === "string" ? argsObj.TargetContent : (typeof argsObj.old_string === "string" ? argsObj.old_string : "");
+      const replacementContent = typeof argsObj.ReplacementContent === "string" ? argsObj.ReplacementContent : (typeof argsObj.new_string === "string" ? argsObj.new_string : "");
+      const oldLines = targetContent ? targetContent.split("\n") : [];
+      const newLines = replacementContent ? replacementContent.split("\n") : [];
+      diffStats = { added: newLines.length, removed: oldLines.length };
+      const file = rawPath ? String(rawPath).split("/").pop() || "file" : "file";
+      let p = `--- a/${file}\n+++ b/${file}\n`;
+      for (const line of oldLines) {
+        p += `-${line}\n`;
+      }
+      for (const line of newLines) {
+        p += `+${line}\n`;
+      }
+      patch = p.replace(/\n$/, "");
+    } else if (argsObj.CodeContent !== undefined) {
+      const codeContent = typeof argsObj.CodeContent === "string" ? argsObj.CodeContent : "";
+      const newLines = codeContent ? codeContent.split("\n") : [];
+      diffStats = { added: newLines.length, removed: 0 };
+      const file = rawPath ? String(rawPath).split("/").pop() || "file" : "file";
+      let p = `--- /dev/null\n+++ b/${file}\n`;
+      for (const line of newLines) {
+        p += `+${line}\n`;
+      }
+      patch = p.replace(/\n$/, "");
+    }
+
     return {
       verb: isRunning ? "Editing" : "Edited",
       target,
@@ -148,6 +199,10 @@ export function formatToolAction(
       fullSummary: `${isRunning ? "Editing" : "Edited"} ${target}`,
       filePath: rawPath ? String(rawPath) : undefined,
       lineRange,
+      isEdit: true,
+      diffStats,
+      patch,
+      description,
     };
   }
 

@@ -39,6 +39,28 @@ describe("Tool Call Formatting & Grouping", () => {
     expect(action.verb).toBe("Edited");
     expect(action.target).toBe("src/index.ts");
     expect(action.filePath).toBe("/Users/dev/project/src/index.ts");
+    expect(action.isEdit).toBe(true);
+  });
+
+  it("extracts diff stats and unified patch for replace_file_content", () => {
+    const action = formatToolAction({
+      type: "tool_call",
+      callId: "2-diff",
+      name: "replace_file_content",
+      args: {
+        TargetFile: "/Users/dev/project/src/index.ts",
+        TargetContent: "const a = 1;\nconst b = 2;",
+        ReplacementContent: "const a = 10;\nconst b = 20;\nconst c = 30;",
+        Description: "Update constants",
+      },
+      output: "ok",
+      status: "completed",
+    });
+    expect(action.isEdit).toBe(true);
+    expect(action.diffStats).toEqual({ added: 3, removed: 2 });
+    expect(action.patch).toContain("-const a = 1;");
+    expect(action.patch).toContain("+const a = 10;");
+    expect(action.description).toBe("Update constants");
   });
 
   it("formats command execution action correctly", () => {

@@ -84,15 +84,31 @@ struct ToolCallBlockView: View {
         return (isRunning ? "Calling" : "Called", target, true, nil)
     }
 
+    private var isEditAction: Bool {
+        actionDetails.verb == "Editing" || actionDetails.verb == "Edited"
+    }
+
     private var diffStats: (added: Int, removed: Int)? {
-        guard let patchStr = block.patch ?? (block.type == .fileDiff ? block.content : nil), !patchStr.isEmpty else {
-            return nil
+        if let patchStr = block.patch ?? (block.type == .fileDiff ? block.content : nil), !patchStr.isEmpty {
+            let lines = patchStr.components(separatedBy: "\n")
+            let added = lines.filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }.count
+            let removed = lines.filter { $0.hasPrefix("-") && !$0.hasPrefix("---") }.count
+            if added > 0 || removed > 0 { return (added, removed) }
         }
-        let lines = patchStr.components(separatedBy: "\n")
-        let added = lines.filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }.count
-        let removed = lines.filter { $0.hasPrefix("-") && !$0.hasPrefix("---") }.count
-        if added == 0 && removed == 0 { return nil }
-        return (added, removed)
+        if let args = block.args?.value as? [String: Any] {
+            let targetContent = (args["TargetContent"] as? String) ?? (args["old_string"] as? String)
+            let replacementContent = (args["ReplacementContent"] as? String) ?? (args["new_string"] as? String)
+            if targetContent != nil || replacementContent != nil {
+                let oldLines = targetContent?.components(separatedBy: .newlines) ?? []
+                let newLines = replacementContent?.components(separatedBy: .newlines) ?? []
+                return (newLines.count, oldLines.count)
+            }
+            if let codeContent = args["CodeContent"] as? String {
+                let lines = codeContent.components(separatedBy: .newlines)
+                return (lines.count, 0)
+            }
+        }
+        return nil
     }
 
     private var formattedArgsString: String? {
@@ -107,7 +123,7 @@ struct ToolCallBlockView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            // Pure Text Row - Arrow at start, tap toggles expand
+            // Row - Arrow at start, tap toggles expand
             Button {
                 Haptics.shared.selection()
                 withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
@@ -117,24 +133,24 @@ struct ToolCallBlockView: View {
                 HStack(alignment: .center, spacing: 5) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.secondary.opacity(0.7))
+                        .foregroundStyle(isEditAction ? .primary.opacity(0.8) : .secondary.opacity(0.7))
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .frame(width: 10)
 
                     Text(actionDetails.verb)
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12, weight: isEditAction ? .medium : .regular))
+                        .foregroundStyle(isEditAction ? .primary : .secondary)
 
                     if let icon = actionDetails.icon {
                         Image(systemName: icon)
                             .font(.system(size: 10))
-                            .foregroundStyle(.indigo.opacity(0.85))
+                            .foregroundStyle(.secondary)
                     }
 
                     if let target = actionDetails.target {
                         Text(target)
-                            .font(.system(size: 11.5, design: actionDetails.isMono ? .monospaced : .default))
-                            .foregroundStyle(.primary.opacity(0.85))
+                            .font(.system(size: 11.5, weight: isEditAction ? .medium : .regular, design: actionDetails.isMono ? .monospaced : .default))
+                            .foregroundStyle(.primary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
@@ -172,7 +188,14 @@ struct ToolCallBlockView: View {
 
                     Spacer(minLength: 4)
                 }
-                .padding(.vertical, 2)
+                .padding(.vertical, isEditAction ? 4 : 2)
+                .padding(.horizontal, isEditAction ? 7 : 0)
+                .background(isEditAction ? Color(uiColor: .secondarySystemFill).opacity(0.35) : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .stroke(isEditAction ? Color(uiColor: .separator).opacity(0.35) : Color.clear, lineWidth: 0.5)
+                )
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }

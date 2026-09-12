@@ -5,6 +5,7 @@ import { FileIcon } from "../ui/file-icon.js";
 import { MessageBlock } from "../../types/index.js";
 import { formatToolAction } from "./tool-formatting.js";
 import { parseFileLink, openFileInRightSidebar } from "../../lib/file-link.js";
+import { DiffViewer } from "./diff-viewer.js";
 
 interface ToolCallBlockProps {
   name: string;
@@ -84,21 +85,34 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="w-full my-0.5 text-xs">
-      {/* Pure Text Row - ChevronRight arrow at start, full width clickable, hover changes text color */}
-      <CollapsibleTrigger className="group flex items-center gap-1 py-0.5 w-full text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer select-none bg-transparent border-none p-0 text-left">
+      <CollapsibleTrigger
+        className={`group flex items-center gap-1.5 w-full transition-colors cursor-pointer select-none text-left ${
+          action.isEdit
+            ? "py-1 px-2 my-0.5 rounded-md bg-[var(--secondary)]/25 hover:bg-[var(--secondary)]/50 border border-[var(--border)]/35 text-[var(--foreground)]"
+            : "py-0.5 bg-transparent border-none text-[var(--muted-foreground)] hover:text-[var(--foreground)] p-0"
+        }`}
+      >
         <ChevronRight
           className={`w-3 h-3 shrink-0 transition-transform duration-150 ${
             open ? "rotate-90" : ""
-          }`}
+          } ${action.isEdit ? "text-[var(--foreground)] opacity-70" : ""}`}
         />
-        <span className="text-[12px] font-normal transition-colors shrink-0">
+        <span
+          className={`text-[12px] shrink-0 transition-colors ${
+            action.isEdit ? "font-medium text-[var(--foreground)]" : "font-normal"
+          }`}
+        >
           {action.verb}
         </span>
         {action.target && (
           fileLinkInfo ? (
             <span
               onClick={handleFileClick}
-              className="inline-flex items-center gap-1 font-mono text-[11.5px] text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10 px-1 py-0.2 rounded transition-colors cursor-pointer group/link max-w-[calc(100%-60px)] truncate"
+              className={`inline-flex items-center gap-1 font-mono text-[11.5px] px-1 py-0.2 rounded transition-colors cursor-pointer group/link max-w-[calc(100%-90px)] truncate ${
+                action.isEdit
+                  ? "font-medium text-[var(--foreground)] hover:bg-[var(--secondary)]/80"
+                  : "text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10"
+              }`}
               title={`Preview ${fileLinkInfo.cleanPath}${
                 fileLinkInfo.lineRange
                   ? ` (line ${fileLinkInfo.lineRange.start}${
@@ -127,6 +141,12 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
             </span>
           )
         )}
+        {action.diffStats && (action.diffStats.added > 0 || action.diffStats.removed > 0) && (
+          <span className="flex items-center gap-1 font-mono text-[10.5px] font-semibold ml-1 shrink-0">
+            {action.diffStats.added > 0 && <span className="text-emerald-400">+{action.diffStats.added}</span>}
+            {action.diffStats.removed > 0 && <span className="text-rose-400">-{action.diffStats.removed}</span>}
+          </span>
+        )}
         {isRunning && (
           <span className="text-amber-400/90 text-[11px] font-mono animate-pulse">
             ...
@@ -141,8 +161,22 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
 
       {/* Expanded Content */}
       <CollapsibleContent className="my-1.5 ml-2 pl-2 border-l border-[var(--border)]/50 space-y-2 text-[11px]">
-        {/* Arguments */}
-        {argsStr && argsStr !== "null" && argsStr !== "{}" && (
+        {/* Description / Instruction if present */}
+        {action.description && (
+          <div className="text-[11px] text-[var(--muted-foreground)] italic font-sans">
+            {action.description}
+          </div>
+        )}
+
+        {/* Diff Viewer for Edit actions with patch */}
+        {action.patch ? (
+          <div className="rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] font-mono text-xs overflow-hidden shadow-xs">
+            <DiffViewer patch={action.patch} />
+          </div>
+        ) : null}
+
+        {/* Arguments: show if not an edit with patch, or if no patch available */}
+        {!action.patch && argsStr && argsStr !== "null" && argsStr !== "{}" && (
           <div>
             <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)] mb-0.5 font-semibold select-none">
               <span>Arguments</span>
@@ -162,10 +196,10 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
         )}
 
         {/* Output */}
-        <div>
-          <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)] mb-0.5 font-semibold select-none">
-            <span>Result</span>
-            {output && (
+        {output ? (
+          <div>
+            <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)] mb-0.5 font-semibold select-none">
+              <span>Result</span>
               <button
                 type="button"
                 onClick={handleCopyOutput}
@@ -174,23 +208,25 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
               >
                 <span className="text-[9px] font-normal">{copiedOutput ? "Copied" : "Copy"}</span>
               </button>
-            )}
-          </div>
+            </div>
 
-          {output ? (
             <pre className="p-2 rounded bg-[var(--secondary)]/30 text-[11px] text-[var(--foreground)]/85 overflow-x-auto max-h-56 select-text font-mono whitespace-pre-wrap leading-relaxed border border-[var(--border)]/40">
               {output}
             </pre>
-          ) : isRunning ? (
-            <div className="p-1 text-[10px] text-[var(--muted-foreground)] italic font-mono">
-              Executing...
-            </div>
-          ) : (
-            <div className="p-1 text-[10px] text-[var(--muted-foreground)] italic font-mono opacity-60">
-              (No output)
-            </div>
-          )}
-        </div>
+          </div>
+        ) : !action.patch && (
+          <div>
+            {isRunning ? (
+              <div className="p-1 text-[10px] text-[var(--muted-foreground)] italic font-mono">
+                Executing...
+              </div>
+            ) : (
+              <div className="p-1 text-[10px] text-[var(--muted-foreground)] italic font-mono opacity-60">
+                (No output)
+              </div>
+            )}
+          </div>
+        )}
       </CollapsibleContent>
     </Collapsible>
   );
