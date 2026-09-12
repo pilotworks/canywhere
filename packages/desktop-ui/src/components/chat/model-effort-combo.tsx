@@ -18,6 +18,7 @@ interface ModelEffortComboProps {
   selectedEffort: string;
   onSelectModel: (model: string) => void;
   onSelectEffort: (effort: string) => void;
+  providerId?: string;
   size?: "sm" | "md";
   className?: string;
   align?: "start" | "end" | "center";
@@ -64,10 +65,10 @@ const DEFAULT_FALLBACK_MODELS: ModelInfo[] = [
     id: "gpt-5.5",
     model: "gpt-5.5",
     displayName: "5.5",
-    description: "Fast multi-turn problem solving",
+    description: "Fast multimodal intelligence",
     isDefault: false,
-    supportedReasoningEfforts: ["low", "medium", "high"],
-    defaultReasoningEffort: "medium",
+    supportedReasoningEfforts: [],
+    defaultReasoningEffort: null,
   },
   {
     id: "gpt-5.2",
@@ -77,6 +78,36 @@ const DEFAULT_FALLBACK_MODELS: ModelInfo[] = [
     isDefault: false,
     supportedReasoningEfforts: [],
     defaultReasoningEffort: null,
+  },
+];
+
+const AGY_FALLBACK_MODELS: ModelInfo[] = [
+  {
+    id: "gemini-3.8-flash",
+    model: "gemini-3.8-flash",
+    displayName: "Gemini 3.8 Flash",
+    description: "Google frontier multimodal & reasoning model",
+    isDefault: true,
+    supportedReasoningEfforts: ["low", "medium", "high"],
+    defaultReasoningEffort: "high",
+  },
+  {
+    id: "claude-sonnet-4-6",
+    model: "claude-sonnet-4-6",
+    displayName: "Claude Sonnet 4.6",
+    description: "Anthropic frontier reasoning model",
+    isDefault: false,
+    supportedReasoningEfforts: [],
+    defaultReasoningEffort: null,
+  },
+  {
+    id: "gpt-oss-120b",
+    model: "gpt-oss-120b",
+    displayName: "GPT-OSS 120B",
+    description: "Open-weights frontier reasoning model",
+    isDefault: false,
+    supportedReasoningEfforts: ["medium"],
+    defaultReasoningEffort: "medium",
   },
 ];
 
@@ -114,13 +145,15 @@ export function ModelEffortCombo({
   selectedEffort,
   onSelectModel,
   onSelectEffort,
+  providerId,
   size = "sm",
   className = "",
   align = "start",
 }: ModelEffortComboProps) {
-  const modelList = models && models.length > 0 ? models : DEFAULT_FALLBACK_MODELS;
+  const fallbackList = providerId === "agy" ? AGY_FALLBACK_MODELS : DEFAULT_FALLBACK_MODELS;
+  const modelList = models && models.length > 0 ? models : fallbackList;
   const activeModel = modelList.find((m) => m.model === selectedModel) || modelList[0];
-  const activeModelDisplayName = activeModel?.displayName || activeModel?.model || "5.6 Luna";
+  const activeModelDisplayName = activeModel?.displayName || activeModel?.model || (providerId === "agy" ? "Gemini 3.8 Flash" : "5.6 Luna");
   const supportedEfforts = activeModel?.supportedReasoningEfforts || [];
 
   // Determine current active effort

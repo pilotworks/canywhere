@@ -80,6 +80,7 @@ struct TurnCompletedPayload: Decodable, Sendable {
     let turnId: String
     let status: ChatStatus
     let textContent: String?
+    let error: String?
 }
 
 struct ChatUpdatedPayload: Decodable, Sendable {
@@ -119,6 +120,7 @@ struct ModelListResult: Decodable, Sendable {
 struct ModelUpdatedPayload: Decodable, Sendable {
     let model: String
     let reasoningEffort: String?
+    let providerId: String?
 }
 
 struct WorkspaceUpdatedPayload: Decodable, Sendable {

@@ -570,6 +570,30 @@ final class ChatViewModel {
                         messages[i] = messages[i].with(blocks: blocks, streaming: false)
                     }
                 }
+                if let err = payload.error, !err.isEmpty, payload.status == .error {
+                    if let lastIdx = messages.indices.last, messages[lastIdx].role == .agent {
+                        var blocks = messages[lastIdx].blocks
+                        let hasErr = blocks.contains { b in
+                            b.type == .text && (b.content?.contains(err) ?? false)
+                        }
+                        if !hasErr {
+                            blocks.append(MessageBlock.text("❌ **Error:** \(err)"))
+                            messages[lastIdx] = messages[lastIdx].with(blocks: blocks)
+                        }
+                    } else {
+                        let errorBlock = MessageBlock.text("❌ **Error:** \(err)")
+                        let errorMsg = Message(
+                            blocks: [errorBlock],
+                            chatID: chatId,
+                            createdAt: Int(Date().timeIntervalSince1970 * 1000),
+                            id: "err-msg-\(UUID().uuidString)",
+                            role: .agent,
+                            streaming: false,
+                            turnID: payload.turnId
+                        )
+                        messages.append(errorMsg)
+                    }
+                }
                 scrollTrigger &+= 1
             } catch {
                 print("❌ [ChatViewModel] Failed to decode turn.completed: \(error)")

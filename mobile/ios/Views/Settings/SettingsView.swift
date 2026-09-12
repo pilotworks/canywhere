@@ -70,20 +70,27 @@ struct SettingsView: View {
                         ForEach(session.providers, id: \.id) { p in
                             Text(p.name).tag(p.id)
                         }
-                        if session.providers.isEmpty {
-                            Text("Codex CLI").tag("codex")
-                            Text("Agy CLI").tag("agy")
+                        if !session.providers.contains(where: { $0.id == defaultProviderId }) && !defaultProviderId.isEmpty {
+                            Text(defaultProviderId == "agy" ? "Antigravity CLI" : defaultProviderId.capitalized).tag(defaultProviderId)
                         }
                     }
-                    .onChange(of: defaultProviderId) { _, _ in
-                        saveHostSettings()
+                    .onChange(of: defaultProviderId) { _, newProvider in
+                        Task {
+                            await session.loadModels(for: newProvider)
+                            if let def = session.models.first(where: { $0.isDefault }) {
+                                defaultModel = def.model
+                            } else if let first = session.models.first {
+                                defaultModel = first.model
+                            }
+                            saveHostSettings()
+                        }
                     }
 
                     Picker("Default Model", selection: $defaultModel) {
                         ForEach(session.models, id: \.id) { m in
                             Text(m.displayName).tag(m.model)
                         }
-                        if session.models.isEmpty {
+                        if !session.models.contains(where: { $0.model == defaultModel }) && !defaultModel.isEmpty {
                             Text(defaultModel).tag(defaultModel)
                         }
                     }
@@ -95,6 +102,9 @@ struct SettingsView: View {
                         Text("Low").tag("low")
                         Text("Medium").tag("medium")
                         Text("High").tag("high")
+                        if !["low", "medium", "high"].contains(defaultEffort) && !defaultEffort.isEmpty {
+                            Text(defaultEffort.capitalized).tag(defaultEffort)
+                        }
                     }
                     .onChange(of: defaultEffort) { _, _ in
                         saveHostSettings()
@@ -279,6 +289,10 @@ struct SettingsView: View {
             defaultEffort = s.defaultReasoningEffort ?? "medium"
             autoApproveReadOnly = s.autoApproveReadOnly
             defaultPermissionMode = s.defaultPermissionMode
+
+            Task {
+                await session.loadModels(for: s.defaultProviderID)
+            }
         }
     }
 

@@ -1627,14 +1627,34 @@ impl CodexAdapter {
                 .map(|(_, m)| m)
                 .unwrap_or_else(|| nanoid::nanoid!(16));
 
+            let turn_status_str = params
+                .get("turn")
+                .and_then(|t| t.get("status"))
+                .and_then(|s| s.as_str());
+
+            let is_failed = turn_status_str == Some("failed");
+            let turn_status = if is_failed {
+                ChatStatus::Error
+            } else {
+                ChatStatus::Idle
+            };
+
+            let turn_error = params
+                .get("turn")
+                .and_then(|t| t.get("error"))
+                .and_then(|e| e.get("message"))
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
+
             let _ = tx.send(AgentEvent::TurnCompleted {
                 chat_id,
                 message_id,
                 turn_id,
-                status: ChatStatus::Idle,
+                status: turn_status,
                 blocks,
                 text_content,
                 reasoning_content,
+                error: turn_error,
             });
         } else if method == "thread/name/updated" {
             let thread_name = params

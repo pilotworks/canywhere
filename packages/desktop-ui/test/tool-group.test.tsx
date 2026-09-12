@@ -3,8 +3,10 @@ import React from "react";
 import ReactDOMServer from "react-dom/server";
 import { groupMessageBlocks, MessageBlocksRenderer, partitionMessageBlocks } from "../src/components/chat/render-block.js";
 import { extractReasoningHeader, ReasoningBlock } from "../src/components/chat/reasoning-block.js";
-import { formatToolAction, summarizeToolGroup, formatWorkedDuration } from "../src/components/chat/tool-formatting.js";
-import { ToolCallGroup } from "../src/components/chat/tool-call-group.js";
+import { formatToolAction, summarizeToolGroup, formatWorkedDuration, isEditFileBlock } from "../src/components/chat/tool-formatting.js";
+import { ToolCallGroup, FileDiffItem } from "../src/components/chat/tool-call-group.js";
+import { ToolCallBlock } from "../src/components/chat/tool-call-block.js";
+import { EditFileItem } from "../src/components/chat/edit-file-item.js";
 import { MessageBlock } from "../src/types/index.js";
 
 describe("Tool Call Formatting & Grouping", () => {
@@ -377,5 +379,209 @@ describe("Tool Call Formatting & Grouping", () => {
     );
     expect(htmlRunning).toContain("Thinking: Planning parallel command execution");
     expect(htmlRunning).toContain("animate-pulse");
+  });
+
+  it("isEditFileBlock correctly identifies edit tools and file_diff", () => {
+    expect(
+      isEditFileBlock({
+        type: "tool_call",
+        callId: "1",
+        name: "replace_file_content",
+        args: { TargetFile: "src/app.tsx" },
+        output: null,
+        status: "completed",
+      })
+    ).toBe(true);
+
+    expect(
+      isEditFileBlock({
+        type: "tool_call",
+        callId: "2",
+        name: "write_to_file",
+        args: { TargetFile: "src/utils.ts" },
+        output: null,
+        status: "completed",
+      })
+    ).toBe(true);
+
+    expect(
+      isEditFileBlock({
+        type: "file_diff",
+        path: "src/index.ts",
+        patch: "+hello",
+        status: "completed",
+      })
+    ).toBe(true);
+
+    expect(
+      isEditFileBlock({
+        type: "tool_call",
+        callId: "3",
+        name: "view_file",
+        args: { AbsolutePath: "src/app.tsx" },
+        output: null,
+        status: "completed",
+      })
+    ).toBe(false);
+
+    expect(
+      isEditFileBlock({
+        type: "command_exec",
+        command: "cargo test",
+        cwd: "/",
+        output: null,
+        exitCode: 0,
+        status: "completed",
+      })
+    ).toBe(false);
+  });
+
+  it("groupMessageBlocks does NOT merge edit file toolcalls into toolcall groups and breaks tool groups", () => {
+    const blocks: MessageBlock[] = [
+      {
+        type: "tool_call",
+        callId: "1",
+        name: "view_file",
+        args: { path: "a.ts" },
+        output: null,
+        status: "completed",
+      },
+      {
+        type: "tool_call",
+        callId: "2",
+        name: "view_file",
+        args: { path: "b.ts" },
+        output: null,
+        status: "completed",
+      },
+      // Edit file tool call: must be standalone and break group
+      {
+        type: "tool_call",
+        callId: "3",
+        name: "replace_file_content",
+        args: {
+          TargetFile: "c.ts",
+          TargetContent: "old",
+          ReplacementContent: "new",
+        },
+        output: "ok",
+        status: "completed",
+      },
+      // Subsequent tool calls must start a new group
+      {
+        type: "command_exec",
+        command: "npm test",
+        cwd: "/",
+        output: null,
+        exitCode: 0,
+        status: "completed",
+      },
+      {
+        type: "tool_call",
+        callId: "4",
+        name: "grep_search",
+        args: { Query: "test" },
+        output: null,
+        status: "completed",
+      },
+    ];
+
+    const grouped = groupMessageBlocks(blocks);
+    expect(grouped.length).toBe(3);
+
+    // Group 1: initial 2 view_file calls
+    expect(grouped[0].type).toBe("tool_group");
+    if (grouped[0].type === "tool_group") {
+      expect(grouped[0].blocks.length).toBe(2);
+      expect(grouped[0].blocks[0].type).toBe("tool_call");
+      expect((grouped[0].blocks[0] as any).name).toBe("view_file");
+    }
+
+    // Single: standalone edit file tool call
+    expect(grouped[1].type).toBe("single");
+    if (grouped[1].type === "single") {
+      expect(grouped[1].block.type).toBe("tool_call");
+      expect((grouped[1].block as any).name).toBe("replace_file_content");
+    }
+
+    // Group 2: subsequent command_exec + grep_search
+    expect(grouped[2].type).toBe("tool_group");
+    if (grouped[2].type === "tool_group") {
+      expect(grouped[2].blocks.length).toBe(2);
+    }
+  });
+
+  it("EditFileItem renders cleanly without box, border, padding, bg, and with (+green, -red) badge on right", () => {
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <EditFileItem
+        filePath="/Users/dev/project/src/app.tsx"
+        target="src/app.tsx"
+        verb="Edited"
+        diffStats={{ added: 15, removed: 4 }}
+        status="completed"
+      />
+    );
+
+    // Shows verb & target
+    expect(html).toContain("Edited");
+    expect(html).toContain("src/app.tsx");
+
+    // Has no box, border, padding, bg (uses transparent, border-none, p-0)
+    expect(html).toContain("bg-transparent");
+    expect(html).toContain("border-none");
+    expect(html).toContain("p-0");
+
+    // Has NO ChevronRight icon (no expand/collapse view)
+    expect(html).not.toContain("lucide-chevron-right");
+
+    // Displays (+green, -red) on the right
+    expect(html).toContain("+15");
+    expect(html).toContain("-4");
+    expect(html).toContain("text-emerald-400");
+    expect(html).toContain("text-rose-400");
+  });
+
+  it("ToolCallBlock delegates edit tools to EditFileItem without collapsible trigger", () => {
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <ToolCallBlock
+        callId="edit-1"
+        name="replace_file_content"
+        args={{
+          TargetFile: "src/button.tsx",
+          TargetContent: "const a = 1;",
+          ReplacementContent: "const a = 2;\nconst b = 3;",
+        }}
+        output="success"
+        status="completed"
+      />
+    );
+
+    expect(html).toContain("Edited");
+    expect(html).toContain("src/button.tsx");
+    expect(html).toContain("+2");
+    expect(html).toContain("-1");
+    // No chevron-right icon
+    expect(html).not.toContain("lucide-chevron-right");
+  });
+
+  it("FileDiffItem renders EditFileItem with (+, -) badge", () => {
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <FileDiffItem
+        block={{
+          type: "file_diff",
+          path: "src/header.tsx",
+          patch: "--- a/src/header.tsx\n+++ b/src/header.tsx\n@@ -1,2 +1,3 @@\n-old\n+new1\n+new2",
+          status: "completed",
+        }}
+      />
+    );
+
+    expect(html).toContain("Edited");
+    expect(html).toContain("src/header.tsx");
+    expect(html).toContain("+2");
+    expect(html).toContain("-1");
+    expect(html).toContain("text-emerald-400");
+    expect(html).toContain("text-rose-400");
+    expect(html).not.toContain("lucide-chevron-right");
   });
 });

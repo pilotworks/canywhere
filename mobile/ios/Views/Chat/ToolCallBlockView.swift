@@ -21,38 +21,64 @@ struct ToolCallBlockView: View {
     }
 
     private func getShortPath(_ path: String) -> String {
-        let normalized = path.replacingOccurrences(of: "\\", with: "/")
+        let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "\"'\n\r \t"))
+        let normalized = trimmed.replacingOccurrences(of: "\\", with: "/")
         let components = normalized.split(separator: "/").map(String.init)
         if components.count <= 2 { return components.joined(separator: "/") }
         return components.suffix(2).joined(separator: "/")
     }
 
     private func truncate(_ str: String, limit: Int = 40) -> String {
-        str.count > limit ? String(str.prefix(limit)) + "..." : str
+        let trimmed = str.trimmingCharacters(in: CharacterSet(charactersIn: "\"'\n\r \t"))
+        return trimmed.count > limit ? String(trimmed.prefix(limit)) + "..." : trimmed
+    }
+
+    private var parsedArgs: [String: Any]? {
+        guard let raw = block.args?.value else { return nil }
+        if let dict = raw as? [String: Any] {
+            return dict
+        }
+        if let str = raw as? String,
+           let data = str.data(using: .utf8),
+           let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            return dict
+        }
+        return nil
+    }
+
+    private func normalizeEscapedNewlines(_ str: String) -> String {
+        var s = str.trimmingCharacters(in: .whitespacesAndNewlines)
+        if s.hasPrefix("\"") && s.hasSuffix("\"") && s.count >= 2 {
+            s = String(s.dropFirst().dropLast())
+        }
+        if !s.contains("\n") && s.contains("\\n") {
+            s = s.replacingOccurrences(of: "\\n", with: "\n")
+        }
+        return s
     }
 
     private var actionDetails: (verb: String, target: String?, isMono: Bool, icon: String?) {
         let isRunning = block.status == .running
         let lower = toolName.lowercased()
-        let args = block.args?.value as? [String: Any]
+        let args = parsedArgs
 
         // 1. File Diff / File Editing / Writing
         if block.type == .fileDiff || lower.contains("write") || lower.contains("edit") || lower.contains("replace") || lower.contains("patch") {
-            let rawPath = block.path ?? (args?["TargetFile"] as? String) ?? (args?["AbsolutePath"] as? String) ?? (args?["path"] as? String)
+            let rawPath = block.path ?? (args?["TargetFile"] as? String) ?? (args?["target_file"] as? String) ?? (args?["targetFile"] as? String) ?? (args?["AbsolutePath"] as? String) ?? (args?["path"] as? String) ?? (args?["filePath"] as? String) ?? (args?["file"] as? String)
             let target = rawPath.map { getShortPath($0) } ?? toolName
             return (isRunning ? "Editing" : "Edited", target, true, "doc.text")
         }
 
         // 2. Command Execution
         if block.type == .commandExec || lower.contains("command") || lower.contains("bash") || lower.contains("terminal") || lower.contains("exec") {
-            let cmd = block.command ?? (args?["CommandLine"] as? String) ?? (args?["command"] as? String)
+            let cmd = block.command ?? (args?["CommandLine"] as? String) ?? (args?["command"] as? String) ?? (args?["cmd"] as? String)
             let displayCmd = cmd.map { "$ \(truncate($0, limit: 45))" }
             return (isRunning ? "Running" : "Ran", displayCmd, true, nil)
         }
 
         // 3. Reading
         if lower.contains("read") || lower.contains("view") || lower == "cat" {
-            let rawPath = (args?["AbsolutePath"] as? String) ?? (args?["path"] as? String) ?? (args?["TargetFile"] as? String) ?? block.path
+            let rawPath = (args?["AbsolutePath"] as? String) ?? (args?["path"] as? String) ?? (args?["TargetFile"] as? String) ?? (args?["target_file"] as? String) ?? (args?["filePath"] as? String) ?? (args?["file"] as? String) ?? block.path
             let target = rawPath.map { getShortPath($0) } ?? toolName
             return (isRunning ? "Reading" : "Read", target, true, nil)
         }
@@ -88,32 +114,106 @@ struct ToolCallBlockView: View {
         actionDetails.verb == "Editing" || actionDetails.verb == "Edited"
     }
 
-    private var diffStats: (added: Int, removed: Int)? {
-        if let patchStr = block.patch ?? (block.type == .fileDiff ? block.content : nil), !patchStr.isEmpty {
-            let lines = patchStr.components(separatedBy: "\n")
-            let added = lines.filter { $0.hasPrefix("+") && !$0.hasPrefix("+++") }.count
-            let removed = lines.filter { $0.hasPrefix("-") && !$0.hasPrefix("---") }.count
-            if added > 0 || removed > 0 { return (added, removed) }
+    private var effectivePatch: String? {
+        // 1. Explicit patch on block
+        if let patch = block.patch, !patch.isEmpty {
+            return patch
         }
-        if let args = block.args?.value as? [String: Any] {
-            let targetContent = (args["TargetContent"] as? String) ?? (args["old_string"] as? String)
-            let replacementContent = (args["ReplacementContent"] as? String) ?? (args["new_string"] as? String)
+        if block.type == .fileDiff, let content = block.content, !content.isEmpty {
+            return content
+        }
+
+        // 2. Diff inside block.output
+        if let output = block.output, !output.isEmpty {
+            if let start = output.range(of: "[diff_block_start]"),
+               let end = output.range(of: "[diff_block_end]") {
+                let diffSub = output[start.upperBound..<end.lowerBound]
+                let clean = diffSub.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !clean.isEmpty {
+                    return clean
+                }
+            }
+            if output.contains("@@ -") || output.hasPrefix("---") || output.hasPrefix("diff --git") {
+                return output
+            }
+        }
+
+        // 3. From args dictionary
+        if let args = parsedArgs {
+            if let patch = (args["patch"] as? String) ?? (args["diff"] as? String) ?? (args["unified_diff"] as? String) ?? (args["unifiedDiff"] as? String), !patch.isEmpty {
+                return patch
+            }
+
+            // changes array (Codex)
+            let changesList = (args["changes"] as? [[String: Any]]) ?? (args["fileChanges"] as? [[String: Any]]) ?? (args["file_changes"] as? [[String: Any]])
+            if let first = changesList?.first,
+               let diff = (first["diff"] as? String) ?? (first["patch"] as? String),
+               !diff.isEmpty {
+                return diff
+            }
+
+            // Content replacement (Antigravity replace_file_content, edit_file, etc.)
+            let targetContent = (args["TargetContent"] as? String) ?? (args["target_content"] as? String) ?? (args["targetContent"] as? String) ?? (args["old_string"] as? String) ?? (args["old_str"] as? String) ?? (args["oldString"] as? String) ?? (args["find"] as? String)
+            let replacementContent = (args["ReplacementContent"] as? String) ?? (args["replacement_content"] as? String) ?? (args["replacementContent"] as? String) ?? (args["new_string"] as? String) ?? (args["new_str"] as? String) ?? (args["newString"] as? String) ?? (args["replace"] as? String)
             if targetContent != nil || replacementContent != nil {
-                let oldLines = targetContent?.components(separatedBy: .newlines) ?? []
-                let newLines = replacementContent?.components(separatedBy: .newlines) ?? []
-                return (newLines.count, oldLines.count)
+                let oldText = normalizeEscapedNewlines(targetContent ?? "")
+                let newText = normalizeEscapedNewlines(replacementContent ?? "")
+                let oldLines = oldText.isEmpty ? [] : oldText.components(separatedBy: .newlines)
+                let newLines = newText.isEmpty ? [] : newText.components(separatedBy: .newlines)
+                let fileName = actionDetails.target ?? "file"
+                var p = "--- a/\(fileName)\n+++ b/\(fileName)\n"
+                for line in oldLines {
+                    p += "-\(line)\n"
+                }
+                for line in newLines {
+                    p += "+\(line)\n"
+                }
+                return p.trimmingCharacters(in: .newlines)
             }
-            if let codeContent = args["CodeContent"] as? String {
-                let lines = codeContent.components(separatedBy: .newlines)
-                return (lines.count, 0)
+
+            // File creation / Write (Antigravity write_to_file, etc.)
+            if let codeContent = (args["CodeContent"] as? String) ?? (args["code_content"] as? String) ?? (args["codeContent"] as? String) ?? (args["content"] as? String) ?? (args["contents"] as? String) ?? (args["text"] as? String) {
+                let newText = normalizeEscapedNewlines(codeContent)
+                let newLines = newText.isEmpty ? [] : newText.components(separatedBy: .newlines)
+                let fileName = actionDetails.target ?? "file"
+                var p = "--- /dev/null\n+++ b/\(fileName)\n"
+                for line in newLines {
+                    p += "+\(line)\n"
+                }
+                return p.trimmingCharacters(in: .newlines)
             }
+        }
+
+        return nil
+    }
+
+    private var diffStats: (added: Int, removed: Int)? {
+        guard let patch = effectivePatch, !patch.isEmpty else {
+            return nil
+        }
+        var added = 0
+        var removed = 0
+        let lines = patch.components(separatedBy: .newlines)
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("+++") || trimmed.hasPrefix("---") || trimmed.hasPrefix("@@") {
+                continue
+            }
+            if trimmed.hasPrefix("+") {
+                added += 1
+            } else if trimmed.hasPrefix("-") {
+                removed += 1
+            }
+        }
+        if added > 0 || removed > 0 {
+            return (added, removed)
         }
         return nil
     }
 
     private var formattedArgsString: String? {
         guard let args = block.args else { return nil }
-        if let dict = args.value as? [String: Any],
+        if let dict = parsedArgs,
            let data = try? JSONSerialization.data(withJSONObject: dict, options: [.prettyPrinted, .sortedKeys]),
            let str = String(data: data, encoding: .utf8) {
             return str
@@ -122,24 +222,13 @@ struct ToolCallBlockView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // Row - Arrow at start, tap toggles expand
-            Button {
-                Haptics.shared.selection()
-                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                    isExpanded.toggle()
-                }
-            } label: {
+        if isEditAction {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .center, spacing: 5) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(isEditAction ? .primary.opacity(0.8) : .secondary.opacity(0.7))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .frame(width: 10)
-
+                    // Left: Verb + File Icon + Target Path
                     Text(actionDetails.verb)
-                        .font(.system(size: 12, weight: isEditAction ? .medium : .regular))
-                        .foregroundStyle(isEditAction ? .primary : .secondary)
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(.secondary)
 
                     if let icon = actionDetails.icon {
                         Image(systemName: icon)
@@ -149,27 +238,15 @@ struct ToolCallBlockView: View {
 
                     if let target = actionDetails.target {
                         Text(target)
-                            .font(.system(size: 11.5, weight: isEditAction ? .medium : .regular, design: actionDetails.isMono ? .monospaced : .default))
+                            .font(.system(size: 11.5, weight: .regular, design: .monospaced))
                             .foregroundStyle(.primary)
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
 
-                    if let stats = diffStats {
-                        HStack(spacing: 4) {
-                            if stats.added > 0 {
-                                Text("+\(stats.added)")
-                                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color(red: 0.2, green: 0.78, blue: 0.35))
-                            }
-                            if stats.removed > 0 {
-                                Text("-\(stats.removed)")
-                                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(Color(red: 0.95, green: 0.35, blue: 0.35))
-                            }
-                        }
-                    }
+                    Spacer(minLength: 4)
 
+                    // Right: Status indicator and (+green, -red) diff stats
                     if block.status == .running {
                         Text("...")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
@@ -180,93 +257,165 @@ struct ToolCallBlockView: View {
                         Text("(failed)")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundStyle(.red.opacity(0.85))
-                    } else if let code = block.exitCode, code != 0 {
-                        Text("EXIT \(code)")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.red.opacity(0.85))
                     }
 
-                    Spacer(minLength: 4)
+                    if let stats = diffStats {
+                        Button {
+                            if effectivePatch != nil {
+                                Haptics.shared.selection()
+                                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                                    isExpanded.toggle()
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 3) {
+                                Text("+\(stats.added)")
+                                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color(red: 0.2, green: 0.78, blue: 0.35))
+                                Text("-\(stats.removed)")
+                                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(Color(red: 0.95, green: 0.35, blue: 0.35))
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .padding(.vertical, isEditAction ? 4 : 2)
-                .padding(.horizontal, isEditAction ? 7 : 0)
-                .background(isEditAction ? Color(uiColor: .secondarySystemFill).opacity(0.35) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .stroke(isEditAction ? Color(uiColor: .separator).opacity(0.35) : Color.clear, lineWidth: 0.5)
-                )
+                .padding(.vertical, 1)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            // Expanded Detail View
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 8) {
-                    // Diff View (if patch or fileDiff)
-                    if let patchStr = block.patch ?? (block.type == .fileDiff ? block.content : nil), !patchStr.isEmpty {
-                        DiffContentView(patch: patchStr)
-                    }
-
-                    // Command (if commandExec)
-                    if let cmd = block.command, !cmd.isEmpty {
-                        HStack {
-                            Text("$ \(cmd)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.primary)
-                                .textSelection(.enabled)
-                            Spacer()
+                .onTapGesture {
+                    if effectivePatch != nil {
+                        Haptics.shared.selection()
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            isExpanded.toggle()
                         }
-                        .padding(8)
-                        .background(Color(uiColor: .tertiarySystemGroupedBackground))
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     }
+                }
 
-                    // Arguments
-                    if let argsStr = formattedArgsString, !argsStr.isEmpty, argsStr != "null" && argsStr != "{}" {
-                        VStack(alignment: .leading, spacing: 3) {
+                if isExpanded, let patch = effectivePatch {
+                    DiffContentView(patch: patch)
+                        .padding(.leading, 12)
+                        .padding(.top, 2)
+                }
+            }
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                // Row - Arrow at start, tap toggles expand
+                Button {
+                    Haptics.shared.selection()
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack(alignment: .center, spacing: 5) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Color.secondary.opacity(0.7))
+                            .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                            .frame(width: 10)
+
+                        Text(actionDetails.verb)
+                            .font(.system(size: 12, weight: .regular))
+                            .foregroundStyle(.secondary)
+
+                        if let icon = actionDetails.icon {
+                            Image(systemName: icon)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let target = actionDetails.target {
+                            Text(target)
+                                .font(.system(size: 11.5, weight: .regular, design: actionDetails.isMono ? .monospaced : .default))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                        }
+
+                        if block.status == .running {
+                            Text("...")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.orange.opacity(0.9))
+                        }
+
+                        if block.status == .failed || block.status == .rejected {
+                            Text("(failed)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.red.opacity(0.85))
+                        } else if let code = block.exitCode, code != 0 {
+                            Text("EXIT \(code)")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.red.opacity(0.85))
+                        }
+
+                        Spacer(minLength: 4)
+                    }
+                    .padding(.vertical, 2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                // Expanded Detail View
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Command (if commandExec)
+                        if let cmd = block.command, !cmd.isEmpty {
                             HStack {
-                                Text("ARGUMENTS")
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundStyle(.tertiary)
-                                Spacer()
-                                Button {
-                                    UIPasteboard.general.string = argsStr
-                                    Haptics.shared.notification(.success)
-                                    withAnimation { isArgsCopied = true }
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                        withAnimation { isArgsCopied = false }
-                                    }
-                                } label: {
-                                    HStack(spacing: 3) {
-                                        Image(systemName: isArgsCopied ? "checkmark" : "doc.on.doc")
-                                            .font(.system(size: 8))
-                                        Text(isArgsCopied ? "Copied" : "Copy")
-                                            .font(.system(size: 8, design: .monospaced))
-                                    }
-                                    .foregroundStyle(isArgsCopied ? .green : .secondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
-
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                Text(argsStr)
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(.primary.opacity(0.85))
+                                Text("$ \(cmd)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.primary)
                                     .textSelection(.enabled)
-                                    .padding(6)
+                                Spacer()
                             }
+                            .padding(8)
                             .background(Color(uiColor: .tertiarySystemGroupedBackground))
                             .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                         }
-                    }
 
-                    // Output / Result (if not fileDiff with patch)
-                    if block.type != .fileDiff || block.patch == nil {
+                        // Arguments
+                        if let argsStr = formattedArgsString, !argsStr.isEmpty, argsStr != "null" && argsStr != "{}" {
+                            VStack(alignment: .leading, spacing: 3) {
+                                HStack {
+                                    Text("ARGUMENTS")
+                                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(.tertiary)
+                                    Spacer()
+                                    Button {
+                                        UIPasteboard.general.string = argsStr
+                                        Haptics.shared.notification(.success)
+                                        withAnimation { isArgsCopied = true }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                            withAnimation { isArgsCopied = false }
+                                        }
+                                    } label: {
+                                        HStack(spacing: 3) {
+                                            Image(systemName: isArgsCopied ? "checkmark" : "doc.on.doc")
+                                                .font(.system(size: 8))
+                                            Text(isArgsCopied ? "Copied" : "Copy")
+                                                .font(.system(size: 8, design: .monospaced))
+                                        }
+                                        .foregroundStyle(isArgsCopied ? .green : .secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                ScrollView(.horizontal, showsIndicators: false) {
+                                    Text(argsStr)
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundStyle(.primary.opacity(0.85))
+                                        .textSelection(.enabled)
+                                        .padding(6)
+                                }
+                                .background(Color(uiColor: .tertiarySystemGroupedBackground))
+                                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            }
+                        }
+
+                        // Output / Result
                         VStack(alignment: .leading, spacing: 3) {
                             HStack {
-                                Text("RESULT")
+                                Text("OUTPUT")
                                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                                     .foregroundStyle(.tertiary)
                                 Spacer()
@@ -291,7 +440,9 @@ struct ToolCallBlockView: View {
                                 }
                             }
 
-                            if let output = block.output, !output.isEmpty {
+                            if let patch = effectivePatch, block.type == .fileDiff {
+                                DiffContentView(patch: patch)
+                            } else if let output = block.output, !output.isEmpty {
                                 ScrollView([.horizontal, .vertical], showsIndicators: true) {
                                     Text(output)
                                         .font(.system(size: 10, design: .monospaced))
@@ -312,7 +463,7 @@ struct ToolCallBlockView: View {
                                         .foregroundStyle(.secondary)
                                 }
                                 .padding(6)
-                            } else if block.patch == nil {
+                            } else {
                                 Text("(No output)")
                                     .font(.system(size: 10, design: .monospaced))
                                     .italic()
@@ -321,16 +472,16 @@ struct ToolCallBlockView: View {
                             }
                         }
                     }
+                    .padding(.leading, 18)
+                    .padding(.vertical, 4)
+                    .overlay(
+                        Rectangle()
+                            .fill(Theme.subtleBorder)
+                            .frame(width: 1.5)
+                            .padding(.leading, 12),
+                        alignment: .leading
+                    )
                 }
-                .padding(.leading, 18)
-                .padding(.vertical, 4)
-                .overlay(
-                    Rectangle()
-                        .fill(Theme.subtleBorder)
-                        .frame(width: 1.5)
-                        .padding(.leading, 12),
-                    alignment: .leading
-                )
             }
         }
     }

@@ -24,18 +24,16 @@ struct ChatDetailView: View {
 
     @State private var isAtBottom: Bool = true
     @State private var hasUnseenMessages: Bool = false
-
-    @State private var bottomAnchorMinY: CGFloat? = nil
     @State private var viewportHeight: CGFloat = 0
 
     init(chatId: String) {
         _viewModel = State(initialValue: ChatViewModel(chatId: chatId))
     }
 
-    private func checkScrollPosition() {
+    private func updateScrollPosition(minY: CGFloat?) {
         guard viewportHeight > 0 else { return }
         let atBottom: Bool
-        if let minY = bottomAnchorMinY {
+        if let minY = minY {
             // When at bottom, bottom_anchor.minY aligns near viewportHeight
             atBottom = minY <= viewportHeight + 60
         } else {
@@ -104,12 +102,16 @@ struct ChatDetailView: View {
                             }
                         )
                         .onPreferenceChange(BottomAnchorPreferenceKey.self) { minY in
-                            bottomAnchorMinY = minY
-                            checkScrollPosition()
+                            DispatchQueue.main.async {
+                                updateScrollPosition(minY: minY)
+                            }
                         }
                         .onPreferenceChange(ViewportHeightPreferenceKey.self) { height in
-                            viewportHeight = height
-                            checkScrollPosition()
+                            DispatchQueue.main.async {
+                                if abs(viewportHeight - height) > 1 {
+                                    viewportHeight = height
+                                }
+                            }
                         }
 
                         // Floating Jump to Bottom Button

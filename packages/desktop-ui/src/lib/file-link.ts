@@ -438,3 +438,53 @@ export async function openFileInRightSidebar(linkInfo: ParsedFileLink): Promise<
     });
   }
 }
+
+/**
+ * Opens a file diff patch in the right sidebar's Diff tab.
+ */
+export async function openDiffInRightSidebar(opts: {
+  filePath: string;
+  patch?: string;
+}): Promise<void> {
+  const cleanPath = opts.filePath.replace(/^file:\/\//, "").replace(/\\/g, "/");
+  const fileName = cleanPath.split("/").pop() || cleanPath;
+  const tabId = `diff:${cleanPath}`;
+
+  const workspaces = useWorkspaceStore.getState().workspaces;
+  const activeWorkspaceId = useWorkspaceStore.getState().activeWorkspaceId;
+  const activeChatId = useChatStore.getState().activeChatId;
+  const chats = useChatStore.getState().chats;
+  const activeChat = chats.find((c) => c.id === activeChatId);
+  const currentWsId = activeChat ? activeChat.workspaceId : activeWorkspaceId;
+  const targetWorkspace = workspaces.find((w) => w.id === currentWsId) || workspaces[0];
+
+  let patch = opts.patch;
+
+  if (!patch && targetWorkspace) {
+    let relativePath = cleanPath;
+    if (targetWorkspace.rootPath && relativePath.startsWith(targetWorkspace.rootPath)) {
+      relativePath = relativePath.slice(targetWorkspace.rootPath.length).replace(/^[/\\]+/, "");
+    }
+    relativePath = relativePath.replace(/^[/\\]+/, "");
+    try {
+      const res = await client.gitDiff(targetWorkspace.id, relativePath, false);
+      if (res?.diff) {
+        patch = res.diff;
+      }
+    } catch (err) {
+      console.warn("Could not fetch git diff for file preview", err);
+    }
+  }
+
+  useUiStore.getState().openOrFocusTab({
+    id: tabId,
+    type: "diff",
+    title: `${fileName} (Diff)`,
+    data: {
+      patch: patch || "",
+      filePath: cleanPath,
+      path: cleanPath,
+      workspaceId: targetWorkspace?.id,
+    },
+  });
+}

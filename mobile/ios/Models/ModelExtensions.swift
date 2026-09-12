@@ -4,6 +4,9 @@ extension Chat: Identifiable {
     var workspaceId: String? {
         workspaceID
     }
+    var providerId: String {
+        providerID
+    }
 }
 extension Message: Identifiable, Equatable {
     public static func == (lhs: Message, rhs: Message) -> Bool {

@@ -337,10 +337,22 @@ end try"#;
                 let host_settings = self.repo.get_host_settings().ok();
 
                 if input.provider_id.trim().is_empty() {
-                    input.provider_id = host_settings
-                        .as_ref()
-                        .map(|s| s.default_provider_id.clone())
-                        .filter(|p| !p.trim().is_empty())
+                    let ws_provider = if let Some(ws_id) = &input.workspace_id {
+                        self.repo
+                            .get_workspace(ws_id)?
+                            .map(|ws| ws.provider_id)
+                            .filter(|pid| !pid.trim().is_empty())
+                    } else {
+                        None
+                    };
+
+                    input.provider_id = ws_provider
+                        .or_else(|| {
+                            host_settings
+                                .as_ref()
+                                .map(|s| s.default_provider_id.clone())
+                                .filter(|p| !p.trim().is_empty())
+                        })
                         .unwrap_or_else(|| "codex".to_string());
                 }
                 if input.workspace_id.is_some() {
@@ -686,20 +698,6 @@ end try"#;
                     params.model
                 );
 
-                if let Some(m) = &params.model {
-                    let prev = self.repo.get_setting("current_model")?.unwrap_or_default();
-                    if prev != *m {
-                        let _ = self.repo.set_setting("current_model", m);
-                        if let Some(eff) = &params.reasoning_effort {
-                            let _ = self.repo.set_setting("current_reasoning_effort", eff);
-                        }
-                        let _ = self.registry.event_tx().send(AgentEvent::ModelUpdated {
-                            model: m.clone(),
-                            reasoning_effort: params.reasoning_effort.clone(),
-                        });
-                    }
-                }
-
                 let resolved_perm_mode = params.permission_mode.unwrap_or(chat.permission_mode);
                 if params.permission_mode.is_some()
                     && params.permission_mode != Some(chat.permission_mode)
@@ -717,7 +715,7 @@ end try"#;
                         });
                 }
 
-                let turn_id = adapter
+                let turn_id = match adapter
                     .submit_turn(
                         &chat.id,
                         &thread_id,
@@ -728,7 +726,51 @@ end try"#;
                         Some(resolved_perm_mode),
                         Some(&cwd),
                     )
-                    .await?;
+                    .await
+                {
+                    Ok(tid) => tid,
+                    Err(e) => {
+                        let err_msg = e.to_string();
+                        let _ = self.repo.update_chat_status(&chat.id, ChatStatus::Error, None);
+                        let _ = self.registry.event_tx().send(AgentEvent::TurnCompleted {
+                            chat_id: chat.id.clone(),
+                            message_id: agent_msg_id.clone(),
+                            turn_id: String::new(),
+                            status: ChatStatus::Error,
+                            blocks: vec![MessageBlock::Text {
+                                content: format!("❌ **Error:** {}", err_msg),
+                            }],
+                            text_content: None,
+                            reasoning_content: None,
+                            error: Some(err_msg.clone()),
+                        });
+                        return Err(e);
+                    }
+                };
+
+                if let Some(m) = &params.model {
+                    let provider_key = adapter.id();
+                    let prev = self
+                        .repo
+                        .get_setting(&format!("{}_current_model", provider_key))?
+                        .unwrap_or_default();
+                    if prev != *m {
+                        let _ = self
+                            .repo
+                            .set_setting(&format!("{}_current_model", provider_key), m);
+                        if let Some(eff) = &params.reasoning_effort {
+                            let _ = self.repo.set_setting(
+                                &format!("{}_current_reasoning_effort", provider_key),
+                                eff,
+                            );
+                        }
+                        let _ = self.registry.event_tx().send(AgentEvent::ModelUpdated {
+                            model: m.clone(),
+                            reasoning_effort: params.reasoning_effort.clone(),
+                            provider_id: Some(provider_key.to_string()),
+                        });
+                    }
+                }
 
                 tracing::info!(
                     "[RpcDispatcher] Turn submitted: chat={}, turn_id={}",
@@ -843,6 +885,7 @@ end try"#;
                     blocks: Vec::new(),
                     text_content: None,
                     reasoning_content: None,
+                    error: None,
                 });
 
                 Ok(serde_json::json!({ "status": "interrupted" }))
@@ -1102,6 +1145,7 @@ end try"#;
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
                 let params: ModelSetParams = serde_json::from_value(p)?;
+                let mut resolved_provider_key = None;
                 if let Ok(adapter) = self.registry.resolve(provider_id.as_deref()) {
                     let provider_key = adapter.id();
                     self.repo
@@ -1112,6 +1156,7 @@ end try"#;
                             effort,
                         )?;
                     }
+                    resolved_provider_key = Some(provider_key.to_string());
                 }
                 self.repo.set_setting("current_model", &params.model)?;
                 if let Some(effort) = &params.reasoning_effort {
@@ -1121,6 +1166,7 @@ end try"#;
                 let _ = self.registry.event_tx().send(AgentEvent::ModelUpdated {
                     model: params.model.clone(),
                     reasoning_effort: effort.clone(),
+                    provider_id: resolved_provider_key,
                 });
                 Ok(serde_json::json!({
                     "success": true,

@@ -54,6 +54,7 @@ pub enum AgentEvent {
         blocks: Vec<MessageBlock>,
         text_content: Option<String>,
         reasoning_content: Option<String>,
+        error: Option<String>,
     },
     ChatTitleUpdated {
         chat_id: String,
@@ -76,6 +77,7 @@ pub enum AgentEvent {
     ModelUpdated {
         model: String,
         reasoning_effort: Option<String>,
+        provider_id: Option<String>,
     },
     WorkspaceUpdated {
         workspace: Workspace,

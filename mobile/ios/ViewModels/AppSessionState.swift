@@ -688,6 +688,12 @@ final class AppSessionState {
 
         case "model.updated":
             if let payload = try? data.decodeRPCParams(ModelUpdatedPayload.self) {
+                if let payloadProvider = payload.providerId, !payloadProvider.isEmpty {
+                    let currentProvider = activeChatViewModel?.chat?.providerId ?? selectedProviderId
+                    if payloadProvider != currentProvider {
+                        break
+                    }
+                }
                 self.selectedModel = payload.model
                 if let eff = payload.reasoningEffort {
                     self.selectedEffort = eff

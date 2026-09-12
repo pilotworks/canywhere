@@ -5,7 +5,7 @@ import { FileIcon } from "../ui/file-icon.js";
 import { MessageBlock } from "../../types/index.js";
 import { formatToolAction } from "./tool-formatting.js";
 import { parseFileLink, openFileInRightSidebar } from "../../lib/file-link.js";
-import { DiffViewer } from "./diff-viewer.js";
+import { EditFileItem } from "./edit-file-item.js";
 
 interface ToolCallBlockProps {
   name: string;
@@ -39,6 +39,20 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
   };
 
   const action = formatToolAction(fakeBlock);
+
+  // If this is an edit file toolcall, render EditFileItem without collapsible/box/border/padding/bg
+  if (action.isEdit) {
+    return (
+      <EditFileItem
+        filePath={action.filePath || action.target}
+        target={action.target}
+        verb={action.verb}
+        patch={action.patch}
+        diffStats={action.diffStats}
+        status={status}
+      />
+    );
+  }
 
   // Parse file link if action has filePath
   const fileLinkInfo = React.useMemo(() => {
@@ -85,34 +99,20 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="w-full my-0.5 text-xs">
-      <CollapsibleTrigger
-        className={`group flex items-center gap-1.5 w-full transition-colors cursor-pointer select-none text-left ${
-          action.isEdit
-            ? "py-1 px-2 my-0.5 rounded-md bg-[var(--secondary)]/25 hover:bg-[var(--secondary)]/50 border border-[var(--border)]/35 text-[var(--foreground)]"
-            : "py-0.5 bg-transparent border-none text-[var(--muted-foreground)] hover:text-[var(--foreground)] p-0"
-        }`}
-      >
+      <CollapsibleTrigger className="group flex items-center gap-1.5 w-full py-0.5 bg-transparent border-none text-[var(--muted-foreground)] hover:text-[var(--foreground)] p-0 transition-colors cursor-pointer select-none text-left">
         <ChevronRight
           className={`w-3 h-3 shrink-0 transition-transform duration-150 ${
             open ? "rotate-90" : ""
-          } ${action.isEdit ? "text-[var(--foreground)] opacity-70" : ""}`}
-        />
-        <span
-          className={`text-[12px] shrink-0 transition-colors ${
-            action.isEdit ? "font-medium text-[var(--foreground)]" : "font-normal"
           }`}
-        >
+        />
+        <span className="text-[12px] shrink-0 transition-colors font-normal">
           {action.verb}
         </span>
         {action.target && (
           fileLinkInfo ? (
             <span
               onClick={handleFileClick}
-              className={`inline-flex items-center gap-1 font-mono text-[11.5px] px-1 py-0.2 rounded transition-colors cursor-pointer group/link max-w-[calc(100%-90px)] truncate ${
-                action.isEdit
-                  ? "font-medium text-[var(--foreground)] hover:bg-[var(--secondary)]/80"
-                  : "text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10"
-              }`}
+              className="inline-flex items-center gap-1 font-mono text-[11.5px] px-1 py-0.2 rounded transition-colors cursor-pointer group/link max-w-[calc(100%-90px)] truncate text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10"
               title={`Preview ${fileLinkInfo.cleanPath}${
                 fileLinkInfo.lineRange
                   ? ` (line ${fileLinkInfo.lineRange.start}${
@@ -141,12 +141,6 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
             </span>
           )
         )}
-        {action.diffStats && (action.diffStats.added > 0 || action.diffStats.removed > 0) && (
-          <span className="flex items-center gap-1 font-mono text-[10.5px] font-semibold ml-1 shrink-0">
-            {action.diffStats.added > 0 && <span className="text-emerald-400">+{action.diffStats.added}</span>}
-            {action.diffStats.removed > 0 && <span className="text-rose-400">-{action.diffStats.removed}</span>}
-          </span>
-        )}
         {isRunning && (
           <span className="text-amber-400/90 text-[11px] font-mono animate-pulse">
             ...
@@ -168,15 +162,8 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
           </div>
         )}
 
-        {/* Diff Viewer for Edit actions with patch */}
-        {action.patch ? (
-          <div className="rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] font-mono text-xs overflow-hidden shadow-xs">
-            <DiffViewer patch={action.patch} />
-          </div>
-        ) : null}
-
-        {/* Arguments: show if not an edit with patch, or if no patch available */}
-        {!action.patch && argsStr && argsStr !== "null" && argsStr !== "{}" && (
+        {/* Arguments */}
+        {argsStr && argsStr !== "null" && argsStr !== "{}" && (
           <div>
             <div className="flex items-center justify-between text-[10px] text-[var(--muted-foreground)] mb-0.5 font-semibold select-none">
               <span>Arguments</span>
@@ -214,7 +201,7 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
               {output}
             </pre>
           </div>
-        ) : !action.patch && (
+        ) : (
           <div>
             {isRunning ? (
               <div className="p-1 text-[10px] text-[var(--muted-foreground)] italic font-mono">

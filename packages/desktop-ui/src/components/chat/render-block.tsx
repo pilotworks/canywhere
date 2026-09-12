@@ -13,6 +13,7 @@ import {
   ToolActionBlock,
 } from "./tool-call-group.js";
 import { WorkedForBlock } from "./worked-for-block.js";
+import { isEditFileBlock } from "./tool-formatting.js";
 
 export type RenderableBlockGroup =
   | { type: "single"; block: MessageBlock }
@@ -26,7 +27,13 @@ export function groupMessageBlocks(blocks: MessageBlock[]): RenderableBlockGroup
   let currentToolGroup: ToolActionBlock[] = [];
 
   for (const block of blocks) {
-    if (block.type === "tool_call" || block.type === "command_exec") {
+    if (isEditFileBlock(block)) {
+      if (currentToolGroup.length > 0) {
+        result.push({ type: "tool_group", blocks: currentToolGroup });
+        currentToolGroup = [];
+      }
+      result.push({ type: "single", block });
+    } else if (block.type === "tool_call" || block.type === "command_exec") {
       currentToolGroup.push(block);
     } else {
       if (currentToolGroup.length > 0) {

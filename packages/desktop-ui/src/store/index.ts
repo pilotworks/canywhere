@@ -144,9 +144,19 @@ export interface ChatState {
 
 export const EMPTY_MESSAGES: Message[] = [];
 
+const STORAGE_KEY_ACTIVE_CHAT = "canywhere:active_chat_id";
+
+const getSavedActiveChatId = (): string | null => {
+  try {
+    return localStorage.getItem(STORAGE_KEY_ACTIVE_CHAT) || null;
+  } catch {
+    return null;
+  }
+};
+
 export const useChatStore = create<ChatState>((set) => ({
   chats: [],
-  activeChatId: null,
+  activeChatId: getSavedActiveChatId(),
   draftChat: null,
   draftPermissionMode: useSettingsStore.getState().hostSettings?.defaultPermissionMode ?? "onRequest",
   messages: {},
@@ -255,12 +265,24 @@ export const useChatStore = create<ChatState>((set) => ({
       delete next[chatId];
       return { queuedMessages: next };
     }),
-  setActiveChatId: (activeChatId) =>
+  setActiveChatId: (activeChatId) => {
+    try {
+      if (activeChatId) {
+        localStorage.setItem(STORAGE_KEY_ACTIVE_CHAT, activeChatId);
+      } else {
+        localStorage.removeItem(STORAGE_KEY_ACTIVE_CHAT);
+      }
+    } catch {}
     set((s) => {
       const activeChat = activeChatId ? s.chats.find((c) => c.id === activeChatId) : null;
+      if (activeChat?.providerId) {
+        useProviderStore.getState().setSelectedProviderId(activeChat.providerId);
+        useModelStore.getState().switchProviderCache(activeChat.providerId);
+      }
       useWorkspaceStore.getState().setActiveWorkspaceId(activeChat?.workspaceId || null);
       return { activeChatId, draftChat: null };
-    }),
+    });
+  },
   setChatStatus: (chatId, status) =>
     set((s) => {
       const isCompleted = status === "idle" || status === "error";
@@ -474,23 +496,40 @@ export interface ModelState {
   switchProviderCache: (providerId: string) => boolean;
   setSelectedModel: (model: string, providerId?: string) => void;
   setSelectedEffort: (effort: string, providerId?: string) => void;
-  syncRemoteModel: (model: string, effort?: string) => void;
+  syncRemoteModel: (model: string, effort?: string, providerId?: string) => void;
   setOnModelChanged: (cb: (model: string, effort?: string) => void) => void;
 }
 
 const STORAGE_KEY_MODEL = "canywhere:last_selected_model";
 const STORAGE_KEY_EFFORT = "canywhere:last_selected_effort";
+const STORAGE_KEY_MODELS_BY_PROVIDER = "canywhere:models_by_provider";
 
-const getSavedModel = () => {
+const getSavedModelsByProvider = (): Record<string, { models: ModelInfo[]; currentModel: string; currentEffort: string }> => {
   try {
+    const raw = localStorage.getItem(STORAGE_KEY_MODELS_BY_PROVIDER);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+};
+
+const getSavedModel = (providerId?: string) => {
+  try {
+    if (providerId) {
+      const perProvider = localStorage.getItem(`canywhere:model:${providerId}`);
+      if (perProvider) return perProvider;
+    }
     return localStorage.getItem(STORAGE_KEY_MODEL) || "";
   } catch {
     return "";
   }
 };
 
-const getSavedEffort = () => {
+const getSavedEffort = (providerId?: string) => {
   try {
+    if (providerId) {
+      const perProvider = localStorage.getItem(`canywhere:effort:${providerId}`);
+      if (perProvider) return perProvider;
+    }
     return localStorage.getItem(STORAGE_KEY_EFFORT) || "";
   } catch {
     return "";
@@ -499,89 +538,180 @@ const getSavedEffort = () => {
 
 let onModelChangedCallback: ((model: string, effort?: string) => void) | null = null;
 
-export const useModelStore = create<ModelState>((set, get) => ({
-  models: [],
-  selectedModel: getSavedModel(),
-  selectedEffort: getSavedEffort(),
-  modelsByProvider: {},
-  setOnModelChanged: (cb) => {
-    onModelChangedCallback = cb;
-  },
-  switchProviderCache: (providerId: string) => {
-    const cached = get().modelsByProvider[providerId];
-    if (cached && cached.models.length > 0) {
-      set({
-        models: cached.models,
-        selectedModel: cached.currentModel,
-        selectedEffort: cached.currentEffort,
-      });
-      return true;
+export const useModelStore = create<ModelState>((set, get) => {
+  const initialByProvider = getSavedModelsByProvider();
+  const initialProviderId = (() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_PROVIDER) || "codex";
+    } catch {
+      return "codex";
     }
-    return false;
-  },
-  setModels: (models, currentModel, currentEffort, providerId) => {
-    if (!models || models.length === 0) return;
-    const defaultModelInfo = models.find((m) => m.isDefault) || models[0];
-    const defaultModel = defaultModelInfo?.model || "";
-    set((s) => {
-      const preferredModel = currentModel || s.selectedModel || getSavedModel();
-      const matchedModel = models.find((m) => m.model === preferredModel);
-      const activeModel = matchedModel ? matchedModel.model : defaultModel;
-      const activeModelInfo = matchedModel || defaultModelInfo;
+  })();
+  const cached = initialByProvider[initialProviderId];
+  const initialModels = cached?.models || [];
+  const initialSelectedModel = getSavedModel(initialProviderId) || cached?.currentModel || "";
+  const initialSelectedEffort = getSavedEffort(initialProviderId) || cached?.currentEffort || "";
 
-      const supportedEfforts = activeModelInfo?.supportedReasoningEfforts || [];
-      const defaultEffort = activeModelInfo?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
+  return {
+    models: initialModels,
+    selectedModel: initialSelectedModel,
+    selectedEffort: initialSelectedEffort,
+    modelsByProvider: initialByProvider,
+    setOnModelChanged: (cb) => {
+      onModelChangedCallback = cb;
+    },
+    switchProviderCache: (providerId: string) => {
+      const cached = get().modelsByProvider[providerId];
+      if (cached && cached.models.length > 0) {
+        const savedM = getSavedModel(providerId);
+        const chosenModel = (savedM && cached.models.some((m) => m.model === savedM))
+          ? savedM
+          : cached.currentModel;
 
-      const preferredEffort = currentEffort || s.selectedEffort || getSavedEffort();
-      const activeEffort = supportedEfforts.includes(preferredEffort) ? preferredEffort : defaultEffort;
+        const modelInfo = cached.models.find((m) => m.model === chosenModel);
+        const supportedEfforts = modelInfo?.supportedReasoningEfforts || [];
+        const savedE = getSavedEffort(providerId);
+        const chosenEffort = (savedE && supportedEfforts.includes(savedE))
+          ? savedE
+          : cached.currentEffort;
 
-      try {
-        localStorage.setItem(STORAGE_KEY_MODEL, activeModel);
-        if (activeEffort) {
-          localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
-        }
-      } catch {}
-
-      const nextModelsByProvider = { ...s.modelsByProvider };
-      if (providerId) {
-        nextModelsByProvider[providerId] = {
-          models,
-          currentModel: activeModel,
-          currentEffort: activeEffort,
-        };
+        set({
+          models: cached.models,
+          selectedModel: chosenModel,
+          selectedEffort: chosenEffort,
+        });
+        return true;
       }
+      const savedM = getSavedModel(providerId);
+      const savedE = getSavedEffort(providerId);
+      if (savedM) {
+        set({
+          selectedModel: savedM,
+          selectedEffort: savedE || "",
+        });
+      }
+      return false;
+    },
+    setModels: (models, currentModel, currentEffort, providerId) => {
+      if (!models || models.length === 0) return;
+      const defaultModelInfo = models.find((m) => m.isDefault) || models[0];
+      const defaultModel = defaultModelInfo?.model || "";
+      set((s) => {
+        const preferredModel = currentModel || (providerId ? getSavedModel(providerId) : "") || defaultModel;
+        const matchedModel = models.find((m) => m.model === preferredModel);
+        const activeModel = matchedModel ? matchedModel.model : defaultModel;
+        const activeModelInfo = matchedModel || defaultModelInfo;
 
-      return {
-        models,
-        selectedModel: activeModel,
-        selectedEffort: activeEffort,
-        modelsByProvider: nextModelsByProvider,
-      };
-    });
-  },
-  syncRemoteModel: (model, effort) => {
-    set((s) => {
-      const matchedModel = s.models.find((m) => m.model === model);
-      const supportedEfforts = matchedModel?.supportedReasoningEfforts || [];
-      const defaultEffort = matchedModel?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
-      const activeEffort = effort && supportedEfforts.includes(effort) ? effort : (effort || defaultEffort || s.selectedEffort);
+        const supportedEfforts = activeModelInfo?.supportedReasoningEfforts || [];
+        const defaultEffort = activeModelInfo?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
 
-      try {
-        localStorage.setItem(STORAGE_KEY_MODEL, model);
-        if (activeEffort) {
-          localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
+        const preferredEffort = currentEffort || (providerId ? getSavedEffort(providerId) : "") || defaultEffort;
+        const activeEffort = supportedEfforts.includes(preferredEffort) ? preferredEffort : defaultEffort;
+
+        if (providerId) {
+          try {
+            localStorage.setItem(`canywhere:model:${providerId}`, activeModel);
+            if (activeEffort) {
+              localStorage.setItem(`canywhere:effort:${providerId}`, activeEffort);
+            }
+          } catch {}
         }
-      } catch {}
 
-      return {
-        selectedModel: model,
-        selectedEffort: activeEffort,
-      };
-    });
-  },
+        const nextModelsByProvider = { ...s.modelsByProvider };
+        if (providerId) {
+          nextModelsByProvider[providerId] = {
+            models,
+            currentModel: activeModel,
+            currentEffort: activeEffort,
+          };
+          try {
+            localStorage.setItem(STORAGE_KEY_MODELS_BY_PROVIDER, JSON.stringify(nextModelsByProvider));
+          } catch {}
+        }
+
+        // Determine current active provider
+        const activeChatId = useChatStore.getState().activeChatId;
+        const activeChat = activeChatId ? useChatStore.getState().chats.find((c) => c.id === activeChatId) : null;
+        const activeProviderId = activeChat?.providerId || useProviderStore.getState().selectedProviderId;
+
+        // If models were fetched for another provider (e.g. background pre-warming),
+        // do not overwrite the active provider's models!
+        if (providerId && activeProviderId && providerId !== activeProviderId) {
+          return {
+            modelsByProvider: nextModelsByProvider,
+          };
+        }
+
+        try {
+          localStorage.setItem(STORAGE_KEY_MODEL, activeModel);
+          if (activeEffort) {
+            localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
+          }
+        } catch {}
+
+        return {
+          models,
+          selectedModel: activeModel,
+          selectedEffort: activeEffort,
+          modelsByProvider: nextModelsByProvider,
+        };
+      });
+    },
+    syncRemoteModel: (model, effort, providerId) => {
+      set((s) => {
+        const activeChatId = useChatStore.getState().activeChatId;
+        const activeChat = activeChatId ? useChatStore.getState().chats.find((c) => c.id === activeChatId) : null;
+        const activeProviderId = activeChat?.providerId || useProviderStore.getState().selectedProviderId;
+
+        if (providerId && activeProviderId && providerId !== activeProviderId) {
+          const nextModelsByProvider = { ...s.modelsByProvider };
+          if (nextModelsByProvider[providerId]) {
+            nextModelsByProvider[providerId] = {
+              ...nextModelsByProvider[providerId],
+              currentModel: model,
+              currentEffort: effort || nextModelsByProvider[providerId].currentEffort,
+            };
+          }
+          return { modelsByProvider: nextModelsByProvider };
+        }
+
+        // If models are loaded and model is not in current provider's models, do not overwrite
+        const matchedModel = s.models.find((m) => m.model === model);
+        if (s.models.length > 0 && !matchedModel) {
+          return {};
+        }
+
+        const supportedEfforts = matchedModel?.supportedReasoningEfforts || [];
+        const defaultEffort = matchedModel?.defaultReasoningEffort || (supportedEfforts.length > 0 ? supportedEfforts[0] : "");
+        const activeEffort = effort && supportedEfforts.includes(effort) ? effort : (effort || defaultEffort || s.selectedEffort);
+
+        const pId = providerId || activeProviderId;
+        try {
+          localStorage.setItem(STORAGE_KEY_MODEL, model);
+          if (pId) {
+            localStorage.setItem(`canywhere:model:${pId}`, model);
+          }
+          if (activeEffort) {
+            localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
+            if (pId) {
+              localStorage.setItem(`canywhere:effort:${pId}`, activeEffort);
+            }
+          }
+        } catch {}
+
+        return {
+          selectedModel: model,
+          selectedEffort: activeEffort,
+        };
+      });
+    },
   setSelectedModel: (selectedModel, providerId) => {
+    const pId = providerId || useProviderStore.getState().selectedProviderId;
     try {
       localStorage.setItem(STORAGE_KEY_MODEL, selectedModel);
+      if (pId) {
+        localStorage.setItem(`canywhere:model:${pId}`, selectedModel);
+      }
     } catch {}
     let finalEffort = "";
     set((s) => {
@@ -593,9 +723,11 @@ export const useModelStore = create<ModelState>((set, get) => ({
       if (activeEffort) {
         try {
           localStorage.setItem(STORAGE_KEY_EFFORT, activeEffort);
+          if (pId) {
+            localStorage.setItem(`canywhere:effort:${pId}`, activeEffort);
+          }
         } catch {}
       }
-      const pId = providerId || useProviderStore.getState().selectedProviderId;
       const nextModelsByProvider = { ...s.modelsByProvider };
       if (pId && nextModelsByProvider[pId]) {
         nextModelsByProvider[pId] = {
@@ -611,11 +743,14 @@ export const useModelStore = create<ModelState>((set, get) => ({
     }
   },
   setSelectedEffort: (selectedEffort, providerId) => {
+    const pId = providerId || useProviderStore.getState().selectedProviderId;
     try {
       localStorage.setItem(STORAGE_KEY_EFFORT, selectedEffort);
+      if (pId) {
+        localStorage.setItem(`canywhere:effort:${pId}`, selectedEffort);
+      }
     } catch {}
     set((s) => {
-      const pId = providerId || useProviderStore.getState().selectedProviderId;
       const nextModelsByProvider = { ...s.modelsByProvider };
       if (pId && nextModelsByProvider[pId]) {
         nextModelsByProvider[pId] = {
@@ -629,7 +764,8 @@ export const useModelStore = create<ModelState>((set, get) => ({
       onModelChangedCallback(get().selectedModel, selectedEffort);
     }
   },
-}));
+};
+});
 
 export type RightTabType = "fileTree" | "git" | "terminal" | "filePreview" | "diff";
 

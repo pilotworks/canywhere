@@ -128,10 +128,14 @@ export function formatToolAction(
     const rawPath =
       argsObj.TargetFile ||
       argsObj.target_file ||
+      argsObj.targetFile ||
       argsObj.AbsolutePath ||
+      argsObj.absolute_path ||
       argsObj.path ||
       argsObj.filePath ||
+      argsObj.file_path ||
       argsObj.file ||
+      (Array.isArray(argsObj.changes) && argsObj.changes[0]?.path) ||
       "";
     const shortPath = getShortPath(String(rawPath));
     const target = shortPath || (argsObj.toolSummary ? String(argsObj.toolSummary) : name);
@@ -159,17 +163,83 @@ export function formatToolAction(
         ? argsObj.instruction
         : undefined;
 
-    if (typeof argsObj.patch === "string" && argsObj.patch.trim()) {
-      patch = argsObj.patch;
-      const lines = patch.split("\n");
+    const directPatch =
+      (typeof argsObj.patch === "string" && argsObj.patch.trim() ? argsObj.patch : "") ||
+      (typeof argsObj.diff === "string" && argsObj.diff.trim() ? argsObj.diff : "") ||
+      (typeof argsObj.unified_diff === "string" && argsObj.unified_diff.trim() ? argsObj.unified_diff : "") ||
+      (typeof argsObj.unifiedDiff === "string" && argsObj.unifiedDiff.trim() ? argsObj.unifiedDiff : "");
+
+    const changePatch =
+      Array.isArray(argsObj.changes) && argsObj.changes.length > 0
+        ? argsObj.changes[0]?.diff || argsObj.changes[0]?.patch || ""
+        : "";
+
+    const outputPatch =
+      typeof block.output === "string" &&
+      (block.output.includes("@@ -") || block.output.startsWith("---") || block.output.startsWith("diff --git"))
+        ? block.output
+        : "";
+
+    const targetContent =
+      typeof argsObj.TargetContent === "string"
+        ? argsObj.TargetContent
+        : typeof argsObj.target_content === "string"
+        ? argsObj.target_content
+        : typeof argsObj.targetContent === "string"
+        ? argsObj.targetContent
+        : typeof argsObj.old_string === "string"
+        ? argsObj.old_string
+        : typeof argsObj.old_str === "string"
+        ? argsObj.old_str
+        : typeof argsObj.oldString === "string"
+        ? argsObj.oldString
+        : typeof argsObj.find === "string"
+        ? argsObj.find
+        : undefined;
+
+    const replacementContent =
+      typeof argsObj.ReplacementContent === "string"
+        ? argsObj.ReplacementContent
+        : typeof argsObj.replacement_content === "string"
+        ? argsObj.replacement_content
+        : typeof argsObj.replacementContent === "string"
+        ? argsObj.replacementContent
+        : typeof argsObj.new_string === "string"
+        ? argsObj.new_string
+        : typeof argsObj.new_str === "string"
+        ? argsObj.new_str
+        : typeof argsObj.newString === "string"
+        ? argsObj.newString
+        : typeof argsObj.replace === "string"
+        ? argsObj.replace
+        : undefined;
+
+    const codeContent =
+      typeof argsObj.CodeContent === "string"
+        ? argsObj.CodeContent
+        : typeof argsObj.code_content === "string"
+        ? argsObj.code_content
+        : typeof argsObj.codeContent === "string"
+        ? argsObj.codeContent
+        : typeof argsObj.content === "string"
+        ? argsObj.content
+        : typeof argsObj.contents === "string"
+        ? argsObj.contents
+        : typeof argsObj.text === "string"
+        ? argsObj.text
+        : undefined;
+
+    const foundPatch = directPatch || changePatch || outputPatch;
+
+    if (foundPatch) {
+      patch = foundPatch;
+      const lines = foundPatch.split(/\r?\n/);
       const added = lines.filter((l: string) => l.startsWith("+") && !l.startsWith("+++")).length;
       const removed = lines.filter((l: string) => l.startsWith("-") && !l.startsWith("---")).length;
       diffStats = { added, removed };
-    } else if (argsObj.TargetContent !== undefined || argsObj.ReplacementContent !== undefined) {
-      const targetContent = typeof argsObj.TargetContent === "string" ? argsObj.TargetContent : (typeof argsObj.old_string === "string" ? argsObj.old_string : "");
-      const replacementContent = typeof argsObj.ReplacementContent === "string" ? argsObj.ReplacementContent : (typeof argsObj.new_string === "string" ? argsObj.new_string : "");
-      const oldLines = targetContent ? targetContent.split("\n") : [];
-      const newLines = replacementContent ? replacementContent.split("\n") : [];
+    } else if (targetContent !== undefined || replacementContent !== undefined) {
+      const oldLines = targetContent ? targetContent.split(/\r?\n/) : [];
+      const newLines = replacementContent ? replacementContent.split(/\r?\n/) : [];
       diffStats = { added: newLines.length, removed: oldLines.length };
       const file = rawPath ? String(rawPath).split("/").pop() || "file" : "file";
       let p = `--- a/${file}\n+++ b/${file}\n`;
@@ -180,9 +250,8 @@ export function formatToolAction(
         p += `+${line}\n`;
       }
       patch = p.replace(/\n$/, "");
-    } else if (argsObj.CodeContent !== undefined) {
-      const codeContent = typeof argsObj.CodeContent === "string" ? argsObj.CodeContent : "";
-      const newLines = codeContent ? codeContent.split("\n") : [];
+    } else if (codeContent !== undefined) {
+      const newLines = codeContent ? codeContent.split(/\r?\n/) : [];
       diffStats = { added: newLines.length, removed: 0 };
       const file = rawPath ? String(rawPath).split("/").pop() || "file" : "file";
       let p = `--- /dev/null\n+++ b/${file}\n`;
@@ -482,5 +551,24 @@ export function formatWorkedDuration(durationSeconds: number): string {
     return secStr ? `Worked for ${minutes}m ${secStr}` : `Worked for ${minutes}m`;
   }
   return `Worked for ${seconds}s`;
+}
+
+export function isEditToolName(name: string): boolean {
+  const lower = (name || "").toLowerCase();
+  return (
+    lower.includes("write") ||
+    lower.includes("edit") ||
+    lower.includes("replace") ||
+    lower.includes("patch")
+  );
+}
+
+export function isEditFileBlock(block: MessageBlock): boolean {
+  if (block.type === "file_diff") return true;
+  if (block.type === "tool_call") {
+    if (isEditToolName(block.name)) return true;
+    return formatToolAction(block).isEdit === true;
+  }
+  return false;
 }
 

@@ -25,9 +25,12 @@ const CORE_LANGUAGES = [
   "html",
   "sql",
   "dockerfile",
+  "diff",
 ] as const;
 
 const EXTENSION_TO_LANG: Record<string, string> = {
+  diff: "diff",
+  patch: "diff",
   typescript: "typescript",
   javascript: "javascript",
   rust: "rust",
@@ -83,8 +86,6 @@ const EXTENSION_TO_LANG: Record<string, string> = {
   rb: "ruby",
   php: "php",
   lua: "lua",
-  diff: "diff",
-  patch: "diff",
   xml: "xml",
   svg: "xml",
   graphql: "graphql",

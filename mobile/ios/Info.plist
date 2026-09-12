@@ -22,6 +22,8 @@
     <true/>
     <key>NSCameraUsageDescription</key>
     <string>Scan QR code to pair with Canywhere Desktop</string>
+    <key>NSFaceIDUsageDescription</key>
+    <string>Authenticate with Face ID to protect sensitive actions and approvals</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Discover and connect to Canywhere Host on your local network</string>
     <key>NSAppTransportSecurity</key>

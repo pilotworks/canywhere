@@ -5,9 +5,7 @@ import { ToolCallBlock } from "./tool-call-block.js";
 import { formatToolAction, summarizeToolGroup } from "./tool-formatting.js";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "../ui/collapsible.js";
 import { FileIcon } from "../ui/file-icon.js";
-import { DiffViewer } from "./diff-viewer.js";
-
-import { parseFileLink, openFileInRightSidebar } from "../../lib/file-link.js";
+import { parseFileLink, openFileInRightSidebar, openDiffInRightSidebar } from "../../lib/file-link.js";
 
 export type ToolActionBlock = Extract<MessageBlock, { type: "tool_call" | "command_exec" }>;
 
@@ -123,70 +121,20 @@ export const CommandExecItem: React.FC<{
   );
 };
 
+import { EditFileItem, type EditFileItemProps } from "./edit-file-item.js";
+export { EditFileItem, type EditFileItemProps };
+
 export const FileDiffItem: React.FC<{
   block: Extract<MessageBlock, { type: "file_diff" }>;
 }> = ({ block }) => {
-  const [open, setOpen] = useState(false);
-  const lines = (block.patch || "").split("\n");
-  const addedCount = lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
-  const removedCount = lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
-
-  const fileLinkInfo = React.useMemo(() => {
-    return parseFileLink(block.path);
-  }, [block.path]);
-
-  const handleFileClick = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (fileLinkInfo) {
-      openFileInRightSidebar(fileLinkInfo);
-    }
-  };
-
   return (
-    <Collapsible open={open} onOpenChange={setOpen} className="w-full my-0.5 text-xs">
-      <CollapsibleTrigger className="group flex items-center gap-1.5 py-0.5 w-full text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer select-none bg-transparent border-none p-0 text-left">
-        <ChevronRight
-          className={`w-3 h-3 shrink-0 transition-transform duration-150 ${
-            open ? "rotate-90" : ""
-          }`}
-        />
-        <span className="text-[12px] font-normal transition-colors shrink-0">
-          Edited
-        </span>
-        {fileLinkInfo ? (
-          <span
-            onClick={handleFileClick}
-            className="inline-flex items-center gap-1 font-mono text-[11.5px] text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10 px-1 py-0.2 rounded transition-colors cursor-pointer group/link max-w-[calc(100%-100px)] truncate"
-            title={`Preview ${block.path} in right sidebar`}
-          >
-            <FileIcon fileName={block.path} className="w-3.5 h-3.5 shrink-0 pointer-events-none" />
-            <span className="truncate">
-              {block.path}
-            </span>
-          </span>
-        ) : (
-          <>
-            <FileIcon fileName={block.path} className="w-3.5 h-3.5 shrink-0" />
-            <span className="font-mono text-[11.5px] opacity-90 truncate">
-              {block.path}
-            </span>
-          </>
-        )}
-        {(addedCount > 0 || removedCount > 0) && (
-          <span className="flex items-center gap-1 font-mono text-[10.5px] font-semibold ml-1 shrink-0">
-            {addedCount > 0 && <span className="text-emerald-400">+{addedCount}</span>}
-            {removedCount > 0 && <span className="text-rose-400">-{removedCount}</span>}
-          </span>
-        )}
-      </CollapsibleTrigger>
-
-      <CollapsibleContent className="my-1.5 ml-2 pl-2 border-l border-[var(--border)]/50">
-        <div className="rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] font-mono text-xs overflow-hidden shadow-xs">
-          <DiffViewer patch={block.patch} />
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+    <EditFileItem
+      filePath={block.path}
+      target={block.path}
+      verb="Edited"
+      patch={block.patch}
+      status={block.status === "rejected" ? "failed" : "completed"}
+    />
   );
 };
 

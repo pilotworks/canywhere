@@ -3,7 +3,7 @@ import UIKit
 
 // MARK: - Markdown Models
 
-enum MarkdownBlock: Identifiable, Equatable {
+enum MarkdownBlock: Equatable {
     case code(language: String, code: String)
     case heading(level: Int, text: String)
     case paragraph(text: String)
@@ -13,29 +13,6 @@ enum MarkdownBlock: Identifiable, Equatable {
     case quote(text: String)
     case divider
     case table(headers: [String], rows: [[String]])
-
-    var id: String {
-        switch self {
-        case .code(let lang, let code):
-            return "code_\(lang)_\(code.hashValue)"
-        case .heading(let level, let text):
-            return "h\(level)_\(text.hashValue)"
-        case .paragraph(let text):
-            return "p_\(text.hashValue)"
-        case .bulletList(let items):
-            return "ul_\(items.count)_\(items.first?.hashValue ?? 0)"
-        case .orderedList(let items):
-            return "ol_\(items.count)_\(items.first?.text.hashValue ?? 0)"
-        case .taskList(let items):
-            return "task_\(items.count)_\(items.first?.text.hashValue ?? 0)"
-        case .quote(let text):
-            return "quote_\(text.hashValue)"
-        case .divider:
-            return "divider"
-        case .table(let headers, let rows):
-            return "table_\(headers.joined())_\(rows.count)"
-        }
-    }
 
     static func == (lhs: MarkdownBlock, rhs: MarkdownBlock) -> Bool {
         switch (lhs, rhs) {
@@ -323,7 +300,7 @@ struct MarkdownContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: isReasoning ? 6 : 10) {
-            ForEach(blocks) { block in
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
                 switch block {
                 case .code(let language, let code):
                     CodeBlockView(

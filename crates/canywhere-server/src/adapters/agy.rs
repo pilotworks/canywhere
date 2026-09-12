@@ -210,6 +210,7 @@ impl CliAdapter for AgyAdapter {
         permission_mode: Option<PermissionMode>,
         cwd: Option<&str>,
     ) -> Result<String> {
+        let (eff_model, eff_effort) = normalize_model_and_effort(model, effort)?;
         let turn_id = format!("turn-{}", Uuid::new_v4());
 
         // Reset accumulated state
@@ -246,8 +247,6 @@ impl CliAdapter for AgyAdapter {
         let _ = self.event_tx.send(AgentEvent::MessageCreated {
             message: agent_message,
         });
-
-        let (eff_model, eff_effort) = normalize_model_and_effort(model, effort);
 
         let mut sessions = self.sessions.lock().await;
         let session_exists = sessions.contains_key(chat_id);
@@ -291,6 +290,23 @@ impl CliAdapter for AgyAdapter {
             let mut child = cmd.spawn()?;
             let stdin = child.stdin.take().expect("Failed to open child stdin");
             let stdout = child.stdout.take().expect("Failed to open child stdout");
+            let stderr = child.stderr.take().expect("Failed to open child stderr");
+
+            let stderr_lines = Arc::new(tokio::sync::Mutex::new(Vec::<String>::new()));
+            let stderr_lines_clone = Arc::clone(&stderr_lines);
+            tokio::spawn(async move {
+                let mut err_reader = BufReader::new(stderr).lines();
+                while let Ok(Some(err_line)) = err_reader.next_line().await {
+                    let t = err_line.trim().to_string();
+                    if !t.is_empty() {
+                        let mut g = stderr_lines_clone.lock().await;
+                        if g.len() > 30 {
+                            g.remove(0);
+                        }
+                        g.push(t);
+                    }
+                }
+            });
 
             sessions.insert(
                 chat_id.to_string(),
@@ -319,6 +335,7 @@ impl CliAdapter for AgyAdapter {
             let chat_blocks = Arc::clone(&self.chat_accumulated_blocks);
             let chat_reasoning = Arc::clone(&self.chat_reasoning);
             let sessions_clone = Arc::clone(&self.sessions);
+            let stderr_lines_for_reader = Arc::clone(&stderr_lines);
 
             tokio::spawn(async move {
                 let mut reader = BufReader::new(stdout).lines();
@@ -649,6 +666,41 @@ impl CliAdapter for AgyAdapter {
                                     ChatStatus::Error
                                 };
 
+                                let mut error_msg: Option<String> = None;
+                                if chat_status == ChatStatus::Error {
+                                    let stderr_guard = stderr_lines_for_reader.lock().await;
+                                    let detailed_err = stderr_guard
+                                        .iter()
+                                        .rev()
+                                        .find(|l| {
+                                            let lower = l.to_lowercase();
+                                            lower.contains("error")
+                                                || lower.contains("failed")
+                                                || lower.contains("invalid")
+                                        })
+                                        .cloned()
+                                        .or_else(|| stderr_guard.last().cloned());
+
+                                    let val_err = val
+                                        .get("result")
+                                        .and_then(|r| r.get("error"))
+                                        .and_then(|e| e.as_str())
+                                        .map(|s| s.to_string());
+
+                                    error_msg = match (detailed_err, val_err) {
+                                        (Some(detail), Some(base)) => {
+                                            if detail.contains(&base) || base == "context canceled" {
+                                                Some(detail)
+                                            } else {
+                                                Some(format!("{}: {}", base, detail))
+                                            }
+                                        }
+                                        (Some(detail), None) => Some(detail),
+                                        (None, Some(base)) => Some(base),
+                                        (None, None) => Some("Turn failed in Antigravity".to_string()),
+                                    };
+                                }
+
                                 let active_conv_id = captured_conv_id_clone
                                     .lock()
                                     .await
@@ -723,6 +775,7 @@ impl CliAdapter for AgyAdapter {
                                     blocks: final_blocks,
                                     text_content: final_text,
                                     reasoning_content: reasoning,
+                                    error: error_msg,
                                 });
 
                                 chat_active_turn.lock().await.remove(&chat_id_str);
@@ -733,7 +786,36 @@ impl CliAdapter for AgyAdapter {
                         }
                     }
                 }
-                chat_active_turn.lock().await.remove(&chat_id_str);
+
+                // If stream ended without emitting a result event, report failure if turn is still active
+                if let Some((_, active_tid)) = chat_active_turn.lock().await.remove(&chat_id_str) {
+                    if active_tid == turn_id_str {
+                        let stderr_guard = stderr_lines_for_reader.lock().await;
+                        let err_msg = stderr_guard
+                            .iter()
+                            .rev()
+                            .find(|l| {
+                                let lower = l.to_lowercase();
+                                lower.contains("error")
+                                    || lower.contains("failed")
+                                    || lower.contains("invalid")
+                            })
+                            .cloned()
+                            .or_else(|| stderr_guard.last().cloned())
+                            .unwrap_or_else(|| "Antigravity process exited unexpectedly".to_string());
+
+                        let _ = event_tx.send(AgentEvent::TurnCompleted {
+                            chat_id: chat_id_str.clone(),
+                            message_id: msg_id_str.clone(),
+                            turn_id: turn_id_str.clone(),
+                            status: ChatStatus::Error,
+                            blocks: chat_blocks.lock().await.remove(&chat_id_str).unwrap_or_default(),
+                            text_content: chat_text.lock().await.remove(&chat_id_str),
+                            reasoning_content: chat_reasoning.lock().await.remove(&chat_id_str),
+                            error: Some(err_msg),
+                        });
+                    }
+                }
                 sessions_clone.lock().await.remove(&chat_id_str);
             });
         }
@@ -1030,13 +1112,18 @@ impl CliAdapter for AgyAdapter {
     }
 }
 
+fn is_valid_agy_model(model: &str) -> bool {
+    let m = model.to_lowercase();
+    m.starts_with("gemini") || m.starts_with("claude") || m.starts_with("gpt-oss")
+}
+
 fn normalize_model_and_effort(
     model: Option<&str>,
     effort: Option<&str>,
-) -> (Option<String>, Option<String>) {
+) -> Result<(Option<String>, Option<String>)> {
     let raw_model = match model {
         Some(m) if !m.trim().is_empty() => m.trim(),
-        _ => return (None, None),
+        _ => return Ok((None, None)),
     };
 
     // If raw_model has -high, -medium, -low suffix, extract it
@@ -1050,9 +1137,15 @@ fn normalize_model_and_effort(
         (raw_model, None)
     };
 
+    // Error safeguard: If model is not an Antigravity model (e.g. from Codex like gpt-6-astra or gpt-5-codex),
+    // reject it with an error. Do not silently fallback.
+    if !is_valid_agy_model(base_model) {
+        anyhow::bail!("Model '{}' is not supported by Antigravity", raw_model);
+    }
+
     // Claude models NEVER accept --effort in agy CLI
     if base_model.starts_with("claude") {
-        return (Some(base_model.to_string()), None);
+        return Ok((Some(base_model.to_string()), None));
     }
 
     // Determine final effort
@@ -1060,7 +1153,7 @@ fn normalize_model_and_effort(
 
     // If gpt-oss-120b, agy only supports medium effort
     if base_model == "gpt-oss-120b" {
-        return (Some(base_model.to_string()), Some("medium".to_string()));
+        return Ok((Some(base_model.to_string()), Some("medium".to_string())));
     }
 
     // For other models (e.g. Gemini), validate effort if provided
@@ -1070,7 +1163,7 @@ fn normalize_model_and_effort(
         _ => "high".to_string(),
     });
 
-    (Some(base_model.to_string()), validated_effort)
+    Ok((Some(base_model.to_string()), validated_effort))
 }
 
 fn parse_agy_models_output(text: &str) -> Vec<ModelInfo> {
@@ -1279,36 +1372,40 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
     #[test]
     fn test_normalize_model_and_effort() {
         // Standard Gemini with effort
-        let (m, e) = normalize_model_and_effort(Some("gemini-3.8-flash"), Some("low"));
+        let (m, e) = normalize_model_and_effort(Some("gemini-3.8-flash"), Some("low")).unwrap();
         assert_eq!(m, Some("gemini-3.8-flash".to_string()));
         assert_eq!(e, Some("low".to_string()));
 
         // Legacy suffixed model with no effort provided -> extracts suffix as effort
-        let (m, e) = normalize_model_and_effort(Some("gemini-3.8-flash-high"), None);
+        let (m, e) = normalize_model_and_effort(Some("gemini-3.8-flash-high"), None).unwrap();
         assert_eq!(m, Some("gemini-3.8-flash".to_string()));
         assert_eq!(e, Some("high".to_string()));
 
         // Legacy suffixed model with explicit effort override
-        let (m, e) = normalize_model_and_effort(Some("gemini-3.8-flash-high"), Some("medium"));
+        let (m, e) = normalize_model_and_effort(Some("gemini-3.8-flash-high"), Some("medium")).unwrap();
         assert_eq!(m, Some("gemini-3.8-flash".to_string()));
         assert_eq!(e, Some("medium".to_string()));
 
         // Claude models never accept --effort flag
-        let (m, e) = normalize_model_and_effort(Some("claude-sonnet-4-6"), Some("high"));
+        let (m, e) = normalize_model_and_effort(Some("claude-sonnet-4-6"), Some("high")).unwrap();
         assert_eq!(m, Some("claude-sonnet-4-6".to_string()));
         assert_eq!(e, None);
 
-        let (m, e) = normalize_model_and_effort(Some("claude-opus-4-6-thinking"), Some("low"));
+        let (m, e) = normalize_model_and_effort(Some("claude-opus-4-6-thinking"), Some("low")).unwrap();
         assert_eq!(m, Some("claude-opus-4-6-thinking".to_string()));
         assert_eq!(e, None);
 
         // GPT-OSS 120B is pinned to medium effort
-        let (m, e) = normalize_model_and_effort(Some("gpt-oss-120b"), Some("high"));
+        let (m, e) = normalize_model_and_effort(Some("gpt-oss-120b"), Some("high")).unwrap();
         assert_eq!(m, Some("gpt-oss-120b".to_string()));
         assert_eq!(e, Some("medium".to_string()));
 
+        // Foreign model (e.g. from Codex like gpt-6-astra or gpt-5-codex) must return Err
+        assert!(normalize_model_and_effort(Some("gpt-6-astra"), Some("medium")).is_err());
+        assert!(normalize_model_and_effort(Some("gpt-5-codex"), None).is_err());
+
         // Empty / None
-        let (m, e) = normalize_model_and_effort(None, None);
+        let (m, e) = normalize_model_and_effort(None, None).unwrap();
         assert_eq!(m, None);
         assert_eq!(e, None);
     }

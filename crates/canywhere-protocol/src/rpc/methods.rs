@@ -240,6 +240,9 @@ pub struct ModelSetParams {
 pub struct ModelUpdatedNotification {
     pub model: String,
     pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]
@@ -332,6 +335,9 @@ pub struct TurnCompletedNotification {
     pub chat_id: String,
     pub turn_id: String,
     pub status: ChatStatus,
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, TS)]

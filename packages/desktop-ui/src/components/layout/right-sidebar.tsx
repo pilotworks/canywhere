@@ -20,6 +20,7 @@ import { DiffViewer } from "../chat/diff-viewer.js";
 import { Button } from "../ui/button.js";
 import { FileIcon } from "../ui/file-icon.js";
 import { FilePreviewPane } from "./file-preview-pane.js";
+import { DiffPreviewPane } from "./diff-preview-pane.js";
 import { startWindowDrag, handleTitleBarDoubleClick } from "../../lib/window.js";
 
 export const RightSidebar: React.FC = () => {
@@ -304,11 +305,11 @@ export const RightSidebar: React.FC = () => {
                         ? "bg-[var(--secondary)] text-[var(--foreground)] font-medium border border-[var(--border)] shadow-xs"
                         : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50 hover:text-[var(--foreground)]"
                     }`}
-                    title={tab.data?.path || tab.title}
+                    title={tab.data?.path || tab.data?.filePath || tab.title}
                   >
                     <div className="relative w-3.5 h-3.5 flex items-center justify-center shrink-0">
                       <FileIcon
-                        fileName={tab.data?.path || tab.title}
+                        fileName={tab.data?.path || tab.data?.filePath || tab.title}
                         className="w-3.5 h-3.5 shrink-0 transition-opacity duration-150 group-hover:opacity-0"
                       />
                       <button
@@ -456,52 +457,59 @@ export const RightSidebar: React.FC = () => {
         {/* 4. DIFF TAB */}
         {activeTab.type === "diff" && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="h-9 px-3 text-xs font-mono text-[var(--muted-foreground)] border-b border-[var(--border)] flex items-center justify-between bg-[var(--secondary)]/30 shrink-0">
-              <span className="flex items-center gap-1.5 font-semibold text-[var(--foreground)] truncate">
-                <GitCompare className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                <span className="truncate">{activeTab.title || "File Diff"}</span>
-              </span>
-              <span className="text-[10px] shrink-0">
-                {activeTab.data?.patch ? "1 file" : `${diffBlocks.length} modified`}
-              </span>
-            </div>
+            {activeTab.data?.patch && (activeTab.data?.filePath || activeTab.data?.path) ? (
+              <DiffPreviewPane
+                path={activeTab.data.filePath || activeTab.data.path}
+                patch={activeTab.data.patch}
+                workspaceId={activeTab.data.workspaceId}
+              />
+            ) : activeTab.data?.filePath || activeTab.data?.path ? (
+              <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center">
+                <GitCompare className="w-8 h-8 opacity-30 mb-2 text-rose-400" />
+                <p className="font-semibold text-[var(--foreground)] mb-1">
+                  {activeTab.data.filePath || activeTab.data.path}
+                </p>
+                <p>No diff content available for this change.</p>
+              </div>
+            ) : (
+              <>
+                <div className="h-9 px-3 text-xs font-mono text-[var(--muted-foreground)] border-b border-[var(--border)] flex items-center justify-between bg-[var(--secondary)]/30 shrink-0">
+                  <span className="flex items-center gap-1.5 font-semibold text-[var(--foreground)] truncate">
+                    <GitCompare className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                    <span className="truncate">{activeTab.title || "File Diff"}</span>
+                  </span>
+                  <span className="text-[10px] shrink-0">
+                    {diffBlocks.length} modified
+                  </span>
+                </div>
 
-            <div className="flex-1 overflow-y-auto p-3 space-y-3 font-mono text-xs select-text no-scrollbar">
-              {activeTab.data?.patch ? (
-                <div className="rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] overflow-hidden shadow-xs">
-                  {activeTab.data.filePath && (
-                    <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--secondary)]/60 border-b border-[var(--code-border)] text-[var(--muted-foreground)]">
-                      <span className="font-semibold text-[var(--foreground)] truncate text-[11px]">
-                        {activeTab.data.filePath}
-                      </span>
+                <div className="flex-1 overflow-y-auto p-3 space-y-3 font-mono text-xs select-text no-scrollbar">
+                  {diffBlocks.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center">
+                      <GitCompare className="w-8 h-8 opacity-30 mb-2 text-rose-400" />
+                      <p>No file changes or diff patches proposed yet.</p>
                     </div>
+                  ) : (
+                    diffBlocks.map((b, idx) => (
+                      <div
+                        key={idx}
+                        className="rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] overflow-hidden shadow-xs"
+                      >
+                        <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--secondary)]/60 border-b border-[var(--code-border)] text-[var(--muted-foreground)]">
+                          <span className="font-semibold text-[var(--foreground)] truncate text-[11px]">
+                            {b.path}
+                          </span>
+                          <span className="text-[9px] uppercase font-bold text-sky-400 tracking-wider">
+                            {b.status}
+                          </span>
+                        </div>
+                        <DiffViewer patch={b.patch} path={b.path} />
+                      </div>
+                    ))
                   )}
-                  <DiffViewer patch={activeTab.data.patch} />
                 </div>
-              ) : diffBlocks.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-xs text-[var(--muted-foreground)] p-4 text-center">
-                  <GitCompare className="w-8 h-8 opacity-30 mb-2 text-rose-400" />
-                  <p>No file changes or diff patches proposed yet.</p>
-                </div>
-              ) : (
-                diffBlocks.map((b, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] overflow-hidden shadow-xs"
-                  >
-                    <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--secondary)]/60 border-b border-[var(--code-border)] text-[var(--muted-foreground)]">
-                      <span className="font-semibold text-[var(--foreground)] truncate text-[11px]">
-                        {b.path}
-                      </span>
-                      <span className="text-[9px] uppercase font-bold text-sky-400 tracking-wider">
-                        {b.status}
-                      </span>
-                    </div>
-                    <DiffViewer patch={b.patch} />
-                  </div>
-                ))
-              )}
-            </div>
+              </>
+            )}
           </div>
         )}
       </div>

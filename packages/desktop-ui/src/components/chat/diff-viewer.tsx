@@ -1,20 +1,37 @@
-import React, { useState } from "react";
-import { Check, Copy, ChevronDown, ChevronUp } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Check, Copy } from "lucide-react";
+import { useThemeStore } from "../../store/theme-store.js";
+import { detectLanguage, tokenizeCode, type CodeToken } from "../../lib/shiki.js";
 
 interface DiffViewerProps {
   patch: string;
+  path?: string;
 }
 
-export const DiffViewer: React.FC<DiffViewerProps> = ({ patch }) => {
+export const DiffViewer: React.FC<DiffViewerProps> = ({ patch, path }) => {
+  const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
+  const [tokens, setTokens] = useState<CodeToken[][] | null>(null);
   const [copied, setCopied] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
 
-  const lines = patch.split("\n");
+  const lang = useMemo(() => (path ? detectLanguage(path) : "diff"), [path]);
+  const lines = useMemo(() => patch.split(/\r?\n/), [patch]);
   const addedCount = lines.filter((l) => l.startsWith("+") && !l.startsWith("+++")).length;
   const removedCount = lines.filter((l) => l.startsWith("-") && !l.startsWith("---")).length;
 
-  const isLong = lines.length > 28;
-  const displayedLines = isLong && !isExpanded ? lines.slice(0, 24) : lines;
+  useEffect(() => {
+    let active = true;
+    const strippedCode = lines
+      .map((l) => (l.startsWith("+") || l.startsWith("-") ? l.slice(1) : l))
+      .join("\n");
+    tokenizeCode(strippedCode, lang, resolvedTheme).then((res) => {
+      if (active && res) {
+        setTokens(res);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [lines, lang, resolvedTheme]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(patch);
@@ -63,7 +80,7 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ patch }) => {
 
       {/* Diff Lines Feed */}
       <div className="overflow-x-auto p-2 leading-snug no-scrollbar bg-[var(--code-bg)]">
-        {displayedLines.map((line, idx) => {
+        {lines.map((line, idx) => {
           let lineStyle = "text-[var(--foreground)]/80";
           let bgStyle = "bg-transparent";
           let marker = " ";
@@ -92,32 +109,29 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({ patch }) => {
                 {marker !== " " ? marker : ""}
               </span>
               <span className="whitespace-pre select-text flex-1 pl-1 text-[11px] leading-relaxed">
-                {line.startsWith("+") || line.startsWith("-") ? line.slice(1) : line}
+                {line.startsWith("+++") || line.startsWith("---") || line.startsWith("@@") ? (
+                  line
+                ) : tokens && tokens[idx] && tokens[idx].length > 0 ? (
+                  tokens[idx].map((tok, tIdx) => (
+                    <span
+                      key={tIdx}
+                      style={{
+                        color: tok.color,
+                        fontStyle: tok.fontStyle === 1 ? "italic" : undefined,
+                        fontWeight: tok.fontStyle === 2 ? "bold" : undefined,
+                      }}
+                    >
+                      {tok.content}
+                    </span>
+                  ))
+                ) : (
+                  line.startsWith("+") || line.startsWith("-") ? line.slice(1) : line
+                )}
               </span>
             </div>
           );
         })}
       </div>
-
-      {/* Expand/Collapse Button for Long Diffs */}
-      {isLong && (
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[var(--secondary)]/60 hover:bg-[var(--secondary)] border-t border-[var(--code-border)] text-[11px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer select-none font-mono"
-        >
-          {isExpanded ? (
-            <>
-              <ChevronUp className="w-3.5 h-3.5" />
-              <span>Collapse diff ({lines.length} lines)</span>
-            </>
-          ) : (
-            <>
-              <ChevronDown className="w-3.5 h-3.5" />
-              <span>Show full diff (+{lines.length - 24} more lines)</span>
-            </>
-          )}
-        </button>
-      )}
     </div>
   );
 };

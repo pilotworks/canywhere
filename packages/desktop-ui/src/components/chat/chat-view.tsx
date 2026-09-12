@@ -198,6 +198,14 @@ export const ChatView: React.FC = () => {
   const currentPermissionMode = activeChat ? (activeChat.permissionMode || "onRequest") : draftPermissionMode;
   const effectiveMode: "auto" | "readOnly" = currentPermissionMode === "readOnly" ? "readOnly" : "auto";
 
+  // Synchronize models & provider cache whenever the active chat's provider changes
+  useEffect(() => {
+    if (currentProviderId) {
+      useModelStore.getState().switchProviderCache(currentProviderId);
+      client.loadModels(currentProviderId).catch(console.error);
+    }
+  }, [currentProviderId]);
+
   // Global ⌘N / Ctrl+N shortcut for New Chat
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -770,8 +778,9 @@ export const ChatView: React.FC = () => {
                 models={models}
                 selectedModel={selectedModel}
                 selectedEffort={selectedEffort}
-                onSelectModel={setSelectedModel}
-                onSelectEffort={setSelectedEffort}
+                onSelectModel={(m) => setSelectedModel(m, currentProviderId)}
+                onSelectEffort={(e) => setSelectedEffort(e, currentProviderId)}
+                providerId={currentProviderId}
                 size="sm"
                 align="start"
               />
@@ -909,8 +918,9 @@ export const ChatView: React.FC = () => {
             models={models}
             selectedModel={selectedModel}
             selectedEffort={selectedEffort}
-            onSelectModel={setSelectedModel}
-            onSelectEffort={setSelectedEffort}
+            onSelectModel={(m) => setSelectedModel(m, currentProviderId)}
+            onSelectEffort={(e) => setSelectedEffort(e, currentProviderId)}
+            providerId={currentProviderId}
             size="md"
             align="end"
           />

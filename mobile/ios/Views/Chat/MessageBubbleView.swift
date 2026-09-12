@@ -126,12 +126,40 @@ struct MessageBubbleView: View {
     }
 }
 
+func isEditFileBlock(_ block: MessageBlock) -> Bool {
+    if block.type == .fileDiff { return true }
+    let name = (block.name ?? block.command ?? "").lowercased()
+    if name.isEmpty { return false }
+    if name.contains("write_to_file") ||
+        name.contains("replace_file_content") ||
+        name.contains("edit_file") ||
+        name.contains("file_edit") ||
+        name.contains("apply_patch") ||
+        name.contains("patch") {
+        return true
+    }
+    let lower = name
+    if (lower.contains("edit") || lower.contains("write") || lower.contains("replace") || lower.contains("modify")) &&
+        (lower.contains("file") || lower.contains("code") || lower.contains("content")) {
+        return true
+    }
+    return false
+}
+
 func groupMessageBlocks(_ blocks: [MessageBlock]) -> [RenderableMessageGroup] {
     var groups: [RenderableMessageGroup] = []
     var currentToolGroup: [MessageBlock] = []
 
     for block in blocks {
-        if block.type == .toolCall || block.type == .commandExec {
+        if isEditFileBlock(block) {
+            // Flush any accumulated tool group before this edit block
+            if !currentToolGroup.isEmpty {
+                groups.append(.toolGroup(currentToolGroup))
+                currentToolGroup = []
+            }
+            // Edit file block stands alone as an individual item and breakpoint
+            groups.append(.single(block))
+        } else if block.type == .toolCall || block.type == .commandExec {
             currentToolGroup.append(block)
         } else {
             if !currentToolGroup.isEmpty {

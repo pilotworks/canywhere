@@ -73,6 +73,23 @@ describe("ModelEffortCombo", () => {
     expect(html).toContain("Medium");
   });
 
+  it("renders Antigravity fallback models when providerId is agy and models array is empty", () => {
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <ModelEffortCombo
+        models={[]}
+        selectedModel=""
+        selectedEffort=""
+        providerId="agy"
+        onSelectModel={() => {}}
+        onSelectEffort={() => {}}
+      />
+    );
+
+    expect(html).toContain("Gemini 3.8 Flash");
+    expect(html).toContain("High");
+    expect(html).not.toContain("5.6 Luna");
+  });
+
   describe("getSliderStepPosition calculations", () => {
     it("bounds thumb position and progress width at the beginning and end for 3 steps", () => {
       // Step 0 of 3 (low)
@@ -157,6 +174,14 @@ describe("ModelEffortCombo", () => {
       expect(switchedToAgy).toBe(true);
       expect(useModelStore.getState().selectedModel).toBe("gemini-3.8-flash");
       expect(useModelStore.getState().models[0].id).toBe("gemini-3.8-flash");
+
+      // syncRemoteModel with a different providerId is ignored
+      useModelStore.getState().syncRemoteModel("gpt-6-astra", "medium", "codex");
+      expect(useModelStore.getState().selectedModel).toBe("gemini-3.8-flash");
+
+      // syncRemoteModel with foreign model not in agy list is ignored
+      useModelStore.getState().syncRemoteModel("gpt-6-astra", "medium", "agy");
+      expect(useModelStore.getState().selectedModel).toBe("gemini-3.8-flash");
     });
   });
 });

@@ -54,6 +54,7 @@ pub async fn run_server(
                     status,
                     mut blocks,
                     text_content,
+                    error,
                     ..
                 } => {
                     let _ = repo_persist.update_chat_status(&chat_id, status, None);
@@ -69,6 +70,17 @@ pub async fn run_server(
                             } else {
                                 blocks.push(canywhere_protocol::models::MessageBlock::Text {
                                     content: text,
+                                });
+                            }
+                        }
+                    }
+
+                    if status == canywhere_protocol::models::ChatStatus::Error {
+                        if let Some(err) = error.as_ref() {
+                            let has_err = blocks.iter().any(|b| matches!(b, canywhere_protocol::models::MessageBlock::Text { content } if content.contains(err)));
+                            if !has_err {
+                                blocks.push(canywhere_protocol::models::MessageBlock::Text {
+                                    content: format!("❌ **Error:** {}", err),
                                 });
                             }
                         }
@@ -453,19 +465,26 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     chat_id,
                     turn_id,
                     status,
+                    error,
                     ..
                 } => {
                     info!(
-                        "🏁 [HostServer] Turn completed: {} (chat: {})",
-                        turn_id, chat_id
+                        "🏁 [HostServer] Turn completed: {} (chat: {}, error: {:?})",
+                        turn_id, chat_id, error
                     );
+                    let mut params = serde_json::json!({
+                        "chatId": chat_id,
+                        "turnId": turn_id,
+                        "status": status
+                    });
+                    if let Some(err) = error {
+                        if let Some(obj) = params.as_object_mut() {
+                            obj.insert("error".to_string(), serde_json::Value::String(err));
+                        }
+                    }
                     serde_json::json!({
                         "method": "turn.completed",
-                        "params": {
-                            "chatId": chat_id,
-                            "turnId": turn_id,
-                            "status": status
-                        }
+                        "params": params
                     })
                 }
                 AgentEvent::ChatTitleUpdated { chat_id, title } => {
@@ -518,17 +537,24 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 AgentEvent::ModelUpdated {
                     model,
                     reasoning_effort,
+                    provider_id,
                 } => {
                     info!(
-                        "🤖 [HostServer] Model updated: {} (effort: {:?})",
-                        model, reasoning_effort
+                        "🤖 [HostServer] Model updated: {} (effort: {:?}, provider: {:?})",
+                        model, reasoning_effort, provider_id
                     );
+                    let mut params = serde_json::json!({
+                        "model": model,
+                        "reasoningEffort": reasoning_effort
+                    });
+                    if let Some(pid) = provider_id {
+                        if let Some(obj) = params.as_object_mut() {
+                            obj.insert("providerId".to_string(), serde_json::Value::String(pid));
+                        }
+                    }
                     serde_json::json!({
                         "method": "model.updated",
-                        "params": {
-                            "model": model,
-                            "reasoningEffort": reasoning_effort
-                        }
+                        "params": params
                     })
                 }
                 AgentEvent::WorkspaceUpdated { workspace } => {

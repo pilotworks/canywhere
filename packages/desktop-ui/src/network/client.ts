@@ -5,6 +5,8 @@ import {
   ApprovalDecision,
   HostSettings,
   HostSettingsUpdateParams,
+  Message,
+  MessageBlock,
 } from "../types/index.js";
 import { TokenStreamBuffer } from "./buffer.js";
 import {
@@ -108,12 +110,6 @@ export class CanywhereClient {
       const chatsRes = await this.call("chat.list", {});
       useChatStore.getState().setChats(chatsRes.chats);
 
-      if (chatsRes.chats.length > 0 && !useChatStore.getState().activeChatId) {
-        this.selectChat(chatsRes.chats[0].id);
-      } else if (chatsRes.chats.length === 0) {
-        this.openDraftChat(null);
-      }
-
       const provRes = await this.call("provider.list", {}).catch(() => ({ providers: [] }));
       if (provRes?.providers) {
         useProviderStore.getState().setProviders(provRes.providers);
@@ -122,23 +118,31 @@ export class CanywhereClient {
       const devRes = await this.call("device.list", {});
       useDeviceStore.getState().setDevices(devRes.devices);
 
-      const activeProviderId = useProviderStore.getState().selectedProviderId;
-      const modelRes = await this.call("model.list", { providerId: activeProviderId });
-      if (modelRes.models) {
-        useModelStore
-          .getState()
-          .setModels(
-            modelRes.models,
-            modelRes.currentModel,
-            modelRes.currentReasoningEffort,
-            activeProviderId
-          );
+      // Determine active chat: check persisted activeChatId or pick first chat
+      const savedActiveChatId = useChatStore.getState().activeChatId;
+      const targetChat =
+        (savedActiveChatId && chatsRes.chats.find((c: any) => c.id === savedActiveChatId)) ||
+        chatsRes.chats[0] ||
+        null;
+
+      if (targetChat) {
+        // selectChat will fetch chat details, set workspace, sync provider, and call loadModels
+        await this.selectChat(targetChat.id);
+      } else {
+        this.openDraftChat(null);
+        const activeProviderId = useProviderStore.getState().selectedProviderId;
+        if (activeProviderId) {
+          await this.loadModels(activeProviderId);
+        }
       }
 
       // Background pre-warm models for other providers for instant 0ms switching
+      const activeChat = useChatStore.getState().chats.find((c) => c.id === useChatStore.getState().activeChatId);
+      const currentActiveProviderId = activeChat?.providerId || useProviderStore.getState().selectedProviderId;
+
       if (provRes?.providers) {
         for (const p of provRes.providers) {
-          if (p.id !== activeProviderId) {
+          if (p.id !== currentActiveProviderId) {
             this.loadModels(p.id).catch(() => {});
           }
         }
@@ -358,7 +362,23 @@ export class CanywhereClient {
       useChatStore.getState().setActiveTurn(chatId, res.turnId);
     } catch (err: any) {
       console.error("[CanywhereClient] turn.send failed", err);
-      useChatStore.getState().setChatStatus(chatId, "idle");
+      useChatStore.getState().setChatStatus(chatId, "error");
+      const errorMsg = err?.message || String(err);
+      const assistantMsg: Message = {
+        id: `err-${Date.now()}`,
+        chatId,
+        turnId: null,
+        role: "agent",
+        blocks: [
+          {
+            type: "text",
+            content: `❌ **Error:** ${errorMsg}`,
+          },
+        ],
+        createdAt: BigInt(Date.now()),
+        streaming: false,
+      };
+      useChatStore.getState().addMessage(chatId, assistantMsg);
     }
   }
 
@@ -592,6 +612,36 @@ export class CanywhereClient {
         this.tokenBuffer.flush();
         useChatStore.getState().setChatStatus(params.chatId, params.status);
         useChatStore.getState().setActiveTurn(params.chatId, null);
+        if (params.error && (params.status === "error" || params.status === "failed")) {
+          const messages = useChatStore.getState().messages[params.chatId] || [];
+          const lastMsg = messages[messages.length - 1];
+          if (lastMsg && lastMsg.role === "agent") {
+            const hasError = lastMsg.blocks?.some((b) => b.type === "text" && b.content?.includes("Error"));
+            if (!hasError) {
+              const errorBlock: MessageBlock = {
+                type: "text",
+                content: `❌ **Error:** ${params.error}`,
+              };
+              useChatStore.getState().addBlock(params.chatId, lastMsg.id, errorBlock);
+            }
+          } else {
+            const errorMsg: Message = {
+              id: `err-msg-${Date.now()}`,
+              chatId: params.chatId,
+              turnId: params.turnId,
+              role: "agent",
+              blocks: [
+                {
+                  type: "text",
+                  content: `❌ **Error:** ${params.error}`,
+                },
+              ],
+              createdAt: BigInt(Date.now()),
+              streaming: false,
+            };
+            useChatStore.getState().addMessage(params.chatId, errorMsg);
+          }
+        }
         if (params.status === "idle" || params.status === "completed") {
           setTimeout(() => {
             this.processNextQueuedItem(params.chatId);
@@ -624,7 +674,7 @@ export class CanywhereClient {
       }
 
       case "model.updated": {
-        useModelStore.getState().syncRemoteModel(params.model, params.reasoningEffort);
+        useModelStore.getState().syncRemoteModel(params.model, params.reasoningEffort, params.providerId);
         break;
       }
 

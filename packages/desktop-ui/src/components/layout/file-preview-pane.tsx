@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Copy, Check, WrapText } from "lucide-react";
+import { Copy, Check, WrapText, GitCompare } from "lucide-react";
 import { FileIcon } from "../ui/file-icon.js";
 import { Button } from "../ui/button.js";
 import { useThemeStore } from "../../store/theme-store.js";
 import { detectLanguage, getLanguageLabel, tokenizeCode, type CodeToken } from "../../lib/shiki.js";
+import { openDiffInRightSidebar } from "../../lib/file-link.js";
 
 export interface FilePreviewPaneProps {
   path: string;
@@ -94,8 +95,19 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({
           </span>
         </div>
 
-        {/* Right actions: Word Wrap & Copy */}
+        {/* Right actions: Diff, Word Wrap & Copy */}
         <div className="flex items-center gap-1 shrink-0 ml-2">
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => openDiffInRightSidebar({ filePath: path })}
+            className="h-7 px-2 font-mono text-[10px] gap-1 cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            title="Open diff view for this file"
+          >
+            <GitCompare className="w-3.5 h-3.5 text-rose-400" />
+            <span className="hidden sm:inline">Diff</span>
+          </Button>
+
           <Button
             variant="ghost"
             size="xs"
