@@ -584,9 +584,15 @@ impl CliAdapter for AgyAdapter {
                                                 .entry(chat_id_str.clone())
                                                 .or_default()
                                                 .push(block);
-                                        } else if state == "DONE" || state == "FAILED" || state == "ERROR" {
+                                        } else if state == "DONE"
+                                            || state == "FAILED"
+                                            || state == "ERROR"
+                                        {
                                             let error_str = tool_info
-                                                .and_then(|ti| ti.get("error").or_else(|| ti.get("error_message")))
+                                                .and_then(|ti| {
+                                                    ti.get("error")
+                                                        .or_else(|| ti.get("error_message"))
+                                                })
                                                 .or_else(|| su.get("error"))
                                                 .and_then(|e| e.as_str())
                                                 .map(|s| s.to_string());
@@ -594,7 +600,10 @@ impl CliAdapter for AgyAdapter {
                                                 .and_then(|ti| ti.get("output"))
                                                 .and_then(|o| o.as_str())
                                                 .map(|s| s.to_string());
-                                            let is_err = state == "FAILED" || state == "ERROR" || error_str.is_some() || (raw_output.is_none() && state != "DONE");
+                                            let is_err = state == "FAILED"
+                                                || state == "ERROR"
+                                                || error_str.is_some()
+                                                || (raw_output.is_none() && state != "DONE");
                                             let output = raw_output.or_else(|| error_str.clone());
 
                                             let block = if tool_name == "run_command" {
@@ -607,7 +616,11 @@ impl CliAdapter for AgyAdapter {
                                                     command: cmd.to_string(),
                                                     cwd: cmd_cwd,
                                                     output,
-                                                    exit_code: if is_err { Some(1) } else { Some(0) },
+                                                    exit_code: if is_err {
+                                                        Some(1)
+                                                    } else {
+                                                        Some(0)
+                                                    },
                                                     status: if is_err {
                                                         CommandExecStatus::Failed
                                                     } else {
@@ -675,9 +688,14 @@ impl CliAdapter for AgyAdapter {
                                     .and_then(|s| s.as_str())
                                     .unwrap_or("SUCCESS");
 
-                                let mut final_text = chat_text.lock().await.get(&chat_id_str).cloned();
+                                let mut final_text =
+                                    chat_text.lock().await.get(&chat_id_str).cloned();
                                 if final_text.as_ref().map_or(true, |t| t.trim().is_empty()) {
-                                    if let Some(resp) = val.get("result").and_then(|r| r.get("response")).and_then(|r| r.as_str()) {
+                                    if let Some(resp) = val
+                                        .get("result")
+                                        .and_then(|r| r.get("response"))
+                                        .and_then(|r| r.as_str())
+                                    {
                                         if !resp.trim().is_empty() {
                                             final_text = Some(resp.to_string());
                                         }
@@ -750,19 +768,27 @@ impl CliAdapter for AgyAdapter {
                                 }
 
                                 let has_failed_block = final_blocks.iter().any(|b| match b {
-                                    MessageBlock::ToolCall { status, .. } => *status == ToolCallStatus::Failed,
-                                    MessageBlock::CommandExec { status, .. } => *status == CommandExecStatus::Failed,
+                                    MessageBlock::ToolCall { status, .. } => {
+                                        *status == ToolCallStatus::Failed
+                                    }
+                                    MessageBlock::CommandExec { status, .. } => {
+                                        *status == CommandExecStatus::Failed
+                                    }
                                     _ => false,
                                 });
 
-                                let is_empty_turn = final_text.as_ref().map_or(true, |t| t.trim().is_empty())
-                                    && final_blocks.iter().all(|b| !matches!(b, MessageBlock::Text { .. }));
+                                let is_empty_turn =
+                                    final_text.as_ref().map_or(true, |t| t.trim().is_empty())
+                                        && final_blocks
+                                            .iter()
+                                            .all(|b| !matches!(b, MessageBlock::Text { .. }));
 
-                                let chat_status = if status == "SUCCESS" && !has_failed_block && !is_empty_turn {
-                                    ChatStatus::Idle
-                                } else {
-                                    ChatStatus::Error
-                                };
+                                let chat_status =
+                                    if status == "SUCCESS" && !has_failed_block && !is_empty_turn {
+                                        ChatStatus::Idle
+                                    } else {
+                                        ChatStatus::Error
+                                    };
 
                                 let mut error_msg: Option<String> = None;
                                 if chat_status == ChatStatus::Error {
@@ -771,63 +797,82 @@ impl CliAdapter for AgyAdapter {
                                         .iter()
                                         .rev()
                                         .find(|l| {
-                                             let lower = l.to_lowercase();
-                                             lower.contains("error")
-                                                 || lower.contains("failed")
-                                                 || lower.contains("invalid")
-                                         })
-                                         .cloned()
-                                         .or_else(|| stderr_guard.last().cloned());
+                                            let lower = l.to_lowercase();
+                                            lower.contains("error")
+                                                || lower.contains("failed")
+                                                || lower.contains("invalid")
+                                        })
+                                        .cloned()
+                                        .or_else(|| stderr_guard.last().cloned());
 
                                     let val_err = val
-                                         .get("result")
-                                         .and_then(|r| r.get("error"))
-                                         .and_then(|e| e.as_str())
-                                         .map(|s| s.to_string());
+                                        .get("result")
+                                        .and_then(|r| r.get("error"))
+                                        .and_then(|e| e.as_str())
+                                        .map(|s| s.to_string());
 
                                     error_msg = match (detailed_err, val_err) {
-                                         (Some(detail), Some(base)) => {
-                                             if detail.contains(&base) || base == "context canceled" {
-                                                 Some(detail)
-                                             } else {
-                                                 Some(format!("{}: {}", base, detail))
-                                             }
-                                         }
-                                         (Some(detail), None) => Some(detail),
-                                         (None, Some(base)) => Some(base),
-                                         (None, None) => {
-                                             if let Some(failed_b) = final_blocks.iter().rev().find(|b| match b {
-                                                 MessageBlock::ToolCall { status, .. } => *status == ToolCallStatus::Failed,
-                                                 MessageBlock::CommandExec { status, .. } => *status == CommandExecStatus::Failed,
-                                                 _ => false,
-                                             }) {
-                                                 match failed_b {
-                                                     MessageBlock::ToolCall { name, output, .. } => {
-                                                         Some(output.clone().unwrap_or_else(|| format!("Tool '{}' failed", name)))
-                                                     }
-                                                     MessageBlock::CommandExec { command, output, .. } => {
-                                                         Some(output.clone().unwrap_or_else(|| format!("Command '{}' failed", command)))
-                                                     }
-                                                     _ => Some("Action failed in Antigravity".to_string()),
-                                                 }
-                                             } else if is_empty_turn {
-                                                 Some("Agent turn completed without generating a response".to_string())
-                                             } else {
-                                                 Some("Turn failed in Antigravity".to_string())
-                                             }
-                                         }
-                                     };
+                                        (Some(detail), Some(base)) => {
+                                            if detail.contains(&base) || base == "context canceled"
+                                            {
+                                                Some(detail)
+                                            } else {
+                                                Some(format!("{}: {}", base, detail))
+                                            }
+                                        }
+                                        (Some(detail), None) => Some(detail),
+                                        (None, Some(base)) => Some(base),
+                                        (None, None) => {
+                                            if let Some(failed_b) =
+                                                final_blocks.iter().rev().find(|b| match b {
+                                                    MessageBlock::ToolCall { status, .. } => {
+                                                        *status == ToolCallStatus::Failed
+                                                    }
+                                                    MessageBlock::CommandExec {
+                                                        status, ..
+                                                    } => *status == CommandExecStatus::Failed,
+                                                    _ => false,
+                                                })
+                                            {
+                                                match failed_b {
+                                                    MessageBlock::ToolCall {
+                                                        name, output, ..
+                                                    } => {
+                                                        Some(output.clone().unwrap_or_else(|| {
+                                                            format!("Tool '{}' failed", name)
+                                                        }))
+                                                    }
+                                                    MessageBlock::CommandExec {
+                                                        command,
+                                                        output,
+                                                        ..
+                                                    } => {
+                                                        Some(output.clone().unwrap_or_else(|| {
+                                                            format!("Command '{}' failed", command)
+                                                        }))
+                                                    }
+                                                    _ => Some(
+                                                        "Action failed in Antigravity".to_string(),
+                                                    ),
+                                                }
+                                            } else if is_empty_turn {
+                                                Some("Agent turn completed without generating a response".to_string())
+                                            } else {
+                                                Some("Turn failed in Antigravity".to_string())
+                                            }
+                                        }
+                                    };
                                 }
 
                                 let _ = event_tx.send(AgentEvent::TurnCompleted {
-                                     chat_id: chat_id_str.clone(),
-                                     message_id: msg_id_str.clone(),
-                                     turn_id: turn_id_str.clone(),
-                                     status: chat_status,
-                                     blocks: final_blocks,
-                                     text_content: final_text,
-                                     reasoning_content: reasoning,
-                                     error: error_msg,
+                                    chat_id: chat_id_str.clone(),
+                                    message_id: msg_id_str.clone(),
+                                    turn_id: turn_id_str.clone(),
+                                    status: chat_status,
+                                    blocks: final_blocks,
+                                    text_content: final_text,
+                                    reasoning_content: reasoning,
+                                    error: error_msg,
                                 });
 
                                 chat_active_turn.lock().await.remove(&chat_id_str);
@@ -854,14 +899,20 @@ impl CliAdapter for AgyAdapter {
                             })
                             .cloned()
                             .or_else(|| stderr_guard.last().cloned())
-                            .unwrap_or_else(|| "Antigravity process exited unexpectedly".to_string());
+                            .unwrap_or_else(|| {
+                                "Antigravity process exited unexpectedly".to_string()
+                            });
 
                         let _ = event_tx.send(AgentEvent::TurnCompleted {
                             chat_id: chat_id_str.clone(),
                             message_id: msg_id_str.clone(),
                             turn_id: turn_id_str.clone(),
                             status: ChatStatus::Error,
-                            blocks: chat_blocks.lock().await.remove(&chat_id_str).unwrap_or_default(),
+                            blocks: chat_blocks
+                                .lock()
+                                .await
+                                .remove(&chat_id_str)
+                                .unwrap_or_default(),
                             text_content: chat_text.lock().await.remove(&chat_id_str),
                             reasoning_content: chat_reasoning.lock().await.remove(&chat_id_str),
                             error: Some(err_msg),
@@ -1434,7 +1485,8 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
         assert_eq!(e, Some("high".to_string()));
 
         // Legacy suffixed model with explicit effort override
-        let (m, e) = normalize_model_and_effort(Some("gemini-3.8-flash-high"), Some("medium")).unwrap();
+        let (m, e) =
+            normalize_model_and_effort(Some("gemini-3.8-flash-high"), Some("medium")).unwrap();
         assert_eq!(m, Some("gemini-3.8-flash".to_string()));
         assert_eq!(e, Some("medium".to_string()));
 
@@ -1443,7 +1495,8 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
         assert_eq!(m, Some("claude-sonnet-4-6".to_string()));
         assert_eq!(e, None);
 
-        let (m, e) = normalize_model_and_effort(Some("claude-opus-4-6-thinking"), Some("low")).unwrap();
+        let (m, e) =
+            normalize_model_and_effort(Some("claude-opus-4-6-thinking"), Some("low")).unwrap();
         assert_eq!(m, Some("claude-opus-4-6-thinking".to_string()));
         assert_eq!(e, None);
 

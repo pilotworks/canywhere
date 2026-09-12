@@ -731,7 +731,9 @@ end try"#;
                     Ok(tid) => tid,
                     Err(e) => {
                         let err_msg = e.to_string();
-                        let _ = self.repo.update_chat_status(&chat.id, ChatStatus::Error, None);
+                        let _ = self
+                            .repo
+                            .update_chat_status(&chat.id, ChatStatus::Error, None);
                         let _ = self.registry.event_tx().send(AgentEvent::TurnCompleted {
                             chat_id: chat.id.clone(),
                             message_id: agent_msg_id.clone(),
