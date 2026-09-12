@@ -395,8 +395,16 @@ struct DiffContentView: View {
 struct ToolCallGroupView: View {
     let blocks: [MessageBlock]
     var isStreaming: Bool = false
+    var isActive: Bool = false
 
-    @State private var isGroupExpanded: Bool = false
+    @State private var isGroupExpanded: Bool
+
+    init(blocks: [MessageBlock], isStreaming: Bool = false, isActive: Bool = false) {
+        self.blocks = blocks
+        self.isStreaming = isStreaming
+        self.isActive = isActive
+        self._isGroupExpanded = State(initialValue: isActive)
+    }
 
     private var groupSummary: String {
         var filesRead = 0
@@ -465,53 +473,66 @@ struct ToolCallGroupView: View {
     }
 
     var body: some View {
-        if blocks.isEmpty {
-            EmptyView()
-        } else if blocks.count == 1 {
-            ToolCallBlockView(block: blocks[0], isStreaming: isStreaming)
-        } else {
-            VStack(alignment: .leading, spacing: 2) {
-                // Group Header button with chevron arrow at start (tap toggles expand/collapse)
-                Button {
-                    Haptics.shared.selection()
-                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
-                        isGroupExpanded.toggle()
-                    }
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.secondary.opacity(0.7))
-                            .rotationEffect(.degrees(isGroupExpanded ? 90 : 0))
-                            .frame(width: 10)
-
-                        Text(groupSummary)
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(.secondary)
-
-                        Spacer(minLength: 4)
-                    }
-                    .padding(.vertical, 2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if isGroupExpanded {
-                    // List of tool calls with subtle vertical timeline border
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                            ToolCallBlockView(block: block, isStreaming: isStreaming)
+        Group {
+            if blocks.isEmpty {
+                EmptyView()
+            } else if blocks.count == 1 {
+                ToolCallBlockView(block: blocks[0], isStreaming: isStreaming)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    // Group Header button with chevron arrow at start (tap toggles expand/collapse)
+                    Button {
+                        Haptics.shared.selection()
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                            isGroupExpanded.toggle()
                         }
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(.secondary.opacity(0.7))
+                                .rotationEffect(.degrees(isGroupExpanded ? 90 : 0))
+                                .frame(width: 10)
+
+                            Text(groupSummary)
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(.secondary)
+
+                            Spacer(minLength: 4)
+                        }
+                        .padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.leading, 8)
-                    .overlay(
-                        Rectangle()
-                            .fill(Theme.subtleBorder)
-                            .frame(width: 1.5)
-                            .padding(.leading, 2),
-                        alignment: .leading
-                    )
+                    .buttonStyle(.plain)
+
+                    if isGroupExpanded {
+                        // List of tool calls with subtle vertical timeline border
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                                ToolCallBlockView(block: block, isStreaming: isStreaming)
+                            }
+                        }
+                        .padding(.leading, 8)
+                        .overlay(
+                            Rectangle()
+                                .fill(Theme.subtleBorder)
+                                .frame(width: 1.5)
+                                .padding(.leading, 2),
+                            alignment: .leading
+                        )
+                    }
+                }
+            }
+        }
+        .onChange(of: isActive) { oldValue, newValue in
+            if oldValue && !newValue {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    isGroupExpanded = false
+                }
+            } else if !oldValue && newValue {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    isGroupExpanded = true
                 }
             }
         }

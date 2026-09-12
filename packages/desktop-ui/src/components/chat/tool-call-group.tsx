@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { ChevronRight } from "lucide-react";
 import { MessageBlock } from "../../types/index.js";
 import { ToolCallBlock } from "./tool-call-block.js";
@@ -205,8 +205,28 @@ export const SingleToolAction: React.FC<{ block: ToolActionBlock }> = ({ block }
   );
 };
 
-export const ToolCallGroup: React.FC<{ blocks: ToolActionBlock[] }> = ({ blocks }) => {
-  const [isGroupExpanded, setIsGroupExpanded] = useState(false);
+export interface ToolCallGroupProps {
+  blocks: ToolActionBlock[];
+  isActive?: boolean;
+}
+
+export const ToolCallGroup: React.FC<ToolCallGroupProps> = ({
+  blocks,
+  isActive = false,
+}) => {
+  const [isGroupExpanded, setIsGroupExpanded] = useState(isActive);
+  const prevIsActiveRef = React.useRef(isActive);
+
+  useEffect(() => {
+    // When isActive transitions from true to false (group finished), auto-collapse
+    if (prevIsActiveRef.current && !isActive) {
+      setIsGroupExpanded(false);
+    } else if (!prevIsActiveRef.current && isActive) {
+      // When it becomes active, keep it open
+      setIsGroupExpanded(true);
+    }
+    prevIsActiveRef.current = isActive;
+  }, [isActive]);
 
   if (blocks.length === 0) return null;
 

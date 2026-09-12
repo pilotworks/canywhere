@@ -43,6 +43,7 @@ export const WorkedForBlock: React.FC<WorkedForBlockProps> = ({
               <ToolCallGroup
                 key={`worked-tool-group-${idx}`}
                 blocks={group.blocks}
+                isActive={false}
               />
             );
           }

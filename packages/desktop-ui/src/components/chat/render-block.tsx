@@ -139,10 +139,13 @@ export const MessageBlocksRenderer: React.FC<{
       <>
         {grouped.map((group, idx) => {
           if (group.type === "tool_group") {
+            const isLastGroup = idx === grouped.length - 1;
+            const isActive = isStreaming && isLastGroup;
             return (
               <ToolCallGroup
                 key={`tool-group-${idx}`}
                 blocks={group.blocks}
+                isActive={isActive}
               />
             );
           }
@@ -164,6 +167,7 @@ export const MessageBlocksRenderer: React.FC<{
               <ToolCallGroup
                 key={`tool-group-${idx}`}
                 blocks={group.blocks}
+                isActive={false}
               />
             );
           }

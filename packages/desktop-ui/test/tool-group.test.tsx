@@ -199,6 +199,76 @@ describe("Tool Call Formatting & Grouping", () => {
     expect(html).not.toContain("last.ts");
   });
 
+  it("renders ToolCallGroup open when active, showing tool calls inside", () => {
+    const blocks: Array<Extract<MessageBlock, { type: "tool_call" | "command_exec" }>> = [
+      {
+        type: "tool_call",
+        callId: "1",
+        name: "view_file",
+        args: { path: "first.ts" },
+        output: null,
+        status: "completed",
+      },
+      {
+        type: "tool_call",
+        callId: "2",
+        name: "view_file",
+        args: { path: "last.ts" },
+        output: null,
+        status: "completed",
+      },
+    ];
+
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <ToolCallGroup blocks={blocks} isActive={true} />
+    );
+    // Should render group summary
+    expect(html).toContain("Read 2 files");
+    // When active, group is open and shows tool calls inside
+    expect(html).toContain("first.ts");
+    expect(html).toContain("last.ts");
+  });
+
+  it("MessageBlocksRenderer keeps last tool group open during streaming, and closes it when followed by text", () => {
+    // 1. Tool group at end during streaming is active -> expanded
+    const streamingWithActiveToolGroup: MessageBlock[] = [
+      {
+        type: "tool_call",
+        callId: "1",
+        name: "view_file",
+        args: { path: "active1.ts" },
+        output: null,
+        status: "completed",
+      },
+      {
+        type: "tool_call",
+        callId: "2",
+        name: "view_file",
+        args: { path: "active2.ts" },
+        output: null,
+        status: "completed",
+      },
+    ];
+    const htmlActive = ReactDOMServer.renderToStaticMarkup(
+      <MessageBlocksRenderer blocks={streamingWithActiveToolGroup} isStreaming={true} />
+    );
+    expect(htmlActive).toContain("Read 2 files");
+    expect(htmlActive).toContain("active1.ts");
+    expect(htmlActive).toContain("active2.ts");
+
+    // 2. Once followed by text, tool group is no longer the last group -> closes
+    const streamingWithFinishedToolGroup: MessageBlock[] = [
+      ...streamingWithActiveToolGroup,
+      { type: "text", content: "Analysis complete." },
+    ];
+    const htmlClosed = ReactDOMServer.renderToStaticMarkup(
+      <MessageBlocksRenderer blocks={streamingWithFinishedToolGroup} isStreaming={true} />
+    );
+    expect(htmlClosed).toContain("Read 2 files");
+    expect(htmlClosed).not.toContain("active2.ts");
+    expect(htmlClosed).toContain("Analysis complete.");
+  });
+
   it("formats worked duration correctly into Worked for XhXm, XmXs, or Xs", () => {
     expect(formatWorkedDuration(0)).toBe("Worked for 1s");
     expect(formatWorkedDuration(15)).toBe("Worked for 15s");

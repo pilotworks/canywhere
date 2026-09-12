@@ -78,12 +78,14 @@ struct MessageBubbleView: View {
 
             if message.streaming {
                 // While live streaming, display blocks incrementally
-                ForEach(Array(groupedBlocks.enumerated()), id: \.offset) { _, item in
+                ForEach(Array(groupedBlocks.enumerated()), id: \.offset) { idx, item in
                     switch item {
                     case .single(let block):
                         MessageBlockView(block: block, isStreaming: true)
                     case .toolGroup(let blocks):
-                        ToolCallGroupView(blocks: blocks, isStreaming: true)
+                        let isLastGroup = idx == groupedBlocks.count - 1
+                        let isActive = message.streaming && isLastGroup
+                        ToolCallGroupView(blocks: blocks, isStreaming: true, isActive: isActive)
                     }
                 }
 
@@ -100,7 +102,7 @@ struct MessageBubbleView: View {
                         case .single(let block):
                             MessageBlockView(block: block, isStreaming: false)
                         case .toolGroup(let blocks):
-                            ToolCallGroupView(blocks: blocks, isStreaming: false)
+                            ToolCallGroupView(blocks: blocks, isStreaming: false, isActive: false)
                         }
                     }
                 } else {
@@ -215,7 +217,7 @@ struct WorkedForView: View {
                         case .single(let block):
                             MessageBlockView(block: block, isStreaming: isStreaming)
                         case .toolGroup(let toolBlocks):
-                            ToolCallGroupView(blocks: toolBlocks, isStreaming: isStreaming)
+                            ToolCallGroupView(blocks: toolBlocks, isStreaming: isStreaming, isActive: false)
                         }
                     }
                 }
