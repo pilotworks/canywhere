@@ -19,8 +19,8 @@
    - Core server logic must **never** couple to OpenAI Codex-specific structures directly.
    - All CLI interactions must implement the `CliAdapter` interface and yield normalized `AgentEvent` streams.
 4. **Single-Source Schema Contract**:
-   - Every network model and RPC method originates in `packages/protocol-schema` using `@sinclair/typebox`.
-   - Swift models on iOS are strictly generated from JSON Schema via `quicktype` (`pnpm run codegen`). **Never** write or edit generated Swift models by hand.
+   - Every network model and RPC method originates in `crates/canywhere-protocol`.
+   - TypeScript types and JSON Schemas are exported via `ts-rs` / `schemars`, and Swift models on iOS are generated via `quicktype` (`make codegen`). **Never** write or edit generated Swift models by hand.
 5. **Zero AI Slop & High-Density Engineering**:
    - Write concise, concrete, strictly-typed code without decorative comments, useless boilerplate, or speculative abstractions before they are needed.
    - Documentation must stay factual, architectural, and tied directly to schemas, wire contracts, and real code. No marketing filler.
@@ -31,13 +31,14 @@
 
 ```
 canywhere/
-├── package.json                 # Monorepo root scripts & dev dependencies
-├── pnpm-workspace.yaml          # Workspace configuration
+├── package.json                 # Monorepo root scripts & dev dependencies (Bun)
+├── Cargo.toml                   # Cargo workspace configuration
+├── crates/
+│   ├── canywhere-protocol/      # Rust protocol definitions, ts-rs & JSON schema exports
+│   └── canywhere-server/        # Host Daemon: Axum, WebSocket, SQLite, CLI Adapters
 ├── packages/
-│   ├── protocol-schema/         # TypeBox definitions, JSON-RPC schema & codegen script
-│   ├── host-server/             # Fastify, WebSocket, SQLite, CLI Adapters (Codex)
-│   ├── desktop-ui/              # React 19 + Tailwind CSS + Radix UI + Zustand (Vite)
-│   └── desktop-app/             # Electron thin wrapper launching host-server & desktop-ui
+│   ├── desktop-ui/              # React 19 + Tailwind CSS + Radix UI + Zustand (Vite + Bun)
+│   └── desktop-app/             # Tauri v2 native desktop application wrapper
 ├── mobile/
 │   └── ios/                     # Native Xcode Project (SwiftUI, iOS 17+, zero local DB)
 └── docs/                        # Architecture & API documentation (spec.md, codex-interfaces.md)
@@ -120,15 +121,13 @@ canywhere/
 Whenever API methods, data models, or streaming notifications need to change:
 
 1. **Modify Schema First**:
-   - Edit the relevant TypeBox schema in `packages/protocol-schema/src/`.
-2. **Compile Schemas**:
-   - Run `pnpm run build` in `packages/protocol-schema`.
-3. **Regenerate Swift Models**:
-   - Run `pnpm run codegen` from the root directory.
-   - Verify that `mobile/ios/Models/Generated/` reflects the updated Swift structs.
-4. **Implement in Host**:
-   - Update `packages/host-server` handlers and adapters to satisfy the new schema.
-5. **Implement in Clients**:
+   - Edit the Rust protocol models in `crates/canywhere-protocol/src/`.
+2. **Compile Schemas & Regenerate Types/Models**:
+   - Run `make codegen` from the repository root (`cargo test -p canywhere-protocol --test export_types && bun run scripts/codegen-swift.ts`).
+   - Verify that `mobile/ios/Models/Generated/` reflects the updated Swift structs, and `schemas/` reflects updated JSON schemas.
+3. **Implement in Host**:
+   - Update `crates/canywhere-server` handlers and adapters to satisfy the new schema.
+4. **Implement in Clients**:
    - Update `packages/desktop-ui` and `mobile/ios` UI views to render the new fields.
 
 ---
@@ -178,23 +177,32 @@ When working with or running under Google Antigravity CLI (`agy`):
 ---
 
 ## 7. Common Development Commands
-
+ 
 ```bash
-# Install all dependencies across monorepo
-pnpm install
+# Install UI dependencies via Bun
+bun install
 
-# Build all packages
-pnpm run build
+# Typecheck and lint workspace (Rust + TypeScript)
+make check
 
-# Run TypeScript typechecks
-pnpm run typecheck
+# Run all test suites (Desktop UI unit tests + Rust workspace tests)
+make test
 
-# Run unit and integration tests
-pnpm run test
+# Generate TypeScript types, JSON schemas, and Swift models from Rust protocol
+make codegen
 
-# Run code generator (TypeBox JSON Schema -> Swift Models)
-pnpm run codegen
+# Run Canywhere Host Server Daemon
+make server
 
-# Start Host server and Desktop UI in development mode
-pnpm run dev
+# Run Desktop UI in Vite dev mode
+make ui-dev
+
+# Run Desktop Tauri Client
+make desktop
+
+# Build iOS Simulator App
+make ios-build
+
+# Bundle Desktop release app
+make desktop-bundle
 ```

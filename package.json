@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "codegen": "cargo test -p canywhere-protocol --test export_types && bun run scripts/codegen-swift.ts",
     "sync-icons:ios": "bun run scripts/sync-ios-icons.ts",
