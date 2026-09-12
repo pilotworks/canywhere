@@ -359,7 +359,7 @@ actor ConnectionManager {
                 do {
                     try await task.send(.string(jsonString))
                 } catch {
-                    await self.failPendingRequest(id: id, error: error)
+                    self.failPendingRequest(id: id, error: error)
                 }
             }
         }

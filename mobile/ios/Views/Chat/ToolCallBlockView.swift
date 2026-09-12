@@ -57,6 +57,26 @@ struct ToolCallBlockView: View {
         return s
     }
 
+    private func extractString(from dict: [String: Any]?, keys: [String]) -> String? {
+        guard let dict = dict else { return nil }
+        for key in keys {
+            if let val = dict[key] as? String, !val.isEmpty {
+                return val
+            }
+        }
+        return nil
+    }
+
+    private func extractInt(from dict: [String: Any]?, keys: [String]) -> Int? {
+        guard let dict = dict else { return nil }
+        for key in keys {
+            if let val = dict[key] as? Int {
+                return val
+            }
+        }
+        return nil
+    }
+
     private var actionDetails: (verb: String, target: String?, isMono: Bool, icon: String?) {
         let isRunning = block.status == .running
         let lower = toolName.lowercased()
@@ -64,7 +84,7 @@ struct ToolCallBlockView: View {
 
         // 1. Directory Listing (list_dir, dir, ls)
         if lower == "list_dir" || lower.contains("list_dir") || lower == "dir" || lower == "ls" {
-            let rawPath = (args?["DirectoryPath"] as? String) ?? (args?["directory_path"] as? String) ?? (args?["path"] as? String) ?? (args?["dir"] as? String)
+            let rawPath = extractString(from: args, keys: ["DirectoryPath", "directory_path", "path", "dir"])
             let shortPath = rawPath.map { getShortPath($0) }
             let summary = args?["toolSummary"] as? String
             let target = shortPath ?? summary ?? "directory"
@@ -73,12 +93,12 @@ struct ToolCallBlockView: View {
 
         // 2. File Reading
         if lower.contains("read") || lower.contains("view") || lower == "cat" || lower == "fetch_file" {
-            let rawPath = (args?["AbsolutePath"] as? String) ?? (args?["absolute_path"] as? String) ?? (args?["path"] as? String) ?? (args?["filePath"] as? String) ?? (args?["file"] as? String) ?? (args?["TargetFile"] as? String) ?? block.path
+            let rawPath = extractString(from: args, keys: ["AbsolutePath", "absolute_path", "path", "filePath", "file", "TargetFile"]) ?? block.path
             var target = rawPath.map { getShortPath($0) } ?? (args?["toolSummary"] as? String) ?? toolName
 
             // Append line range if present
-            let startLine = (args?["StartLine"] as? Int) ?? (args?["start_line"] as? Int) ?? (args?["startLine"] as? Int) ?? (args?["line"] as? Int)
-            let endLine = (args?["EndLine"] as? Int) ?? (args?["end_line"] as? Int) ?? (args?["endLine"] as? Int)
+            let startLine = extractInt(from: args, keys: ["StartLine", "start_line", "startLine", "line"])
+            let endLine = extractInt(from: args, keys: ["EndLine", "end_line", "endLine"])
             if let start = startLine {
                 if let end = endLine {
                     target += ":\(start)-\(end)"
@@ -93,12 +113,12 @@ struct ToolCallBlockView: View {
         if block.type == .fileDiff || lower.contains("write") || lower.contains("edit") || lower.contains("replace") || lower.contains("patch") {
             let changesArray = args?["changes"] as? [[String: Any]]
             let firstChangePath = changesArray?.first?["path"] as? String
-            let rawPath = block.path ?? (args?["TargetFile"] as? String) ?? (args?["target_file"] as? String) ?? (args?["targetFile"] as? String) ?? (args?["AbsolutePath"] as? String) ?? (args?["absolute_path"] as? String) ?? (args?["path"] as? String) ?? (args?["filePath"] as? String) ?? (args?["file"] as? String) ?? firstChangePath
+            let rawPath = block.path ?? extractString(from: args, keys: ["TargetFile", "target_file", "targetFile", "AbsolutePath", "absolute_path", "path", "filePath", "file"]) ?? firstChangePath
             var target = rawPath.map { getShortPath($0) } ?? (args?["toolSummary"] as? String) ?? toolName
 
             // Append line range if present
-            let startLine = (args?["StartLine"] as? Int) ?? (args?["start_line"] as? Int) ?? (args?["startLine"] as? Int)
-            let endLine = (args?["EndLine"] as? Int) ?? (args?["end_line"] as? Int) ?? (args?["endLine"] as? Int)
+            let startLine = extractInt(from: args, keys: ["StartLine", "start_line", "startLine"])
+            let endLine = extractInt(from: args, keys: ["EndLine", "end_line", "endLine"])
             if let start = startLine {
                 if let end = endLine {
                     target += ":\(start)-\(end)"
@@ -111,7 +131,7 @@ struct ToolCallBlockView: View {
 
         // 4. Command Execution
         if block.type == .commandExec || lower.contains("command") || lower.contains("bash") || lower.contains("terminal") || lower.contains("exec") || lower.contains("shell") {
-            let cmd = block.command ?? (args?["CommandLine"] as? String) ?? (args?["command"] as? String) ?? (args?["cmd"] as? String) ?? (args?["script"] as? String)
+            let cmd = block.command ?? extractString(from: args, keys: ["CommandLine", "command", "cmd", "script"])
             if let c = cmd, !c.isEmpty {
                 return (isRunning ? "Running" : "Ran", "$ \(truncate(c, limit: 50))", true, "terminal")
             }
@@ -121,22 +141,22 @@ struct ToolCallBlockView: View {
 
         // 5. CodeGraph Exploration
         if lower.contains("codegraph_explore") || lower.contains("explore") {
-            let q = (args?["query"] as? String) ?? (args?["Query"] as? String)
+            let q = extractString(from: args, keys: ["query", "Query"])
             let target = q != nil && !q!.isEmpty ? "\"\(truncate(q!, limit: 45))\"" : nil
             return (isRunning ? "Exploring" : "Explored", target, false, "sparkles")
         }
 
         // 6. Search / Grep / Find
         if lower.contains("grep") || lower.contains("find") || lower.contains("search") {
-            let q = (args?["Query"] as? String) ?? (args?["query"] as? String) ?? (args?["Pattern"] as? String) ?? (args?["pattern"] as? String)
+            let q = extractString(from: args, keys: ["Query", "query", "Pattern", "pattern"])
             let target = q != nil && !q!.isEmpty ? "for \"\(truncate(q!, limit: 40))\"" : "codebase"
             return (isRunning ? "Searching" : "Searched", target, false, "magnifyingglass")
         }
 
         // 7. MCP Tools
         if lower.contains("mcp") {
-            let mcpTool = (args?["ToolName"] as? String) ?? (args?["tool_name"] as? String) ?? ""
-            let mcpServer = (args?["ServerName"] as? String) ?? (args?["server_name"] as? String) ?? ""
+            let mcpTool = extractString(from: args, keys: ["ToolName", "tool_name"]) ?? ""
+            let mcpServer = extractString(from: args, keys: ["ServerName", "server_name"]) ?? ""
             let summary = (args?["toolSummary"] as? String) ?? (!mcpTool.isEmpty ? mcpTool : "MCP tool")
             let target = !mcpServer.isEmpty && !mcpTool.isEmpty ? "\(mcpServer)/\(mcpTool)" : summary
             return (isRunning ? "Calling" : "Called", target, true, "wrench.and.screwdriver")
@@ -150,13 +170,13 @@ struct ToolCallBlockView: View {
         }
 
         // 9. Web / Browse / Fetch (with URL)
-        let hasUrl = (args?["Url"] as? String) ?? (args?["url"] as? String) ?? (args?["link"] as? String)
+        let hasUrl = extractString(from: args, keys: ["Url", "url", "link"])
         if let u = hasUrl, (lower.contains("web") || lower.contains("browse") || lower.contains("fetch") || lower.contains("url")) {
             return (isRunning ? "Fetching" : "Fetched", truncate(u, limit: 40), true, "globe")
         }
 
         // 10. General query parameter if present
-        if let q = (args?["query"] as? String) ?? (args?["Query"] as? String), !q.isEmpty {
+        if let q = extractString(from: args, keys: ["query", "Query"]), !q.isEmpty {
             return (isRunning ? "Calling" : "Called", "\(toolName) \"\(truncate(q, limit: 35))\"", false, nil)
         }
 
@@ -201,21 +221,20 @@ struct ToolCallBlockView: View {
 
         // 3. From args dictionary
         if let args = parsedArgs {
-            if let patch = (args["patch"] as? String) ?? (args["diff"] as? String) ?? (args["unified_diff"] as? String) ?? (args["unifiedDiff"] as? String), !patch.isEmpty {
+            if let patch = extractString(from: args, keys: ["patch", "diff", "unified_diff", "unifiedDiff"]) {
                 return patch
             }
 
             // changes array (Codex)
             let changesList = (args["changes"] as? [[String: Any]]) ?? (args["fileChanges"] as? [[String: Any]]) ?? (args["file_changes"] as? [[String: Any]])
             if let first = changesList?.first,
-               let diff = (first["diff"] as? String) ?? (first["patch"] as? String),
-               !diff.isEmpty {
+               let diff = extractString(from: first, keys: ["diff", "patch"]) {
                 return diff
             }
 
             // Content replacement (Antigravity replace_file_content, edit_file, etc.)
-            let targetContent = (args["TargetContent"] as? String) ?? (args["target_content"] as? String) ?? (args["targetContent"] as? String) ?? (args["old_string"] as? String) ?? (args["old_str"] as? String) ?? (args["oldString"] as? String) ?? (args["find"] as? String)
-            let replacementContent = (args["ReplacementContent"] as? String) ?? (args["replacement_content"] as? String) ?? (args["replacementContent"] as? String) ?? (args["new_string"] as? String) ?? (args["new_str"] as? String) ?? (args["newString"] as? String) ?? (args["replace"] as? String)
+            let targetContent = extractString(from: args, keys: ["TargetContent", "target_content", "targetContent", "old_string", "old_str", "oldString", "find"])
+            let replacementContent = extractString(from: args, keys: ["ReplacementContent", "replacement_content", "replacementContent", "new_string", "new_str", "newString", "replace"])
             if targetContent != nil || replacementContent != nil {
                 let oldText = normalizeEscapedNewlines(targetContent ?? "")
                 let newText = normalizeEscapedNewlines(replacementContent ?? "")
@@ -233,7 +252,7 @@ struct ToolCallBlockView: View {
             }
 
             // File creation / Write (Antigravity write_to_file, etc.)
-            if let codeContent = (args["CodeContent"] as? String) ?? (args["code_content"] as? String) ?? (args["codeContent"] as? String) ?? (args["content"] as? String) ?? (args["contents"] as? String) ?? (args["text"] as? String) {
+            if let codeContent = extractString(from: args, keys: ["CodeContent", "code_content", "codeContent", "content", "contents", "text"]) {
                 let newText = normalizeEscapedNewlines(codeContent)
                 let newLines = newText.isEmpty ? [] : newText.components(separatedBy: .newlines)
                 let fileName = actionDetails.target ?? "file"

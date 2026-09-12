@@ -158,7 +158,7 @@ struct ReasoningBlockView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .onChange(of: isCompleted) { completed in
+        .onChange(of: isCompleted) { _, completed in
             if completed {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                     isExpanded = false

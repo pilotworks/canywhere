@@ -1,5 +1,5 @@
 import SwiftUI
-import AVFoundation
+@preconcurrency import AVFoundation
 
 struct QRScannerView: UIViewControllerRepresentable {
     let onCodeScanned: (String) -> Void

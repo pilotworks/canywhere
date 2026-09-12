@@ -442,9 +442,7 @@ struct ChatListView: View {
         HStack(alignment: .top, spacing: 12) {
             // Provider Logo & Status Indicator at the head of the item
             ZStack(alignment: .bottomTrailing) {
-                let provider = session.providers.first(where: { $0.id == chat.providerID })
                 let isAgy = (chat.providerID == "agy")
-                let iconSymbol = provider?.icon ?? (isAgy ? "sparkles" : "terminal.fill")
 
                 ZStack {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
