@@ -31,6 +31,25 @@ describe("MarkdownContent", () => {
     expect(html).toContain("typescript");
     expect(html).toContain("const x = 42;");
     expect(html).toContain("Copy snippet");
+    expect(html).not.toContain("Expand code");
+    expect(html).not.toContain("max-h-[420px]");
+    expect(html).toContain("overflow-x-auto");
+  });
+
+  it("renders long code block (>24 lines) with expand button and collapsed by default without vertical scroll", () => {
+    const codeLines = Array.from({ length: 40 }, (_, i) => `console.log("line ${i + 1}");`).join("\n");
+    const html = ReactDOMServer.renderToStaticMarkup(
+      <MarkdownContent content={`\`\`\`typescript\n${codeLines}\n\`\`\``} />
+    );
+    expect(html).toContain("Expand code (+16 more lines)");
+    expect(html).toContain("(40 lines)");
+    expect(html).not.toContain("max-h-[420px]");
+    expect(html).not.toContain("overflow-auto");
+    expect(html).toContain("overflow-x-auto");
+    // Verify collapsed preview renders only first 24 lines
+    expect(html).toContain("line 1");
+    expect(html).toContain("line 24");
+    expect(html).not.toContain("line 25");
   });
 });
 

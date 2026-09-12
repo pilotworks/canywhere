@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, ChevronDown, ChevronUp } from "lucide-react";
 import { FileIcon } from "../ui/file-icon.js";
 import { parseFileLink, openFileInRightSidebar } from "../../lib/file-link.js";
 import { detectLanguage, tokenizeCode, type CodeToken } from "../../lib/shiki.js";
@@ -11,6 +11,8 @@ interface MarkdownContentProps {
   content: string;
   className?: string;
 }
+
+const MAX_CODE_BLOCK_LINES = 24;
 
 const PreContext = createContext(false);
 
@@ -58,6 +60,7 @@ const CodeBlock: React.FC<{
 }> = ({ className, children, node, ...props }) => {
   const isBlock = useContext(PreContext);
   const [copied, setCopied] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [tokens, setTokens] = useState<CodeToken[][] | null>(null);
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
 
@@ -77,6 +80,13 @@ const CodeBlock: React.FC<{
     const extracted = extractText(children) || (typeof children === "string" ? children : "");
     return extracted.replace(/\n$/, "");
   }, [children]);
+
+  const lines = useMemo(() => {
+    return codeString ? codeString.split("\n") : [];
+  }, [codeString]);
+
+  const totalLines = lines.length;
+  const isLong = totalLines > MAX_CODE_BLOCK_LINES;
 
   const detectedLang = useMemo(() => {
     if (!rawLang) return "text";
@@ -126,6 +136,21 @@ const CodeBlock: React.FC<{
     return `file.${ext}`;
   }, [detectedLang]);
 
+  const displayedTokens = useMemo(() => {
+    if (!tokens) return null;
+    if (isLong && !isExpanded) {
+      return tokens.slice(0, MAX_CODE_BLOCK_LINES);
+    }
+    return tokens;
+  }, [tokens, isLong, isExpanded]);
+
+  const displayedChildren = useMemo(() => {
+    if (isLong && !isExpanded) {
+      return lines.slice(0, MAX_CODE_BLOCK_LINES).join("\n");
+    }
+    return children;
+  }, [isLong, isExpanded, lines, children]);
+
   return (
     <div className="relative my-2.5 rounded-lg border border-[var(--code-border)] bg-[var(--code-bg)] overflow-hidden font-mono text-xs shadow-xs">
       <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--secondary)]/60 border-b border-[var(--code-border)] text-[var(--muted-foreground)] select-none">
@@ -137,29 +162,56 @@ const CodeBlock: React.FC<{
           <span className="text-[11px] font-mono font-medium lowercase tracking-wider text-[var(--muted-foreground)] truncate">
             {displayLang}
           </span>
-        </div>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1 hover:text-[var(--foreground)] p-1 rounded transition-colors cursor-pointer text-[10px] shrink-0 ml-2"
-          title="Copy snippet"
-        >
-          {copied ? (
-            <>
-              <Check className="w-3 h-3 text-emerald-500" />
-              <span className="text-emerald-500">Copied</span>
-            </>
-          ) : (
-            <>
-              <Copy className="w-3 h-3" />
-              <span>Copy</span>
-            </>
+          {isLong && (
+            <span className="text-[10px] font-mono text-[var(--muted-foreground)] opacity-60">
+              ({totalLines} lines)
+            </span>
           )}
-        </button>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 ml-2">
+          {isLong && (
+            <button
+              type="button"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="flex items-center gap-1 hover:text-[var(--foreground)] p-1 rounded transition-colors cursor-pointer text-[10px] text-[var(--muted-foreground)]"
+              title={isExpanded ? "Collapse code" : "Expand code"}
+            >
+              {isExpanded ? (
+                <>
+                  <ChevronUp className="w-3 h-3" />
+                  <span>Collapse</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-3 h-3" />
+                  <span>Expand</span>
+                </>
+              )}
+            </button>
+          )}
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 hover:text-[var(--foreground)] p-1 rounded transition-colors cursor-pointer text-[10px]"
+            title="Copy snippet"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3 h-3 text-emerald-500" />
+                <span className="text-emerald-500">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3 h-3" />
+                <span>Copy</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
-      <pre className="p-3.5 max-h-[420px] overflow-auto text-[12px] leading-relaxed text-[var(--foreground)] select-text">
-        {tokens && tokens.length > 0 ? (
+      <pre className="p-3.5 overflow-x-auto text-[12px] leading-relaxed text-[var(--foreground)] select-text">
+        {displayedTokens && displayedTokens.length > 0 ? (
           <code>
-            {tokens.map((lineTokens, lineIdx) => (
+            {displayedTokens.map((lineTokens, lineIdx) => (
               <React.Fragment key={lineIdx}>
                 {lineTokens.map((tok, tokIdx) => (
                   <span
@@ -173,14 +225,33 @@ const CodeBlock: React.FC<{
                     {tok.content}
                   </span>
                 ))}
-                {lineIdx < tokens.length - 1 ? "\n" : ""}
+                {lineIdx < displayedTokens.length - 1 ? "\n" : ""}
               </React.Fragment>
             ))}
           </code>
         ) : (
-          <code>{children}</code>
+          <code>{displayedChildren}</code>
         )}
       </pre>
+      {isLong && (
+        <button
+          type="button"
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-[var(--secondary)]/60 hover:bg-[var(--secondary)] border-t border-[var(--code-border)] text-[11px] text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer select-none font-mono"
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp className="w-3.5 h-3.5" />
+              <span>Collapse code ({totalLines} lines)</span>
+            </>
+          ) : (
+            <>
+              <ChevronDown className="w-3.5 h-3.5" />
+              <span>Expand code (+{totalLines - MAX_CODE_BLOCK_LINES} more lines)</span>
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 };

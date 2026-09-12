@@ -394,6 +394,24 @@ struct CodeBlockView: View {
     var isReasoning: Bool = false
 
     @State private var isCopied: Bool = false
+    @State private var isExpanded: Bool = false
+
+    private let maxLines: Int = 24
+
+    private var codeLines: [String] {
+        code.components(separatedBy: .newlines)
+    }
+
+    private var isLong: Bool {
+        codeLines.count > maxLines
+    }
+
+    private var displayedCode: String {
+        if isLong && !isExpanded {
+            return codeLines.prefix(maxLines).joined(separator: "\n")
+        }
+        return code
+    }
 
     private var displayLanguage: String {
         let trimmed = language.trimmingCharacters(in: .whitespaces).lowercased()
@@ -420,7 +438,7 @@ struct CodeBlockView: View {
     }
 
     private var highlightedCode: AttributedString {
-        CodeSyntaxHighlighter.highlight(code, language: language)
+        CodeSyntaxHighlighter.highlight(displayedCode, language: language)
     }
 
     var body: some View {
@@ -436,9 +454,36 @@ struct CodeBlockView: View {
                         .font(.system(size: isReasoning ? 10 : 11, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textCase(.lowercase)
+
+                    if isLong {
+                        Text("(\(codeLines.count) lines)")
+                            .font(.system(size: isReasoning ? 9 : 10, design: .monospaced))
+                            .foregroundStyle(.secondary.opacity(0.8))
+                    }
                 }
 
                 Spacer()
+
+                if isLong {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            isExpanded.toggle()
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: isReasoning ? 8 : 9))
+                            Text(isExpanded ? "Collapse" : "Expand")
+                                .font(.system(size: isReasoning ? 10 : 11, weight: .medium))
+                        }
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .background(Color(uiColor: .tertiarySystemFill).opacity(0.6))
+                        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 Button {
                     UIPasteboard.general.string = code
@@ -472,8 +517,8 @@ struct CodeBlockView: View {
 
             Divider()
 
-            // Code Content with bounded height and scrolling
-            ScrollView([.horizontal, .vertical], showsIndicators: true) {
+            // Code Content without vertical scrolling
+            ScrollView(.horizontal, showsIndicators: false) {
                 Text(highlightedCode)
                     .font(.system(size: isReasoning ? 11 : 12, design: .monospaced))
                     .lineSpacing(2)
@@ -481,7 +526,28 @@ struct CodeBlockView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
             }
-            .frame(maxHeight: isReasoning ? 260 : 380)
+
+            if isLong {
+                Divider()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: isReasoning ? 9 : 10))
+                        Text(isExpanded ? "Collapse code (\(codeLines.count) lines)" : "Expand code (+\(codeLines.count - maxLines) more lines)")
+                            .font(.system(size: isReasoning ? 10 : 11, weight: .medium, design: .monospaced))
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, isReasoning ? 6 : 7)
+                    .background(Color(uiColor: .secondarySystemFill).opacity(0.4))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .background(Color(uiColor: .secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
