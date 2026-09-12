@@ -69,6 +69,7 @@ struct ChatDetailView: View {
                                             message: message,
                                             durationSeconds: viewModel.durationFor(message: message, at: idx)
                                         )
+                                        .equatable()
                                     }
                                 }
                                 Color.clear
@@ -90,27 +91,25 @@ struct ChatDetailView: View {
                         .scrollDismissesKeyboard(.interactively)
                         .defaultScrollAnchor(.bottom)
                         .coordinateSpace(name: "ChatScrollViewSpace")
-                        .onTapGesture {
-                            hideKeyboard()
-                        }
                         .background(
                             GeometryReader { geo in
-                                Color.clear.preference(
-                                    key: ViewportHeightPreferenceKey.self,
-                                    value: geo.size.height
-                                )
+                                Color.clear
+                                    .contentShape(Rectangle())
+                                    .preference(
+                                        key: ViewportHeightPreferenceKey.self,
+                                        value: geo.size.height
+                                    )
+                                    .onTapGesture {
+                                        hideKeyboard()
+                                    }
                             }
                         )
                         .onPreferenceChange(BottomAnchorPreferenceKey.self) { minY in
-                            DispatchQueue.main.async {
-                                updateScrollPosition(minY: minY)
-                            }
+                            updateScrollPosition(minY: minY)
                         }
                         .onPreferenceChange(ViewportHeightPreferenceKey.self) { height in
-                            DispatchQueue.main.async {
-                                if abs(viewportHeight - height) > 1 {
-                                    viewportHeight = height
-                                }
+                            if abs(viewportHeight - height) > 1 {
+                                viewportHeight = height
                             }
                         }
 
@@ -234,10 +233,29 @@ struct ChatDetailView: View {
                             let words = text.split(separator: " ")
                             if let first = words.first, first.hasPrefix("/") {
                                 let cmd = String(first)
+                                let args = words.count > 1 ? words.dropFirst().joined(separator: " ") : nil
+
+                                if cmd == "/reset" {
+                                    let wsId = viewModel.chat?.workspaceID
+                                    Task {
+                                        _ = try? await AppSessionState.shared.createChat(title: "New Chat", workspaceId: wsId)
+                                    }
+                                    return
+                                }
+                                if cmd == "/scratch" {
+                                    Task {
+                                        _ = try? await AppSessionState.shared.createChat(title: "Scratchpad", workspaceId: nil)
+                                    }
+                                    return
+                                }
+
                                 let pId = viewModel.chat?.providerID ?? AppSessionState.shared.selectedProviderId
                                 let providerCmds = AppSessionState.shared.providers.first(where: { $0.id == pId })?.commands ?? []
-                                if providerCmds.contains(where: { $0.name == cmd }) {
-                                    let args = words.count > 1 ? words.dropFirst().joined(separator: " ") : nil
+                                let isKnownCommand = providerCmds.contains(where: {
+                                    $0.name == cmd || "/\($0.name)" == cmd || $0.name == String(cmd.dropFirst())
+                                }) || cmd == "/review" || cmd == "/compact"
+
+                                if isKnownCommand {
                                     Task {
                                         await viewModel.executeCommand(command: cmd, args: args)
                                     }

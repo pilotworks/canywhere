@@ -26,24 +26,23 @@ struct ReasoningBlockView: View {
         content.split(whereSeparator: \.isWhitespace).count
     }
 
+    private static let boldRegex = try? NSRegularExpression(pattern: #"\*\*([^*]+)\*\*"#, options: [])
+
     private var reasoningHeader: String? {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        if let boldRange = trimmed.range(of: #"\*\*([^*]+)\*\*"#, options: .regularExpression) {
-            let boldText = String(trimmed[boldRange])
-                .replacingOccurrences(of: "**", with: "")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !boldText.isEmpty {
-                return boldText
-            }
+        if let regex = Self.boldRegex,
+           let match = regex.firstMatch(in: trimmed, range: NSRange(location: 0, length: trimmed.utf16.count)),
+           let range = Range(match.range(at: 1), in: trimmed) {
+            let boldText = String(trimmed[range]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !boldText.isEmpty { return boldText }
         }
 
-        let firstLine = trimmed.components(separatedBy: .newlines).first?
-            .replacingOccurrences(of: #"^[#*\-\s]+"#, with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let firstLine = trimmed.components(separatedBy: .newlines).first ?? ""
         if !firstLine.isEmpty && firstLine.count <= 80 && !firstLine.contains("```") {
-            return firstLine
+            let clean = firstLine.replacingOccurrences(of: #"^[#*\-\s]+"#, with: "", options: .regularExpression).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !clean.isEmpty { return clean }
         }
 
         return nil
@@ -129,7 +128,7 @@ struct ReasoningBlockView: View {
             }
 
             if isExpanded {
-                ScrollView(.vertical, showsIndicators: contentHeight > maxHeight) {
+                ScrollView(.vertical, showsIndicators: true) {
                     MarkdownContentView(
                         content: content,
                         isStreaming: !isCompleted,
@@ -137,14 +136,6 @@ struct ReasoningBlockView: View {
                     )
                     .padding(.vertical, 4)
                     .padding(.trailing, 4)
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.preference(
-                                key: ContentHeightPreferenceKey.self,
-                                value: geo.size.height
-                            )
-                        }
-                    )
                 }
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) {
@@ -153,11 +144,7 @@ struct ReasoningBlockView: View {
                         .frame(width: 2)
                         .padding(.vertical, 2)
                 }
-                .frame(height: contentHeight > 0 ? min(contentHeight, maxHeight) : nil)
-                .scrollDisabled(contentHeight <= maxHeight)
-                .onPreferenceChange(ContentHeightPreferenceKey.self) { height in
-                    contentHeight = height
-                }
+                .frame(maxHeight: maxHeight)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }

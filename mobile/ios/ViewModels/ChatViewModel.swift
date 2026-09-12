@@ -88,8 +88,22 @@ final class ChatViewModel {
     }
 
     func submitTurn(content: String) async {
-        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
 
+        // Optimistic UI update: instantly show user bubble with clientMessageId
+        let clientMsgId = "user-\(UUID().uuidString)"
+        let optimisticUserMsg = Message(
+            blocks: [.text(trimmed)],
+            chatID: chatId,
+            createdAt: Int(Date().timeIntervalSince1970 * 1000),
+            id: clientMsgId,
+            role: .user,
+            streaming: false,
+            turnID: nil
+        )
+        self.messages.append(optimisticUserMsg)
+        self.scrollTrigger &+= 1
         self.isRunning = true
         self.isSending = true
 
@@ -110,8 +124,8 @@ final class ChatViewModel {
 
             let params = TurnSendRequestParams(
                 chatId: chatId,
-                content: content,
-                clientMessageId: nil,
+                content: trimmed,
+                clientMessageId: clientMsgId,
                 model: selectedModel,
                 reasoningEffort: selectedEffort,
                 permissionMode: permissionMode
@@ -126,6 +140,18 @@ final class ChatViewModel {
             print("❌ [ChatViewModel] Failed to send turn: \(error)")
             self.isRunning = false
             self.activeTurnId = nil
+            // Show error notification in conversation feed
+            let errorMsg = Message(
+                blocks: [.text("❌ **Send Error:** \(error.localizedDescription)")],
+                chatID: chatId,
+                createdAt: Int(Date().timeIntervalSince1970 * 1000),
+                id: "err-\(UUID().uuidString)",
+                role: .agent,
+                streaming: false,
+                turnID: nil
+            )
+            self.messages.append(errorMsg)
+            self.scrollTrigger &+= 1
         }
         self.isSending = false
     }
@@ -428,8 +454,30 @@ final class ChatViewModel {
                     targetIndex = nil
                 }
 
-                if let idx = targetIndex {
-                    var blocks = messages[idx].blocks
+                let idx: Int
+                if let target = targetIndex {
+                    idx = target
+                } else {
+                    let initialBlock: MessageBlock = (payload.delta.type == "reasoning")
+                        ? .reasoning(text, completed: false)
+                        : .text(text)
+                    let newMsg = Message(
+                        blocks: [initialBlock],
+                        chatID: chatId,
+                        createdAt: Int(Date().timeIntervalSince1970 * 1000),
+                        id: payload.messageId,
+                        role: .agent,
+                        streaming: true,
+                        turnID: activeTurnId
+                    )
+                    messages.append(newMsg)
+                    self.streamingMessageId = payload.messageId
+                    self.isRunning = true
+                    scrollTrigger &+= 1
+                    return
+                }
+
+                var blocks = messages[idx].blocks
                     if payload.delta.type == "reasoning" {
                         if let lastIdx = blocks.indices.last, blocks[lastIdx].type == .reasoning && !(blocks[lastIdx].completed ?? true) {
                             let existing = blocks[lastIdx].content ?? ""
@@ -458,7 +506,6 @@ final class ChatViewModel {
                     }
                     messages[idx] = messages[idx].with(blocks: blocks)
                     self.streamingMessageId = messages[idx].id
-                }
 
                 // Throttle scroll triggers to at most once per 100ms
                 let now = CACurrentMediaTime()

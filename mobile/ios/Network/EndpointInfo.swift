@@ -133,6 +133,14 @@ enum EndpointHealth: Equatable, Sendable {
 actor EndpointHealthChecker {
     static let shared = EndpointHealthChecker()
 
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.timeoutIntervalForRequest = 2.5
+        config.timeoutIntervalForResource = 2.5
+        config.waitsForConnectivity = false
+        return URLSession(configuration: config)
+    }()
+
     func check(endpoint: String, timeoutSeconds: TimeInterval = 2.5) async -> EndpointHealth {
         let info = EndpointInfo(rawUrl: endpoint)
         guard let url = info.healthCheckUrl else {
@@ -146,7 +154,7 @@ actor EndpointHealthChecker {
 
         let start = DispatchTime.now()
         do {
-            let (_, response) = try await URLSession.shared.data(for: request)
+            let (_, response) = try await session.data(for: request)
             guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
                 return .offline(reason: "Server error")
             }

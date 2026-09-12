@@ -306,6 +306,7 @@ struct MarkdownContentView: View {
                     CodeBlockView(
                         language: language,
                         code: code,
+                        isStreaming: isStreaming,
                         isReasoning: isReasoning
                     )
 
@@ -368,6 +369,7 @@ struct MarkdownContentView: View {
 struct CodeBlockView: View {
     let language: String
     let code: String
+    var isStreaming: Bool = false
     var isReasoning: Bool = false
 
     @State private var isCopied: Bool = false
@@ -415,7 +417,7 @@ struct CodeBlockView: View {
     }
 
     private var highlightedCode: AttributedString {
-        CodeSyntaxHighlighter.highlight(displayedCode, language: language)
+        CodeSyntaxHighlighter.highlight(displayedCode, language: language, isStreaming: isStreaming)
     }
 
     var body: some View {
@@ -536,16 +538,58 @@ struct CodeBlockView: View {
     }
 }
 
-// MARK: - Lightweight Syntax Highlighter for iOS
+// MARK: - High-Performance Syntax Highlighter for iOS
+ 
+private final class AttributedStringBox: @unchecked Sendable {
+    let value: AttributedString
+    init(_ value: AttributedString) { self.value = value }
+}
 
+@MainActor
 enum CodeSyntaxHighlighter {
-    static func highlight(_ code: String, language: String) -> AttributedString {
-        var attributed = AttributedString(code)
+    private static let cache = NSCache<NSString, AttributedStringBox>()
+
+    // Pre-compiled regular expressions (compiled ONCE statically, avoiding per-frame regex compilation)
+    private static let numberRegex = try? NSRegularExpression(pattern: #"\b\d+(\.\d+)?\b"#, options: [.anchorsMatchLines])
+    private static let typeRegex = try? NSRegularExpression(pattern: #"\b[A-Z][a-zA-Z0-9_]*\b"#, options: [.anchorsMatchLines])
+    private static let funcRegex = try? NSRegularExpression(pattern: #"\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\s*\()"#, options: [.anchorsMatchLines])
+    private static let stringRegex = try? NSRegularExpression(pattern: #"\"([^\"\\]|\\.)*\"|'([^'\\]|\\.)*'|`([^`\\]|\\.)*`"#, options: [.anchorsMatchLines])
+    private static let hashCommentRegex = try? NSRegularExpression(pattern: #"#.*$"#, options: [.anchorsMatchLines])
+    private static let slashCommentRegex = try? NSRegularExpression(pattern: #"//.*$"#, options: [.anchorsMatchLines])
+    private static let blockCommentRegex = try? NSRegularExpression(pattern: #"/\*[\s\S]*?\*/"#, options: [.anchorsMatchLines])
+    private static let keywordRegex: NSRegularExpression? = {
+        let keywords = [
+            "func", "fn", "def", "function", "const", "let", "var", "val", "mut",
+            "class", "struct", "enum", "protocol", "interface", "type", "impl", "trait",
+            "return", "if", "else", "switch", "case", "default", "for", "while", "loop",
+            "match", "in", "of", "import", "export", "from", "package", "use", "pub",
+            "async", "await", "try", "catch", "throw", "throws", "guard", "defer",
+            "self", "this", "super", "new", "true", "false", "nil", "null", "None",
+            "where", "static", "final", "public", "private", "protected", "override",
+            "yield", "break", "continue", "as", "is", "extern", "crate", "mod"
+        ]
+        let pattern = #"\b("# + keywords.joined(separator: "|") + #")\b"#
+        return try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines])
+    }()
+
+    static func highlight(_ code: String, language: String, isStreaming: Bool = false) -> AttributedString {
         let trimmedLang = language.trimmingCharacters(in: .whitespaces).lowercased()
         guard !code.isEmpty, trimmedLang != "text", trimmedLang != "txt" else {
-            return attributed
+            return AttributedString(code)
         }
 
+        // Cache key: combined language + hash
+        let cacheKey = "\(trimmedLang):\(code.hashValue)" as NSString
+        if let cached = cache.object(forKey: cacheKey) {
+            return cached.value
+        }
+
+        // When actively streaming long code blocks (>400 chars), bypass regex highlighting to maintain 60/120 FPS
+        if isStreaming && code.count > 400 {
+            return AttributedString(code)
+        }
+
+        var attributed = AttributedString(code)
         let nsCode = code as NSString
         let fullRange = NSRange(location: 0, length: nsCode.length)
 
@@ -557,8 +601,8 @@ enum CodeSyntaxHighlighter {
         let typeColor = Color(red: 0.90, green: 0.78, blue: 0.45)    // Warm Yellow
         let funcColor = Color(red: 0.45, green: 0.70, blue: 0.98)    // Sky Blue
 
-        func applyRegex(_ pattern: String, color: Color) {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else { return }
+        func apply(_ regex: NSRegularExpression?, color: Color) {
+            guard let regex = regex else { return }
             let matches = regex.matches(in: code, options: [], range: fullRange)
             for match in matches {
                 if let range = Range(match.range, in: code),
@@ -570,37 +614,29 @@ enum CodeSyntaxHighlighter {
         }
 
         // 1. Numbers
-        applyRegex(#"\b\d+(\.\d+)?\b"#, color: numberColor)
+        apply(numberRegex, color: numberColor)
 
         // 2. Types / Capitalized Identifiers
-        applyRegex(#"\b[A-Z][a-zA-Z0-9_]*\b"#, color: typeColor)
+        apply(typeRegex, color: typeColor)
 
         // 3. Keywords
-        let keywords = [
-            "func", "fn", "def", "function", "const", "let", "var", "val", "mut",
-            "class", "struct", "enum", "protocol", "interface", "type", "impl", "trait",
-            "return", "if", "else", "switch", "case", "default", "for", "while", "loop",
-            "match", "in", "of", "import", "export", "from", "package", "use", "pub",
-            "async", "await", "try", "catch", "throw", "throws", "guard", "defer",
-            "self", "this", "super", "new", "true", "false", "nil", "null", "None",
-            "where", "static", "final", "public", "private", "protected", "override",
-            "yield", "break", "continue", "as", "is", "extern", "crate", "mod"
-        ]
-        let kwPattern = #"\b("# + keywords.joined(separator: "|") + #")\b"#
-        applyRegex(kwPattern, color: keywordColor)
+        apply(keywordRegex, color: keywordColor)
 
         // 4. Function call identifiers (foo())
-        applyRegex(#"\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\s*\()"#, color: funcColor)
+        apply(funcRegex, color: funcColor)
 
         // 5. Strings ("...", '...', `...`)
-        applyRegex(#"\"([^\"\\]|\\.)*\"|'([^'\\]|\\.)*'|`([^`\\]|\\.)*`"#, color: stringColor)
+        apply(stringRegex, color: stringColor)
 
         // 6. Comments (//..., #..., /*...*/) - applied last so comments override everything inside
         if ["py", "python", "sh", "bash", "zsh", "shell", "yaml", "yml", "rb", "ruby"].contains(trimmedLang) {
-            applyRegex(#"#.*$"#, color: commentColor)
+            apply(hashCommentRegex, color: commentColor)
         }
-        applyRegex(#"//.*$"#, color: commentColor)
-        applyRegex(#"/\*[\s\S]*?\*/"#, color: commentColor)
+        apply(slashCommentRegex, color: commentColor)
+        apply(blockCommentRegex, color: commentColor)
+
+        // Cache the result for subsequent evaluations
+        cache.setObject(AttributedStringBox(attributed), forKey: cacheKey)
 
         return attributed
     }

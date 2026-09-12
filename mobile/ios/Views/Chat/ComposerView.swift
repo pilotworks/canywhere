@@ -63,6 +63,8 @@ struct ComposerView: View {
         )
     ]
 
+    private static let fileMentionRegex = try? NSRegularExpression(pattern: #"(?:^|\s)@([^\s]*)$"#)
+
     private var availableModels: [ModelInfo] {
         models.isEmpty ? Self.fallbackModels : models
     }
@@ -341,7 +343,7 @@ struct ComposerView: View {
         }
         .padding(.top, 8)
         .padding(.bottom, 12)
-        .background(.ultraThinMaterial)
+        .background(.ultraThinMaterial, ignoresSafeAreaEdges: .bottom)
         .overlay(
             Rectangle()
                 .frame(height: 1)
@@ -375,8 +377,7 @@ struct ComposerView: View {
 
         // 2. Check for @ file mention
         if hasWorkspace {
-            let pattern = #"(?:^|\s)@([^\s]*)$"#
-            if let regex = try? NSRegularExpression(pattern: pattern),
+            if let regex = Self.fileMentionRegex,
                let match = regex.firstMatch(in: val, range: NSRange(location: 0, length: val.utf16.count)) {
                 let queryRange = match.range(at: 1)
                 if let swiftRange = Range(queryRange, in: val) {

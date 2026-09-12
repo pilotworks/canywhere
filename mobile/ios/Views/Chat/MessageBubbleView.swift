@@ -1,12 +1,16 @@
 import SwiftUI
 
-struct MessageBubbleView: View {
+struct MessageBubbleView: View, Equatable {
     let message: Message
     var durationSeconds: Int = 1
 
     init(message: Message, durationSeconds: Int = 1) {
         self.message = message
         self.durationSeconds = durationSeconds
+    }
+
+    nonisolated static func == (lhs: MessageBubbleView, rhs: MessageBubbleView) -> Bool {
+        return lhs.message == rhs.message && lhs.durationSeconds == rhs.durationSeconds
     }
 
     var body: some View {

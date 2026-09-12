@@ -248,10 +248,21 @@ struct ToolCallBlockView: View {
         return nil
     }
 
+    private final class DiffStatsBox: @unchecked Sendable {
+        let stats: (added: Int, removed: Int)?
+        init(_ stats: (added: Int, removed: Int)?) { self.stats = stats }
+    }
+    @MainActor private static let diffStatsCache = NSCache<NSString, DiffStatsBox>()
+
     private var diffStats: (added: Int, removed: Int)? {
         guard let patch = effectivePatch, !patch.isEmpty else {
             return nil
         }
+        let key = "\(patch.hashValue)" as NSString
+        if let cached = Self.diffStatsCache.object(forKey: key) {
+            return cached.stats
+        }
+
         var added = 0
         var removed = 0
         let lines = patch.components(separatedBy: .newlines)
@@ -266,10 +277,9 @@ struct ToolCallBlockView: View {
                 removed += 1
             }
         }
-        if added > 0 || removed > 0 {
-            return (added, removed)
-        }
-        return nil
+        let result: (added: Int, removed: Int)? = (added > 0 || removed > 0) ? (added, removed) : nil
+        Self.diffStatsCache.setObject(DiffStatsBox(result), forKey: key)
+        return result
     }
 
     private var formattedArgsString: String? {

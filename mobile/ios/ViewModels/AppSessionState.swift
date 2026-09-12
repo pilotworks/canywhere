@@ -643,7 +643,7 @@ final class AppSessionState {
         }
     }
 
-    var activeChatViewModel: ChatViewModel?
+    weak var activeChatViewModel: ChatViewModel?
 
     // MARK: - Notifications
 

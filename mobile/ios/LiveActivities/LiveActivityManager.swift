@@ -30,9 +30,21 @@ final class LiveActivityManager {
         }
 
         // End any existing activity for this chat
-        if let existing = activeActivities[chatId] {
+        if let existing = activeActivities.removeValue(forKey: chatId) {
             Task {
                 await Self.performImmediateEnd(activity: existing)
+            }
+        }
+
+        // Keep at most 1 other active activity so iOS does not reject or throttle
+        if activeActivities.count >= 2 {
+            let candidateId = activeActivities.keys.first(where: { $0 != chatId })
+            if let cId = candidateId, let oldActivity = activeActivities.removeValue(forKey: cId) {
+                activityStartTimes.removeValue(forKey: cId)
+                toolCounts.removeValue(forKey: cId)
+                Task {
+                    await Self.performImmediateEnd(activity: oldActivity)
+                }
             }
         }
 
@@ -210,6 +222,6 @@ final class LiveActivityManager {
     nonisolated private static func performImmediateEnd(
         activity: Activity<CanywhereActivityAttributes>
     ) async {
-        await activity.end(dismissalPolicy: .immediate)
+        await activity.end(nil, dismissalPolicy: .immediate)
     }
 }

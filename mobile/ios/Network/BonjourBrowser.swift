@@ -52,7 +52,10 @@ final class BonjourBrowser: ObservableObject {
                 var hosts: [DiscoveredHost] = []
                 for result in results {
                     if case let .service(name, _, _, _) = result.endpoint {
-                        let wsEndpoint = "ws://\(name).local:7890/rpc"
+                        let safeHost = name
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) ?? name
+                        let wsEndpoint = "ws://\(safeHost).local:7890/rpc"
                         hosts.append(DiscoveredHost(
                             id: name,
                             name: name,
