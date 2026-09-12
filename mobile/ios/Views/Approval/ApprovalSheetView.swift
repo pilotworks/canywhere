@@ -118,17 +118,21 @@ struct ApprovalSheetView: View {
                     // Diff view if file change
                     if let diff = request.payload.diff {
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("FILE CHANGES (DIFF)")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.secondary)
-
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                Text(diff)
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .padding(12)
+                            HStack(spacing: 6) {
+                                if let path = request.payload.path {
+                                    FileIconView(fileName: path, size: 14)
+                                    Text(path)
+                                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                } else {
+                                    Text("FILE CHANGES (DIFF)")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundStyle(.secondary)
+                                }
                             }
-                            .background(Color(red: 0.08, green: 0.09, blue: 0.11))
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+
+                            DiffContentView(patch: diff)
                         }
                     }
 

@@ -199,6 +199,42 @@ describe("MarkdownContent file link rendering", () => {
     expect(html).not.toContain("Preview");
     expect(html).not.toContain("<img");
   });
+
+  it("does not duplicate line numbers when link text already contains line number (EndpointInfo.swift:149)", () => {
+    const markdown = "Vị trí: [EndpointInfo.swift:149](file:///Users/tienpham/Work/entj-pham/codex-anywhere/canywhere/mobile/ios/Network/EndpointInfo.swift#L149)";
+    const html = ReactDOMServer.renderToStaticMarkup(<MarkdownContent content={markdown} />);
+
+    expect(html).not.toContain("EndpointInfo.swift:149:149");
+    expect(html).not.toContain(":149:149");
+    expect(html).toContain("EndpointInfo.swift:149");
+    expect(html).toContain('title="Preview /Users/tienpham/Work/entj-pham/codex-anywhere/canywhere/mobile/ios/Network/EndpointInfo.swift (line 149) in right sidebar"');
+  });
+
+  it("does not duplicate line numbers when single-line range #L149-L149 is provided", () => {
+    const markdown = "Vị trí: [EndpointInfo.swift](file:///workspace/EndpointInfo.swift#L149-L149)";
+    const html = ReactDOMServer.renderToStaticMarkup(<MarkdownContent content={markdown} />);
+
+    expect(html).not.toContain(":149-149");
+    expect(html).not.toContain(":149:149");
+    expect(html).toContain(":149");
+    expect(html).toContain('title="Preview /workspace/EndpointInfo.swift (line 149) in right sidebar"');
+  });
+
+  it("does not duplicate line numbers when link text has code formatting `EndpointInfo.swift:149`", () => {
+    const markdown = "Vị trí: [`EndpointInfo.swift:149`](file:///workspace/EndpointInfo.swift#L149)";
+    const html = ReactDOMServer.renderToStaticMarkup(<MarkdownContent content={markdown} />);
+
+    expect(html).not.toContain(":149:149");
+    expect(html).toContain("EndpointInfo.swift:149");
+  });
+
+  it("does not duplicate line numbers when href has trailing colon line number :149", () => {
+    const markdown = "Vị trí: [EndpointInfo.swift:149](file:///workspace/EndpointInfo.swift:149)";
+    const html = ReactDOMServer.renderToStaticMarkup(<MarkdownContent content={markdown} />);
+
+    expect(html).not.toContain(":149:149");
+    expect(html).toContain("EndpointInfo.swift:149");
+  });
 });
 
 describe("openFileInRightSidebar", () => {

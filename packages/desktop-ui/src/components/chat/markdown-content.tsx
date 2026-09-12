@@ -53,6 +53,16 @@ const LANG_TO_EXT: Record<string, string> = {
   graphql: "graphql",
 };
 
+export function extractNodeText(node: React.ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(extractNodeText).join("");
+  if (React.isValidElement(node) && (node.props as any)?.children) {
+    return extractNodeText((node.props as any).children);
+  }
+  return "";
+}
+
 const CodeBlock: React.FC<{
   className?: string;
   children?: React.ReactNode;
@@ -68,16 +78,7 @@ const CodeBlock: React.FC<{
   const rawLang = match ? match[1] : "";
 
   const codeString = useMemo(() => {
-    function extractText(n: React.ReactNode): string {
-      if (typeof n === "string") return n;
-      if (typeof n === "number") return String(n);
-      if (Array.isArray(n)) return n.map(extractText).join("");
-      if (React.isValidElement(n) && (n.props as any)?.children) {
-        return extractText((n.props as any).children);
-      }
-      return "";
-    }
-    const extracted = extractText(children) || (typeof children === "string" ? children : "");
+    const extracted = extractNodeText(children);
     return extracted.replace(/\n$/, "");
   }, [children]);
 
@@ -269,19 +270,25 @@ const MarkdownLink: React.FC<{
       openFileInRightSidebar(fileLinkInfo);
     };
 
+    const startLine = fileLinkInfo.lineRange?.start;
+    const endLine = fileLinkInfo.lineRange?.end;
+    const isRange = Boolean(endLine && endLine !== startLine);
+
     const titleText = `Preview ${fileLinkInfo.cleanPath}${
       fileLinkInfo.lineRange
-        ? ` (line ${fileLinkInfo.lineRange.start}${
-            fileLinkInfo.lineRange.end ? `-${fileLinkInfo.lineRange.end}` : ""
-          })`
+        ? ` (line ${startLine}${isRange ? `-${endLine}` : ""})`
         : ""
     } in right sidebar`;
 
-    const childrenStr = typeof children === "string" ? children : "";
+    const childrenStr = extractNodeText(children).trim();
     const hasLineNumber =
       Boolean(fileLinkInfo.lineRange) &&
-      (childrenStr.includes(":" + fileLinkInfo.lineRange?.start) ||
-        childrenStr.includes("#L" + fileLinkInfo.lineRange?.start));
+      (Boolean(startLine && childrenStr.includes(":" + startLine)) ||
+        Boolean(startLine && childrenStr.includes("#L" + startLine)) ||
+        Boolean(startLine && childrenStr.includes(":L" + startLine)) ||
+        Boolean(startLine && new RegExp(`\\bL?${startLine}\\b`).test(childrenStr)) ||
+        /:\d+(?:[-–]\d+|:\d+)?\s*$/.test(childrenStr) ||
+        /#L?\d+(?:[-–]L?\d+)?\s*$/i.test(childrenStr));
 
     return (
       <a
@@ -299,8 +306,8 @@ const MarkdownLink: React.FC<{
         </span>
         {fileLinkInfo.lineRange && !hasLineNumber && (
           <span className="text-[11px] text-[var(--muted-foreground)] opacity-75 font-mono">
-            :{fileLinkInfo.lineRange.start}
-            {fileLinkInfo.lineRange.end ? `-${fileLinkInfo.lineRange.end}` : ""}
+            :{startLine}
+            {isRange ? `-${endLine}` : ""}
           </span>
         )}
       </a>

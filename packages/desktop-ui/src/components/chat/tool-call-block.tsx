@@ -108,39 +108,45 @@ export const ToolCallBlock: React.FC<ToolCallBlockProps> = ({
         <span className="text-[12px] shrink-0 transition-colors font-normal">
           {action.verb}
         </span>
-        {action.target && (
-          fileLinkInfo ? (
-            <span
-              onClick={handleFileClick}
-              className="inline-flex items-center gap-1 font-mono text-[11.5px] px-1 py-0.2 rounded transition-colors cursor-pointer group/link max-w-[calc(100%-90px)] truncate text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10"
-              title={`Preview ${fileLinkInfo.cleanPath}${
+        {action.target &&
+          (fileLinkInfo ? (
+            (() => {
+              const startLine = fileLinkInfo.lineRange?.start;
+              const endLine = fileLinkInfo.lineRange?.end;
+              const isRange = Boolean(endLine && endLine !== startLine);
+              const titleText = `Preview ${fileLinkInfo.cleanPath}${
                 fileLinkInfo.lineRange
-                  ? ` (line ${fileLinkInfo.lineRange.start}${
-                      fileLinkInfo.lineRange.end ? `-${fileLinkInfo.lineRange.end}` : ""
-                    })`
+                  ? ` (line ${startLine}${isRange ? `-${endLine}` : ""})`
                   : ""
-              } in right sidebar`}
-            >
-              <FileIcon
-                fileName={fileLinkInfo.fileName}
-                className="w-3.5 h-3.5 inline-block shrink-0 pointer-events-none"
-              />
-              <span className="truncate">
-                {action.target}
-              </span>
-              {fileLinkInfo.lineRange && !action.target.includes(":" + fileLinkInfo.lineRange.start) && (
-                <span className="text-[11px] text-[var(--muted-foreground)] opacity-75 font-mono shrink-0">
-                  :{fileLinkInfo.lineRange.start}
-                  {fileLinkInfo.lineRange.end ? `-${fileLinkInfo.lineRange.end}` : ""}
+              } in right sidebar`;
+
+              return (
+                <span
+                  onClick={handleFileClick}
+                  className="inline-flex items-center gap-1 font-mono text-[11.5px] px-1 py-0.2 rounded transition-colors cursor-pointer group/link max-w-[calc(100%-90px)] truncate text-[var(--foreground)] hover:bg-[var(--secondary)] dark:hover:bg-white/10"
+                  title={titleText}
+                >
+                  <FileIcon
+                    fileName={fileLinkInfo.fileName}
+                    className="w-3.5 h-3.5 inline-block shrink-0 pointer-events-none"
+                  />
+                  <span className="truncate">
+                    {action.target}
+                  </span>
+                  {fileLinkInfo.lineRange && !action.target.includes(":" + startLine) && (
+                    <span className="text-[11px] text-[var(--muted-foreground)] opacity-75 font-mono shrink-0">
+                      :{startLine}
+                      {isRange ? `-${endLine}` : ""}
+                    </span>
+                  )}
                 </span>
-              )}
-            </span>
+              );
+            })()
           ) : (
             <span className={action.isMono ? "font-mono text-[11.5px] opacity-90 truncate" : "text-[12px] opacity-90 truncate"}>
               {action.target}
             </span>
-          )
-        )}
+          ))}
         {isRunning && (
           <span className="text-amber-400/90 text-[11px] font-mono animate-pulse">
             ...

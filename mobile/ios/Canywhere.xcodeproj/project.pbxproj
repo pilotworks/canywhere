@@ -44,6 +44,7 @@
 		AA4099ECD4B31CFEA5899600 /* ManualConnectSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603A93F56AF5B6BCF02D94FD /* ManualConnectSheet.swift */; };
 		AC3FFCC1565BC563AF1FD1A9 /* WireMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12FBC1FEA0D67A5E523C11BA /* WireMessages.swift */; };
 		B74CD8C2228D903854D604CD /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E198AA0AF75D5FF4FAE43127 /* WidgetKit.framework */; };
+		B84FCC4EBC41A2A6F2E26E21 /* FileIconView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E3F4C78B123EA230B5D1F8 /* FileIconView.swift */; };
 		B84FCC4EBC41A2A6F2E26E20 /* UITheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65E3F4C78B123EA230B5D1F9 /* UITheme.swift */; };
 		BDEF0C61FE023CEAB7F555BB /* AppIntents.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD18E78E1B712D9A1EDA59EB /* AppIntents.framework */; };
 		C064697458F86CD387B25686 /* CanywhereActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E58234FC9082F3129DCAC5E /* CanywhereActivityAttributes.swift */; };
@@ -102,6 +103,7 @@
 		603A93F56AF5B6BCF02D94FD /* ManualConnectSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManualConnectSheet.swift; sourceTree = "<group>"; };
 		615D978A3D436E62F92F14F7 /* ModelExtensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelExtensions.swift; sourceTree = "<group>"; };
 		631A2A0FD250141EED733DC0 /* CanywhereLiveActivityView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanywhereLiveActivityView.swift; sourceTree = "<group>"; };
+		65E3F4C78B123EA230B5D1F8 /* FileIconView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileIconView.swift; sourceTree = "<group>"; };
 		65E3F4C78B123EA230B5D1F9 /* UITheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UITheme.swift; sourceTree = "<group>"; };
 		6CEBBFD111D6794A3447CA0D /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		723F5268574ADF80B59A62C9 /* MarkdownContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownContentView.swift; sourceTree = "<group>"; };
@@ -204,6 +206,7 @@
 		1CF0778797AA872A1852EE00 /* Common */ = {
 			isa = PBXGroup;
 			children = (
+				65E3F4C78B123EA230B5D1F8 /* FileIconView.swift */,
 				7DD43B6FE06DF4AA017868C7 /* HostConnectionsSheet.swift */,
 				65E3F4C78B123EA230B5D1F9 /* UITheme.swift */,
 			);
@@ -503,6 +506,7 @@
 				4034303035A941D33BB67D6E /* RootView.swift in Sources */,
 				4F97E3CC350108362A6D240D /* SettingsView.swift in Sources */,
 				E97D6130614027734D1FA18A /* ToolCallBlockView.swift in Sources */,
+				B84FCC4EBC41A2A6F2E26E21 /* FileIconView.swift in Sources */,
 				B84FCC4EBC41A2A6F2E26E20 /* UITheme.swift in Sources */,
 				AC3FFCC1565BC563AF1FD1A9 /* WireMessages.swift in Sources */,
 				A347002806DCE85C654203AA /* WorkspacesCarouselView.swift in Sources */,

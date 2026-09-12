@@ -136,6 +136,17 @@ struct ReasoningBlockView: View {
                     )
                     .padding(.vertical, 4)
                     .padding(.trailing, 4)
+                    .background(
+                        GeometryReader { geo in
+                            Color.clear.preference(key: ContentHeightPreferenceKey.self, value: geo.size.height)
+                        }
+                    )
+                }
+                .frame(height: contentHeight > 0 ? min(contentHeight, maxHeight) : nil)
+                .frame(maxHeight: maxHeight)
+                .scrollDisabled(contentHeight <= maxHeight)
+                .onPreferenceChange(ContentHeightPreferenceKey.self) { newHeight in
+                    contentHeight = newHeight
                 }
                 .padding(.leading, 12)
                 .overlay(alignment: .leading) {
@@ -144,7 +155,6 @@ struct ReasoningBlockView: View {
                         .frame(width: 2)
                         .padding(.vertical, 2)
                 }
-                .frame(maxHeight: maxHeight)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }

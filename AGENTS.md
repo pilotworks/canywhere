@@ -155,6 +155,12 @@ When working on or refining the OpenAI Codex integration:
   - Transform `item/commandExecution/requestApproval` and `item/fileChange/requestApproval` into Canywhere `ApprovalRequest` objects.
   - When the user decides (`accept`, `decline`, etc.), send back the JSON-RPC response with matching ID over stdio.
 
+### 5.1 Google Antigravity Adapter Guidelines (`AgyAdapter`)
+
+When working with or running under Google Antigravity CLI (`agy`):
+- **Tool Calling Contracts**: When calling `find_by_name`, `Pattern` is strictly a required parameter in the tool schema. You MUST ALWAYS provide `Pattern` (e.g. `Pattern: "*"` or glob pattern), even when specifying `Extensions` or `SearchDirectory`. Omitting `Pattern` triggers validation errors in the runtime.
+- **Stream-JSON Multiplexing**: `agy` runs non-interactively in print/stream-json mode; tool validation errors must be detected and surfaced clearly with actionable status and error feedback.
+
 ---
 
 ## 6. Remote Security & Approval Guardrails

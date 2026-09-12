@@ -584,11 +584,18 @@ impl CliAdapter for AgyAdapter {
                                                 .entry(chat_id_str.clone())
                                                 .or_default()
                                                 .push(block);
-                                        } else if state == "DONE" {
-                                            let output = tool_info
+                                        } else if state == "DONE" || state == "FAILED" || state == "ERROR" {
+                                            let error_str = tool_info
+                                                .and_then(|ti| ti.get("error").or_else(|| ti.get("error_message")))
+                                                .or_else(|| su.get("error"))
+                                                .and_then(|e| e.as_str())
+                                                .map(|s| s.to_string());
+                                            let raw_output = tool_info
                                                 .and_then(|ti| ti.get("output"))
                                                 .and_then(|o| o.as_str())
                                                 .map(|s| s.to_string());
+                                            let is_err = state == "FAILED" || state == "ERROR" || error_str.is_some() || (raw_output.is_none() && state != "DONE");
+                                            let output = raw_output.or_else(|| error_str.clone());
 
                                             let block = if tool_name == "run_command" {
                                                 let cmd = tool_info
@@ -600,8 +607,12 @@ impl CliAdapter for AgyAdapter {
                                                     command: cmd.to_string(),
                                                     cwd: cmd_cwd,
                                                     output,
-                                                    exit_code: Some(0),
-                                                    status: CommandExecStatus::Completed,
+                                                    exit_code: if is_err { Some(1) } else { Some(0) },
+                                                    status: if is_err {
+                                                        CommandExecStatus::Failed
+                                                    } else {
+                                                        CommandExecStatus::Completed
+                                                    },
                                                 }
                                             } else {
                                                 let args = tool_info
@@ -613,7 +624,11 @@ impl CliAdapter for AgyAdapter {
                                                     name: tool_name.to_string(),
                                                     args,
                                                     output,
-                                                    status: ToolCallStatus::Completed,
+                                                    status: if is_err {
+                                                        ToolCallStatus::Failed
+                                                    } else {
+                                                        ToolCallStatus::Completed
+                                                    },
                                                 }
                                             };
 
@@ -660,45 +675,13 @@ impl CliAdapter for AgyAdapter {
                                     .and_then(|s| s.as_str())
                                     .unwrap_or("SUCCESS");
 
-                                let chat_status = if status == "SUCCESS" {
-                                    ChatStatus::Idle
-                                } else {
-                                    ChatStatus::Error
-                                };
-
-                                let mut error_msg: Option<String> = None;
-                                if chat_status == ChatStatus::Error {
-                                    let stderr_guard = stderr_lines_for_reader.lock().await;
-                                    let detailed_err = stderr_guard
-                                        .iter()
-                                        .rev()
-                                        .find(|l| {
-                                            let lower = l.to_lowercase();
-                                            lower.contains("error")
-                                                || lower.contains("failed")
-                                                || lower.contains("invalid")
-                                        })
-                                        .cloned()
-                                        .or_else(|| stderr_guard.last().cloned());
-
-                                    let val_err = val
-                                        .get("result")
-                                        .and_then(|r| r.get("error"))
-                                        .and_then(|e| e.as_str())
-                                        .map(|s| s.to_string());
-
-                                    error_msg = match (detailed_err, val_err) {
-                                        (Some(detail), Some(base)) => {
-                                            if detail.contains(&base) || base == "context canceled" {
-                                                Some(detail)
-                                            } else {
-                                                Some(format!("{}: {}", base, detail))
-                                            }
+                                let mut final_text = chat_text.lock().await.get(&chat_id_str).cloned();
+                                if final_text.as_ref().map_or(true, |t| t.trim().is_empty()) {
+                                    if let Some(resp) = val.get("result").and_then(|r| r.get("response")).and_then(|r| r.as_str()) {
+                                        if !resp.trim().is_empty() {
+                                            final_text = Some(resp.to_string());
                                         }
-                                        (Some(detail), None) => Some(detail),
-                                        (None, Some(base)) => Some(base),
-                                        (None, None) => Some("Turn failed in Antigravity".to_string()),
-                                    };
+                                    }
                                 }
 
                                 let active_conv_id = captured_conv_id_clone
@@ -743,7 +726,6 @@ impl CliAdapter for AgyAdapter {
                                     }
                                 }
 
-                                let final_text = chat_text.lock().await.get(&chat_id_str).cloned();
                                 let mut final_blocks = chat_blocks
                                     .lock()
                                     .await
@@ -767,15 +749,85 @@ impl CliAdapter for AgyAdapter {
                                     }
                                 }
 
+                                let has_failed_block = final_blocks.iter().any(|b| match b {
+                                    MessageBlock::ToolCall { status, .. } => *status == ToolCallStatus::Failed,
+                                    MessageBlock::CommandExec { status, .. } => *status == CommandExecStatus::Failed,
+                                    _ => false,
+                                });
+
+                                let is_empty_turn = final_text.as_ref().map_or(true, |t| t.trim().is_empty())
+                                    && final_blocks.iter().all(|b| !matches!(b, MessageBlock::Text { .. }));
+
+                                let chat_status = if status == "SUCCESS" && !has_failed_block && !is_empty_turn {
+                                    ChatStatus::Idle
+                                } else {
+                                    ChatStatus::Error
+                                };
+
+                                let mut error_msg: Option<String> = None;
+                                if chat_status == ChatStatus::Error {
+                                    let stderr_guard = stderr_lines_for_reader.lock().await;
+                                    let detailed_err = stderr_guard
+                                        .iter()
+                                        .rev()
+                                        .find(|l| {
+                                             let lower = l.to_lowercase();
+                                             lower.contains("error")
+                                                 || lower.contains("failed")
+                                                 || lower.contains("invalid")
+                                         })
+                                         .cloned()
+                                         .or_else(|| stderr_guard.last().cloned());
+
+                                    let val_err = val
+                                         .get("result")
+                                         .and_then(|r| r.get("error"))
+                                         .and_then(|e| e.as_str())
+                                         .map(|s| s.to_string());
+
+                                    error_msg = match (detailed_err, val_err) {
+                                         (Some(detail), Some(base)) => {
+                                             if detail.contains(&base) || base == "context canceled" {
+                                                 Some(detail)
+                                             } else {
+                                                 Some(format!("{}: {}", base, detail))
+                                             }
+                                         }
+                                         (Some(detail), None) => Some(detail),
+                                         (None, Some(base)) => Some(base),
+                                         (None, None) => {
+                                             if let Some(failed_b) = final_blocks.iter().rev().find(|b| match b {
+                                                 MessageBlock::ToolCall { status, .. } => *status == ToolCallStatus::Failed,
+                                                 MessageBlock::CommandExec { status, .. } => *status == CommandExecStatus::Failed,
+                                                 _ => false,
+                                             }) {
+                                                 match failed_b {
+                                                     MessageBlock::ToolCall { name, output, .. } => {
+                                                         Some(output.clone().unwrap_or_else(|| format!("Tool '{}' failed", name)))
+                                                     }
+                                                     MessageBlock::CommandExec { command, output, .. } => {
+                                                         Some(output.clone().unwrap_or_else(|| format!("Command '{}' failed", command)))
+                                                     }
+                                                     _ => Some("Action failed in Antigravity".to_string()),
+                                                 }
+                                             } else if is_empty_turn {
+                                                 Some("Agent turn completed without generating a response".to_string())
+                                             } else {
+                                                 Some("Turn failed in Antigravity".to_string())
+                                             }
+                                         }
+                                     };
+                                }
+
                                 let _ = event_tx.send(AgentEvent::TurnCompleted {
-                                    chat_id: chat_id_str.clone(),
-                                    message_id: msg_id_str.clone(),
-                                    turn_id: turn_id_str.clone(),
-                                    status: chat_status,
-                                    blocks: final_blocks,
-                                    text_content: final_text,
-                                    reasoning_content: reasoning,
-                                    error: error_msg,
+                                     chat_id: chat_id_str.clone(),
+                                     message_id: msg_id_str.clone(),
+                                     turn_id: turn_id_str.clone(),
+                                     status: chat_status,
+                                     blocks: final_blocks,
+                                     text_content: final_text,
+                                     reasoning_content: reasoning,
+                                     error: error_msg,
                                 });
 
                                 chat_active_turn.lock().await.remove(&chat_id_str);

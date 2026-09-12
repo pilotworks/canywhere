@@ -30,14 +30,18 @@ struct MessageBubbleView: View, Equatable {
         VStack(alignment: .trailing, spacing: 6) {
             ForEach(Array(message.blocks.enumerated()), id: \.offset) { _, block in
                 if let content = block.content {
-                    Text(LocalizedStringKey(content))
-                        .font(.body)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(Theme.userBubbleGradient)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .shadow(color: Color.blue.opacity(0.2), radius: 6, x: 0, y: 3)
+                    MarkdownInlineTextView(
+                        text: content,
+                        badgeColor: Color.white.opacity(0.22),
+                        foregroundColor: .white
+                    )
+                    .font(.body)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(Theme.userBubbleGradient)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: Color.blue.opacity(0.2), radius: 6, x: 0, y: 3)
                 }
             }
         }

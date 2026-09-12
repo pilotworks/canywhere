@@ -192,7 +192,10 @@ export function parseFileLink(href?: string | null): ParsedFileLink | null {
     const m = hash.match(/^L?(\d+)(?:[-–]L?(\d+))?$/i);
     if (m) {
       const start = parseInt(m[1], 10);
-      const end = m[2] ? parseInt(m[2], 10) : undefined;
+      let end = m[2] ? parseInt(m[2], 10) : undefined;
+      if (end === start) {
+        end = undefined;
+      }
       if (!isNaN(start)) {
         lineRange = { start, end };
       }
@@ -209,7 +212,10 @@ export function parseFileLink(href?: string | null): ParsedFileLink | null {
       const lineMatch = queryStr.match(/(?:line|L)=(\d+)(?:&(?:end|to)=(\d+))?/i);
       if (lineMatch) {
         const start = parseInt(lineMatch[1], 10);
-        const end = lineMatch[2] ? parseInt(lineMatch[2], 10) : undefined;
+        let end = lineMatch[2] ? parseInt(lineMatch[2], 10) : undefined;
+        if (end === start) {
+          end = undefined;
+        }
         if (!isNaN(start)) {
           lineRange = { start, end };
         }
@@ -217,14 +223,18 @@ export function parseFileLink(href?: string | null): ParsedFileLink | null {
     }
   }
 
-  // 3. Extract trailing colon line numbers (e.g. path/to/file.ts:15 or :15:5)
-  const colonMatch = withoutQuery.match(/:(\d+)(?::(\d+))?$/);
+  // 3. Extract trailing colon line numbers (e.g. path/to/file.ts:15 or :15:5 or :15-20)
+  const colonMatch = withoutQuery.match(/:(\d+)(?:[-–](\d+)|:(\d+))?$/);
   let cleanPath = withoutQuery;
   if (colonMatch) {
     if (!lineRange) {
       const start = parseInt(colonMatch[1], 10);
+      let end = colonMatch[2] ? parseInt(colonMatch[2], 10) : undefined;
+      if (end === start) {
+        end = undefined;
+      }
       if (!isNaN(start)) {
-        lineRange = { start };
+        lineRange = { start, end };
       }
     }
     cleanPath = withoutQuery.slice(0, colonMatch.index);

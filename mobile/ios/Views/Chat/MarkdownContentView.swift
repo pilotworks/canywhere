@@ -425,9 +425,11 @@ struct CodeBlockView: View {
             // Header Bar
             HStack(spacing: 8) {
                 HStack(spacing: 5) {
-                    Image(systemName: languageIcon)
-                        .font(.system(size: isReasoning ? 9 : 10))
-                        .foregroundStyle(.secondary)
+                    FileIconView(
+                        language: displayLanguage,
+                        size: isReasoning ? 11 : 13,
+                        fallbackSystemName: languageIcon
+                    )
 
                     Text(displayLanguage)
                         .font(.system(size: isReasoning ? 10 : 11, weight: .medium, design: .monospaced))
@@ -648,12 +650,32 @@ struct HeadingView: View {
     var isReasoning: Bool = false
 
     var body: some View {
-        Text(LocalizedStringKey(text))
-            .font(headingFont)
-            .foregroundStyle(isReasoning ? .secondary : .primary)
-            .padding(.top, isReasoning ? 2 : 4)
-            .padding(.bottom, 1)
-            .textSelection(.enabled)
+        MarkdownInlineTextView(
+            text: text,
+            isReasoning: isReasoning,
+            baseFont: headingFont,
+            baseFontSize: headingFontSize
+        )
+        .foregroundStyle(isReasoning ? .secondary : .primary)
+        .padding(.top, isReasoning ? 2 : 4)
+        .padding(.bottom, 1)
+        .textSelection(.enabled)
+    }
+
+    private var headingFontSize: CGFloat {
+        if isReasoning {
+            switch level {
+            case 1: return 13
+            case 2: return 12
+            default: return 11
+            }
+        } else {
+            switch level {
+            case 1: return 17
+            case 2: return 15
+            default: return 14
+            }
+        }
     }
 
     private var headingFont: Font {
@@ -678,8 +700,7 @@ struct ParagraphView: View {
     var isReasoning: Bool = false
 
     var body: some View {
-        Text(LocalizedStringKey(text))
-            .font(isReasoning ? .system(size: 11, design: .monospaced) : .body)
+        MarkdownInlineTextView(text: text, isReasoning: isReasoning)
             .foregroundStyle(isReasoning ? .secondary : .primary)
             .lineSpacing(isReasoning ? 2 : 3)
             .textSelection(.enabled)
@@ -700,8 +721,7 @@ struct BulletListView: View {
                         .foregroundStyle(.secondary)
                         .frame(width: 10, alignment: .center)
 
-                    Text(LocalizedStringKey(item))
-                        .font(isReasoning ? .system(size: 11, design: .monospaced) : .body)
+                    MarkdownInlineTextView(text: item, isReasoning: isReasoning)
                         .foregroundStyle(isReasoning ? .secondary : .primary)
                         .lineSpacing(isReasoning ? 2 : 3)
                         .textSelection(.enabled)
@@ -726,8 +746,7 @@ struct OrderedListView: View {
                         .foregroundStyle(.secondary)
                         .frame(minWidth: 16, alignment: .leading)
 
-                    Text(LocalizedStringKey(item.text))
-                        .font(isReasoning ? .system(size: 11, design: .monospaced) : .body)
+                    MarkdownInlineTextView(text: item.text, isReasoning: isReasoning)
                         .foregroundStyle(isReasoning ? .secondary : .primary)
                         .lineSpacing(isReasoning ? 2 : 3)
                         .textSelection(.enabled)
@@ -753,8 +772,7 @@ struct TaskListView: View {
                         .frame(width: 14, height: 14)
                         .padding(.top, 2)
 
-                    Text(LocalizedStringKey(item.text))
-                        .font(isReasoning ? .system(size: 11, design: .monospaced) : .body)
+                    MarkdownInlineTextView(text: item.text, isReasoning: isReasoning)
                         .foregroundStyle(item.isDone ? .secondary : (isReasoning ? .secondary : .primary))
                         .strikethrough(item.isDone, color: .secondary)
                         .lineSpacing(isReasoning ? 2 : 3)
@@ -778,8 +796,7 @@ struct BlockquoteView: View {
                 .frame(width: 3)
                 .clipShape(Capsule())
 
-            Text(LocalizedStringKey(text))
-                .font(isReasoning ? .system(size: 11, design: .monospaced) : .body)
+            MarkdownInlineTextView(text: text, isReasoning: isReasoning)
                 .italic()
                 .foregroundStyle(.secondary)
                 .lineSpacing(isReasoning ? 2 : 3)
@@ -802,12 +819,16 @@ struct TableBlockView: View {
                 // Header Row
                 HStack(spacing: 0) {
                     ForEach(Array(headers.enumerated()), id: \.offset) { idx, header in
-                        Text(LocalizedStringKey(header))
-                            .font(.system(size: isReasoning ? 10 : 12, weight: .semibold))
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .frame(minWidth: 80, alignment: .leading)
+                        MarkdownInlineTextView(
+                            text: header,
+                            isReasoning: isReasoning,
+                            baseFont: .system(size: isReasoning ? 10 : 12, weight: .semibold),
+                            baseFontSize: isReasoning ? 10 : 12
+                        )
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .frame(minWidth: 80, alignment: .leading)
                         if idx < headers.count - 1 {
                             Divider()
                         }
@@ -821,12 +842,16 @@ struct TableBlockView: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { rIdx, row in
                     HStack(spacing: 0) {
                         ForEach(Array(row.enumerated()), id: \.offset) { cIdx, cell in
-                            Text(LocalizedStringKey(cell))
-                                .font(.system(size: isReasoning ? 10 : 12))
-                                .foregroundStyle(isReasoning ? .secondary : .primary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .frame(minWidth: 80, alignment: .leading)
+                            MarkdownInlineTextView(
+                                text: cell,
+                                isReasoning: isReasoning,
+                                baseFont: .system(size: isReasoning ? 10 : 12),
+                                baseFontSize: isReasoning ? 10 : 12
+                            )
+                            .foregroundStyle(isReasoning ? .secondary : .primary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .frame(minWidth: 80, alignment: .leading)
                             if cIdx < row.count - 1 {
                                 Divider()
                             }
@@ -844,5 +869,367 @@ struct TableBlockView: View {
             )
         }
         .padding(.vertical, isReasoning ? 2 : 4)
+    }
+}
+
+// MARK: - Inline Markdown & File Link Formatting
+
+struct InlineFileDetection {
+    let cleanPath: String
+    let fileName: String
+    let lineRange: String?
+}
+
+@MainActor
+enum InlineFileDetector {
+    private static let knownExtensionlessFiles: Set<String> = [
+        "dockerfile", "containerfile", "makefile", "gnumakefile", "justfile",
+        "procfile", "gemfile", "rakefile", "brewfile", "vagrantfile", "tiltfile",
+        "caddyfile", "jenkinsfile", "fastfile", "podfile", "cartfile", "artisan",
+        "gradlew", "mvnw", "license", "licence", "copying", "readme", "changelog",
+        "contributing", "security", "code_of_conduct", "cargo.lock", "bun.lock",
+        "yarn.lock", "package-lock.json", "pnpm-lock.yaml", "poetry.lock"
+    ]
+
+    private static let trailingLineRegex = try? NSRegularExpression(
+        pattern: #"(?::|#L?)(\d+)(?:[-–]L?(\d+))?$"#,
+        options: []
+    )
+
+    static func detect(from raw: String) -> InlineFileDetection? {
+        var str = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if (str.hasPrefix("\"") && str.hasSuffix("\"")) || (str.hasPrefix("'") && str.hasSuffix("'")) {
+            str = String(str.dropFirst().dropLast())
+        }
+        guard !str.isEmpty else { return nil }
+
+        if str.hasPrefix("http://") || str.hasPrefix("https://") {
+            return nil
+        }
+
+        // Avoid method calls / expressions like .equatable(), foo(), bar()
+        if str.hasSuffix("()") || str.hasSuffix(")") || str.hasSuffix("]") || str.hasSuffix("}") {
+            return nil
+        }
+
+        var isExplicitFile = false
+        if str.hasPrefix("file://") {
+            isExplicitFile = true
+            str = String(str.dropFirst(7))
+            if str.hasPrefix("///") {
+                str = String(str.dropFirst(2))
+            }
+        }
+
+        var lineRange: String? = nil
+        var withoutLine = str
+        let nsStr = str as NSString
+        let fullRange = NSRange(location: 0, length: nsStr.length)
+        if let regex = trailingLineRegex, let match = regex.firstMatch(in: str, options: [], range: fullRange) {
+            if let matchRange = Range(match.range, in: str) {
+                let startRange = match.range(at: 1)
+                let endRange = match.range(at: 2)
+                let start = (startRange.location != NSNotFound) ? nsStr.substring(with: startRange) : ""
+                let end = (endRange.location != NSNotFound) ? nsStr.substring(with: endRange) : ""
+                if !start.isEmpty {
+                    lineRange = end.isEmpty ? ":\(start)" : ":\(start)-\(end)"
+                }
+                withoutLine = String(str[..<matchRange.lowerBound])
+            }
+        }
+
+        // Handle query params like ?line=10 or ?line=10&end=20
+        if let qIdx = withoutLine.firstIndex(of: "?") {
+            let queryStr = String(withoutLine[withoutLine.index(after: qIdx)...])
+            withoutLine = String(withoutLine[..<qIdx])
+            if lineRange == nil {
+                if let qRegex = try? NSRegularExpression(pattern: #"(?:line|L)=(\d+)(?:&(?:end|to)=(\d+))?"#, options: [.caseInsensitive]),
+                   let qMatch = qRegex.firstMatch(in: queryStr, options: [], range: NSRange(location: 0, length: queryStr.utf16.count)) {
+                    let startRange = qMatch.range(at: 1)
+                    let endRange = qMatch.range(at: 2)
+                    let nsQ = queryStr as NSString
+                    let start = (startRange.location != NSNotFound) ? nsQ.substring(with: startRange) : ""
+                    let end = (endRange.location != NSNotFound) ? nsQ.substring(with: endRange) : ""
+                    if !start.isEmpty {
+                        lineRange = end.isEmpty ? ":\(start)" : ":\(start)-\(end)"
+                    }
+                }
+            }
+        }
+
+        let baseName = withoutLine.split(whereSeparator: { $0 == "/" || $0 == "\\" }).last.map(String.init) ?? withoutLine
+        guard !baseName.isEmpty else { return nil }
+        let lowerName = baseName.lowercased()
+
+        var isFile = isExplicitFile
+
+        if !isFile {
+            if knownExtensionlessFiles.contains(lowerName) {
+                isFile = true
+            } else if baseName.hasPrefix(".") && baseName.count > 1 && !baseName.hasSuffix(".") {
+                let ext = String(baseName.dropFirst()).lowercased()
+                if ["gitignore", "gitattributes", "editorconfig", "env", "npmrc", "dockerignore", "prettierrc", "eslintrc"].contains(ext) {
+                    isFile = true
+                }
+            } else if baseName.range(of: #"\.[a-zA-Z0-9_-]{1,10}$"#, options: .regularExpression) != nil {
+                if !lowerName.allSatisfy({ $0.isNumber || $0 == "." }) && !lowerName.contains("()") {
+                    isFile = true
+                }
+            } else if (str.hasPrefix("./") || str.hasPrefix("../") || str.hasPrefix("/") || str.contains("/")) &&
+                        !str.contains(" ") &&
+                        str.count > 2 {
+                isFile = true
+            } else {
+                let resolved = FileIconResolver.shared.resolve(fileName: baseName)
+                if resolved != "default_file" {
+                    isFile = true
+                }
+            }
+        }
+
+        guard isFile else { return nil }
+
+        return InlineFileDetection(
+            cleanPath: withoutLine,
+            fileName: baseName,
+            lineRange: lineRange
+        )
+    }
+}
+
+@MainActor
+final class FileIconImageCache {
+    static let shared = FileIconImageCache()
+    private var cache = NSCache<NSString, UIImage>()
+
+    private init() {
+        cache.countLimit = 200
+    }
+
+    func icon(for fileName: String, size: CGFloat = 13) -> UIImage? {
+        let cacheKey = "\(fileName):\(Int(size * 2))" as NSString
+        if let cached = cache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        if let img = FileIconResolver.shared.iconImage(fileName: fileName, targetSize: size) {
+            cache.setObject(img, forKey: cacheKey)
+            return img
+        }
+
+        let lower = fileName.lowercased()
+        let sysName: String
+        let tintColor: UIColor
+        if lower.hasSuffix(".swift") {
+            sysName = "swift"
+            tintColor = .systemOrange
+        } else if lower.hasSuffix(".json") || lower.hasSuffix(".toml") || lower.hasSuffix(".yaml") || lower.hasSuffix(".yml") {
+            sysName = "curlybraces"
+            tintColor = .systemYellow
+        } else if lower.hasSuffix(".ts") || lower.hasSuffix(".tsx") || lower.hasSuffix(".js") || lower.hasSuffix(".jsx") {
+            sysName = "chevron.left.forwardslash.chevron.right"
+            tintColor = .systemBlue
+        } else if lower.hasSuffix(".rs") {
+            sysName = "gearshape.2"
+            tintColor = .systemOrange
+        } else if lower.hasSuffix(".py") {
+            sysName = "chevron.left.forwardslash.chevron.right"
+            tintColor = .systemGreen
+        } else if lower.hasSuffix(".sh") || lower.hasSuffix(".bash") || lower.hasSuffix(".zsh") {
+            sysName = "terminal"
+            tintColor = .systemGray
+        } else {
+            sysName = "doc.text"
+            tintColor = .secondaryLabel
+        }
+
+        let config = UIImage.SymbolConfiguration(pointSize: size * 0.85, weight: .medium)
+        let sysImg = UIImage(systemName: sysName, withConfiguration: config)?
+            .withTintColor(tintColor, renderingMode: .alwaysOriginal)
+
+        let imgSize = CGSize(width: size, height: size)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 3.0
+        let renderer = UIGraphicsImageRenderer(size: imgSize, format: format)
+        let rasterized = renderer.image { _ in
+            sysImg?.draw(in: CGRect(origin: .zero, size: imgSize))
+        }.withRenderingMode(.alwaysOriginal)
+
+        cache.setObject(rasterized, forKey: cacheKey)
+        return rasterized
+    }
+}
+
+final class TextWrapper: @unchecked Sendable {
+    let text: Text
+    init(_ text: Text) { self.text = text }
+}
+
+@MainActor
+final class MarkdownInlineCache {
+    static let shared = MarkdownInlineCache()
+    private var cache = NSCache<NSString, TextWrapper>()
+
+    private init() {
+        cache.countLimit = 500
+    }
+
+    func get(key: String) -> Text? {
+        cache.object(forKey: key as NSString)?.text
+    }
+
+    func set(key: String, text: Text) {
+        cache.setObject(TextWrapper(text), forKey: key as NSString)
+    }
+}
+
+fileprivate extension NSTextCheckingResult {
+    func safeRange(at index: Int) -> NSRange {
+        guard index >= 0 && index < numberOfRanges else {
+            return NSRange(location: NSNotFound, length: 0)
+        }
+        return range(at: index)
+    }
+}
+
+enum MarkdownTheme {
+    // Web inline code color: #a3752c (light) / #e5c98d (dark)
+    static let inlineCodeColor = Color(UIColor { trait in
+        trait.userInterfaceStyle == .dark
+            ? UIColor(red: 229/255.0, green: 201/255.0, blue: 141/255.0, alpha: 1.0)
+            : UIColor(red: 163/255.0, green: 117/255.0, blue: 44/255.0, alpha: 1.0)
+    })
+}
+
+struct MarkdownInlineTextView: View {
+    let text: String
+    var isReasoning: Bool = false
+    var baseFont: Font? = nil
+    var baseFontSize: CGFloat? = nil
+    var badgeColor: Color? = nil
+    var foregroundColor: Color? = nil
+
+    var body: some View {
+        renderText()
+    }
+
+    @MainActor
+    private func renderText() -> Text {
+        let defaultSize: CGFloat = isReasoning ? 11 : 14
+        let fontSize = baseFontSize ?? defaultSize
+        let codeFontSize = max(10, fontSize - 1.5)
+        let normalFont = baseFont ?? (isReasoning ? .system(size: 11, design: .monospaced) : .system(size: fontSize))
+        let codeColor: Color = foregroundColor ?? (isReasoning ? MarkdownTheme.inlineCodeColor.opacity(0.85) : MarkdownTheme.inlineCodeColor)
+
+        let cacheKey = "\(isReasoning ? "1" : "0"):\(fontSize):\(foregroundColor != nil ? "f" : "d"):\(text)"
+        if let cached = MarkdownInlineCache.shared.get(key: cacheKey) {
+            return cached
+        }
+
+        // Fast path: if no markdown formatting characters, return directly
+        if !text.contains("`") && !text.contains("*") && !text.contains("_") && !text.contains("~") && !text.contains("[") && !text.contains("file://") {
+            let plain = Text(text).font(normalFont)
+            MarkdownInlineCache.shared.set(key: cacheKey, text: plain)
+            return plain
+        }
+
+        // Autolink bare file URLs if not already enclosed
+        var processedText = text
+        if processedText.contains("file://") {
+            processedText = processedText.replacingOccurrences(
+                of: #"(?<![<(\]])(file:\/\/\/[^\s)<>]+)"#,
+                with: "<$1>",
+                options: .regularExpression
+            )
+        }
+
+        var options = AttributedString.MarkdownParsingOptions()
+        options.interpretedSyntax = .inlineOnlyPreservingWhitespace
+
+        guard var attr = try? AttributedString(markdown: processedText, options: options) else {
+            let fallback = Text(LocalizedStringKey(text)).font(normalFont)
+            MarkdownInlineCache.shared.set(key: cacheKey, text: fallback)
+            return fallback
+        }
+
+        // Pass 1: Apply fonts and colors across all runs
+        for run in attr.runs {
+            let range = run.range
+            let intent = run.inlinePresentationIntent ?? []
+            let isCode = intent.contains(.code)
+            let isBold = intent.contains(.stronglyEmphasized)
+            let isItalic = intent.contains(.emphasized)
+            let isFileLink = (run.link?.scheme == "file")
+
+            if isCode || isFileLink {
+                attr[range].font = .system(
+                    size: codeFontSize,
+                    weight: isBold ? .bold : .regular,
+                    design: .monospaced
+                )
+                attr[range].foregroundColor = codeColor
+            } else if isBold && isItalic {
+                attr[range].font = .system(size: fontSize, weight: .bold).italic()
+            } else if isBold {
+                attr[range].font = .system(size: fontSize, weight: .bold)
+            } else if isItalic {
+                attr[range].font = .system(size: fontSize).italic()
+            } else {
+                if isReasoning {
+                    attr[range].font = .system(size: fontSize, design: .monospaced)
+                } else if baseFont != nil {
+                    attr[range].font = .system(size: fontSize)
+                }
+            }
+        }
+
+        // Pass 2: Check if any run represents a file needing an icon
+        var hasFileRun = false
+        for run in attr.runs {
+            let content = String(attr[run.range].characters)
+            if run.link?.scheme == "file" || (run.inlinePresentationIntent?.contains(.code) == true && InlineFileDetector.detect(from: content) != nil) {
+                hasFileRun = true
+                break
+            }
+        }
+
+        if !hasFileRun {
+            let res = Text(attr).font(normalFont)
+            MarkdownInlineCache.shared.set(key: cacheKey, text: res)
+            return res
+        }
+
+        // Pass 3: Build composite Text with file icons
+        var composite: Text? = nil
+        func append(_ next: Text) {
+            if let cur = composite {
+                composite = cur + next
+            } else {
+                composite = next
+            }
+        }
+
+        for run in attr.runs {
+            let content = String(attr[run.range].characters)
+            var fileInfo: InlineFileDetection? = nil
+
+            if let link = run.link, link.scheme == "file" {
+                fileInfo = InlineFileDetector.detect(from: link.absoluteString) ?? InlineFileDetector.detect(from: content)
+            } else if run.inlinePresentationIntent?.contains(.code) == true {
+                fileInfo = InlineFileDetector.detect(from: content)
+            }
+
+            if let file = fileInfo,
+               let icon = FileIconImageCache.shared.icon(for: file.fileName, size: codeFontSize) {
+                let iconText = Text(Image(uiImage: icon).renderingMode(.original)).baselineOffset(-1.2) + Text("\u{00A0}")
+                append(iconText)
+            }
+
+            append(Text(AttributedString(attr[run.range])))
+        }
+
+        let res = composite ?? Text(attr).font(normalFont)
+        MarkdownInlineCache.shared.set(key: cacheKey, text: res)
+        return res
     }
 }

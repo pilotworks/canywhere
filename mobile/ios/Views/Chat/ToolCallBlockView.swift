@@ -302,9 +302,13 @@ struct ToolCallBlockView: View {
                         .foregroundStyle(.secondary)
 
                     if let icon = actionDetails.icon {
-                        Image(systemName: icon)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
+                        if icon == "doc.text", let target = actionDetails.target {
+                            FileIconView(fileName: target, size: 12.5, fallbackSystemName: "doc.text")
+                        } else {
+                            Image(systemName: icon)
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     if let target = actionDetails.target {
@@ -390,9 +394,13 @@ struct ToolCallBlockView: View {
                             .foregroundStyle(.secondary)
 
                         if let icon = actionDetails.icon {
-                            Image(systemName: icon)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
+                            if icon == "doc.text", let target = actionDetails.target {
+                                FileIconView(fileName: target, size: 12.5, fallbackSystemName: "doc.text")
+                            } else {
+                                Image(systemName: icon)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                            }
                         }
 
                         if let target = actionDetails.target {
