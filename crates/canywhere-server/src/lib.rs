@@ -5,6 +5,7 @@ pub mod git;
 pub mod rpc;
 pub mod security;
 pub mod server;
+pub mod watcher;
 
 use crate::adapters::CliAdapter;
 use std::sync::Arc;

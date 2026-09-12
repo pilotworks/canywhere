@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import { useChatStore } from "../src/store/index";
@@ -11,6 +11,15 @@ describe("Chat Message Queue Store & Tray", () => {
       chats: [{ id: "chat-1", title: "Test Chat", status: "running", createdAt: 1, updatedAt: 1 }],
       activeChatId: "chat-1",
       activeTurnId: { "chat-1": "turn-123" },
+      queuedMessages: {},
+    });
+  });
+
+  afterEach(() => {
+    useChatStore.setState({
+      chats: [],
+      activeChatId: null,
+      activeTurnId: {},
       queuedMessages: {},
     });
   });

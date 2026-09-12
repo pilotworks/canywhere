@@ -75,6 +75,7 @@ export interface WorkspaceState {
   workspaces: Workspace[];
   activeWorkspaceId: string | null;
   fileTrees: Record<string, FileTreeNode | null>; // workspaceId -> FileTreeNode
+  fileTreeVersion: Record<string, number>; // workspaceId -> version count for triggering re-render/refetch
   activeFile: { workspaceId: string; path: string; content: string } | null;
   setWorkspaces: (workspaces: Workspace[]) => void;
   addWorkspace: (workspace: Workspace) => void;
@@ -82,6 +83,7 @@ export interface WorkspaceState {
   removeWorkspace: (id: string) => void;
   setActiveWorkspaceId: (id: string | null) => void;
   setFileTree: (workspaceId: string, tree: FileTreeNode | null) => void;
+  invalidateFileTree: (workspaceId: string) => void;
   setActiveFile: (file: { workspaceId: string; path: string; content: string } | null) => void;
 }
 
@@ -89,6 +91,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   workspaces: [],
   activeWorkspaceId: null,
   fileTrees: {},
+  fileTreeVersion: {},
   activeFile: null,
   setWorkspaces: (workspaces) => set({ workspaces }),
   addWorkspace: (workspace) => set((s) => ({ workspaces: [workspace, ...s.workspaces] })),
@@ -104,6 +107,13 @@ export const useWorkspaceStore = create<WorkspaceState>((set) => ({
   setActiveWorkspaceId: (activeWorkspaceId) => set({ activeWorkspaceId }),
   setFileTree: (workspaceId, tree) =>
     set((s) => ({ fileTrees: { ...s.fileTrees, [workspaceId]: tree } })),
+  invalidateFileTree: (workspaceId) =>
+    set((s) => ({
+      fileTreeVersion: {
+        ...s.fileTreeVersion,
+        [workspaceId]: (s.fileTreeVersion[workspaceId] || 0) + 1,
+      },
+    })),
   setActiveFile: (activeFile) => set({ activeFile }),
 }));
 

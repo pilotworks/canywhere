@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use canywhere_protocol::models::{Device, DevicePlatform, DeviceTransport};
+use canywhere_protocol::models::{Device, DevicePlatform, DeviceTransport, WorkspaceCreateInput};
 use canywhere_protocol::rpc::*;
 use canywhere_server::adapters::{CodexAdapter, ProviderRegistry};
 use canywhere_server::db::repositories::RepositoryManager;
@@ -508,4 +508,91 @@ async fn test_turn_blocks_persistence() {
         }
         b => panic!("Expected Text block, got {:?}", b),
     }
+}
+
+#[tokio::test]
+async fn test_workspace_tree_deep_hierarchy_and_subpath() {
+    let temp_root = std::env::temp_dir().join(format!("canywhere_test_{}", nanoid::nanoid!(8)));
+    let deep_dir = temp_root.join("pkg").join("src").join("components").join("layout");
+    std::fs::create_dir_all(&deep_dir).unwrap();
+    std::fs::write(deep_dir.join("header.tsx"), "export const Header = () => null;").unwrap();
+    let empty_dir = temp_root.join("empty_folder");
+    std::fs::create_dir_all(&empty_dir).unwrap();
+
+    let db = Database::open_in_memory().unwrap();
+    let repo = Arc::new(RepositoryManager::new(db));
+    let pairing = Arc::new(PairingSecurityManager::new(Arc::clone(&repo), 7890));
+    let (adapter, _) = CodexAdapter::new("mock");
+    let (event_tx, _) = tokio::sync::broadcast::channel(100);
+    let mut registry = ProviderRegistry::new(event_tx);
+    registry.register(Arc::new(adapter));
+    let dispatcher = RpcDispatcher::new(Arc::clone(&repo), Arc::new(registry), pairing);
+
+    // Create workspace
+    let ws = repo
+        .create_workspace(WorkspaceCreateInput {
+            name: "Test WS".to_string(),
+            root_path: temp_root.to_string_lossy().to_string(),
+            sub_paths: None,
+            provider_id: "codex".to_string(),
+        })
+        .unwrap();
+
+    // 1. Query tree with max_depth = 2 (should truncate before reaching layout/header.tsx)
+    let req_depth2 = RpcRequestEnvelope {
+        id: RpcId::Number(1),
+        method: "workspace.tree".to_string(),
+        params: Some(serde_json::json!({
+            "workspaceId": ws.id,
+            "maxDepth": 2
+        })),
+    };
+    let res = dispatcher.dispatch(req_depth2).await;
+    assert!(res.error.is_none());
+    let tree_result: WorkspaceTreeResult = serde_json::from_value(res.result.unwrap()).unwrap();
+    let root = tree_result.root;
+
+    // Check empty_folder is genuinely empty
+    let empty_node = root.children.as_ref().unwrap().iter().find(|c| c.name == "empty_folder").unwrap();
+    assert_eq!(empty_node.children.as_ref().map(|v| v.len()), Some(0));
+
+    // Check pkg/src node at depth 2 has children: None (indicates has items, needs lazy-load)
+    let pkg_node = root.children.as_ref().unwrap().iter().find(|c| c.name == "pkg").unwrap();
+    let src_node = pkg_node.children.as_ref().unwrap().iter().find(|c| c.name == "src").unwrap();
+    assert!(src_node.children.is_none(), "Expected children to be None for un-expanded non-empty folder");
+
+    // 2. Query subtree via subPath: "pkg/src"
+    let req_sub = RpcRequestEnvelope {
+        id: RpcId::Number(2),
+        method: "workspace.tree".to_string(),
+        params: Some(serde_json::json!({
+            "workspaceId": ws.id,
+            "subPath": "/pkg/src",
+            "maxDepth": 4
+        })),
+    };
+    let res_sub = dispatcher.dispatch(req_sub).await;
+    assert!(res_sub.error.is_none());
+    let sub_result: WorkspaceTreeResult = serde_json::from_value(res_sub.result.unwrap()).unwrap();
+    let sub_root = sub_result.root;
+    let components_node = sub_root.children.as_ref().unwrap().iter().find(|c| c.name == "components").unwrap();
+    let layout_node = components_node.children.as_ref().unwrap().iter().find(|c| c.name == "layout").unwrap();
+    let header_file = layout_node.children.as_ref().unwrap().iter().find(|c| c.name == "header.tsx").unwrap();
+    assert!(!header_file.is_directory);
+
+    // 3. Full default tree (maxDepth = 8) reaches header.tsx automatically
+    let req_full = RpcRequestEnvelope {
+        id: RpcId::Number(3),
+        method: "workspace.tree".to_string(),
+        params: Some(serde_json::json!({
+            "workspaceId": ws.id
+        })),
+    };
+    let res_full = dispatcher.dispatch(req_full).await;
+    assert!(res_full.error.is_none());
+    let full_result: WorkspaceTreeResult = serde_json::from_value(res_full.result.unwrap()).unwrap();
+    assert!(full_result.root.children.is_some());
+
+    // Cleanup
+    let _ = std::fs::remove_dir_all(&temp_root);
 }

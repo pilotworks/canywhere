@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { useChatStore, useWorkspaceStore } from "../src/store/index.js";
 
 describe("Lazy Chat Creation & Draft State", () => {
-  beforeEach(() => {
+  const resetStores = () => {
     useChatStore.setState({
       chats: [],
       activeChatId: null,
@@ -24,6 +24,14 @@ describe("Lazy Chat Creation & Draft State", () => {
       ],
       activeWorkspaceId: null,
     });
+  };
+
+  beforeEach(() => {
+    resetStores();
+  });
+
+  afterEach(() => {
+    resetStores();
   });
 
   it("opens draft chat without modifying existing chats or creating a chat ID", () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
 import { ModelEffortCombo, getSliderStepPosition } from "../src/components/chat/model-effort-combo";
@@ -128,8 +128,28 @@ describe("ModelEffortCombo", () => {
   });
 
   describe("useModelStore per-provider caching", () => {
+    beforeEach(async () => {
+      const { useModelStore, useChatStore, useProviderStore } = await import("../src/store/index");
+      useChatStore.setState({ chats: [], activeChatId: null, draftChat: null, messages: {}, activeTurnId: {} });
+      useProviderStore.setState({ providers: [], selectedProviderId: "" });
+      useModelStore.setState({ models: [], selectedModel: "", selectedEffort: "", modelsByProvider: {} });
+      try {
+        localStorage.clear();
+      } catch {}
+    });
+
+    afterEach(async () => {
+      const { useModelStore, useChatStore, useProviderStore } = await import("../src/store/index");
+      useChatStore.setState({ chats: [], activeChatId: null, draftChat: null, messages: {}, activeTurnId: {} });
+      useProviderStore.setState({ providers: [], selectedProviderId: "" });
+      useModelStore.setState({ models: [], selectedModel: "", selectedEffort: "", modelsByProvider: {} });
+      try {
+        localStorage.clear();
+      } catch {}
+    });
+
     it("caches models per provider and switches instantly", async () => {
-      const { useModelStore } = await import("../src/store/index");
+      const { useModelStore, useProviderStore } = await import("../src/store/index");
 
       const codexModels: ModelInfo[] = [
         {
@@ -156,20 +176,24 @@ describe("ModelEffortCombo", () => {
       ];
 
       // Set models for codex
+      useProviderStore.getState().setSelectedProviderId("codex");
       useModelStore.getState().setModels(codexModels, "gpt-5-codex", "high", "codex");
       expect(useModelStore.getState().selectedModel).toBe("gpt-5-codex");
 
       // Set models for agy
+      useProviderStore.getState().setSelectedProviderId("agy");
       useModelStore.getState().setModels(agyModels, "gemini-3.8-flash", "low", "agy");
       expect(useModelStore.getState().selectedModel).toBe("gemini-3.8-flash");
 
       // Switch back to codex instantly using cache
+      useProviderStore.getState().setSelectedProviderId("codex");
       const switchedToCodex = useModelStore.getState().switchProviderCache("codex");
       expect(switchedToCodex).toBe(true);
       expect(useModelStore.getState().selectedModel).toBe("gpt-5-codex");
       expect(useModelStore.getState().models[0].id).toBe("gpt-5-codex");
 
       // Switch back to agy instantly using cache
+      useProviderStore.getState().setSelectedProviderId("agy");
       const switchedToAgy = useModelStore.getState().switchProviderCache("agy");
       expect(switchedToAgy).toBe(true);
       expect(useModelStore.getState().selectedModel).toBe("gemini-3.8-flash");

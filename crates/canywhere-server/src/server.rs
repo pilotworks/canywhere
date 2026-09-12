@@ -40,6 +40,21 @@ pub async fn run_server(
     ));
     let host_public_key = pairing.host_public_key().to_string();
 
+    // Initialize Workspace File Watcher
+    let (watcher_service, raw_notify_tx) =
+        crate::watcher::WorkspaceWatcherService::new(event_tx.clone());
+    if let Err(e) = watcher_service.init_watcher(raw_notify_tx).await {
+        warn!("⚠️ [HostServer] Could not initialize file watcher: {}", e);
+    } else if let Ok(workspaces) = repo.list_workspaces() {
+        watcher_service.sync_workspaces(&workspaces).await;
+        info!(
+            "👀 [HostServer] Initialized file watcher for {} workspaces",
+            workspaces.len()
+        );
+    }
+    let watcher_service = Arc::new(watcher_service);
+    let watcher_persist = Arc::clone(&watcher_service);
+
     // Spawn background task to persist agent messages and chat status on turn completion, and auto-dispatch queued prompts
     let repo_persist = Arc::clone(&repo);
     let registry_persist = Arc::clone(&registry);
@@ -265,6 +280,14 @@ pub async fn run_server(
                             "[HostServer] Settings updated: auto_approve_read_only={}",
                             settings.auto_approve_read_only
                         );
+                    }
+                }
+                AgentEvent::WorkspaceUpdated { workspace } => {
+                    watcher_persist.watch_workspace(&workspace).await;
+                }
+                AgentEvent::WorkspaceDeleted { .. } => {
+                    if let Ok(workspaces) = repo_persist.list_workspaces() {
+                        watcher_persist.sync_workspaces(&workspaces).await;
                     }
                 }
                 _ => {}
@@ -572,6 +595,23 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                         "method": "workspace.deleted",
                         "params": {
                             "workspaceId": workspace_id
+                        }
+                    })
+                }
+                AgentEvent::WorkspaceFilesChanged {
+                    workspace_id,
+                    paths,
+                } => {
+                    info!(
+                        "📂 [HostServer] Workspace files changed for {}: {} files",
+                        workspace_id,
+                        paths.len()
+                    );
+                    serde_json::json!({
+                        "method": "workspace.filesChanged",
+                        "params": {
+                            "workspaceId": workspace_id,
+                            "paths": paths
                         }
                     })
                 }

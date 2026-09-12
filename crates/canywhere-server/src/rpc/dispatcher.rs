@@ -62,6 +62,9 @@ impl RpcDispatcher {
             "workspace.create" => {
                 let input: WorkspaceCreateInput = serde_json::from_value(p)?;
                 let workspace = self.repo.create_workspace(input)?;
+                let _ = self.registry.event_tx().send(AgentEvent::WorkspaceUpdated {
+                    workspace: workspace.clone(),
+                });
                 Ok(serde_json::json!({ "workspace": workspace }))
             }
 
@@ -104,12 +107,17 @@ impl RpcDispatcher {
 
                 let base_path = std::path::Path::new(&ws.root_path);
                 let target_dir = if let Some(sub) = &params.sub_path {
-                    base_path.join(sub)
+                    let trimmed = sub.trim_start_matches('/');
+                    if trimmed.is_empty() {
+                        base_path.to_path_buf()
+                    } else {
+                        base_path.join(trimmed)
+                    }
                 } else {
                     base_path.to_path_buf()
                 };
 
-                let max_depth = params.max_depth.unwrap_or(3);
+                let max_depth = params.max_depth.unwrap_or(8);
                 let root_node = build_file_tree(&target_dir, base_path, 0, max_depth)?;
                 Ok(serde_json::to_value(WorkspaceTreeResult {
                     root: root_node,
@@ -1224,6 +1232,19 @@ end try"#;
     }
 }
 
+fn is_ignored_entry(name: &str) -> bool {
+    name == ".git"
+        || name == ".DS_Store"
+        || name == "node_modules"
+        || name == "target"
+        || name == "dist"
+        || name == ".next"
+        || name == "build"
+        || name == "gen"
+        || name == ".turbo"
+        || name == ".cache"
+}
+
 fn build_file_tree(
     current_path: &std::path::Path,
     base_root: &std::path::Path,
@@ -1252,18 +1273,14 @@ fn build_file_tree(
             if let Ok(entries) = std::fs::read_dir(current_path) {
                 let mut sorted_entries: Vec<_> = entries.flatten().collect();
                 sorted_entries.sort_by_key(|e| {
-                    let is_file = e.file_type().map(|ft| ft.is_file()).unwrap_or(false);
-                    (is_file, e.file_name())
+                    let is_dir = e.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+                    // Folders first, then files
+                    (!is_dir, e.file_name())
                 });
 
                 for entry in sorted_entries {
                     let entry_name = entry.file_name().to_string_lossy().to_string();
-                    // Skip hidden git/node_modules/target to prevent huge trees
-                    if entry_name.starts_with('.')
-                        || entry_name == "node_modules"
-                        || entry_name == "target"
-                        || entry_name == "dist"
-                    {
+                    if is_ignored_entry(&entry_name) {
                         continue;
                     }
 
@@ -1276,7 +1293,24 @@ fn build_file_tree(
             }
             children = Some(node_children);
         } else {
-            children = Some(Vec::new());
+            // Check if this directory actually has any non-ignored items
+            let has_items = if let Ok(entries) = std::fs::read_dir(current_path) {
+                entries.flatten().any(|e| {
+                    let name = e.file_name().to_string_lossy().to_string();
+                    !is_ignored_entry(&name)
+                })
+            } else {
+                false
+            };
+
+            if has_items {
+                // Folder has items, but children are NOT loaded yet due to depth limit.
+                // Return None so the client knows it is NOT empty and can lazy-load!
+                children = None;
+            } else {
+                // Truly empty directory
+                children = Some(Vec::new());
+            }
         }
     } else if let Ok(meta) = std::fs::metadata(current_path) {
         size = Some(meta.len() as i64);

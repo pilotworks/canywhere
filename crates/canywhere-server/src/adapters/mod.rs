@@ -85,6 +85,10 @@ pub enum AgentEvent {
     WorkspaceDeleted {
         workspace_id: String,
     },
+    WorkspaceFilesChanged {
+        workspace_id: String,
+        paths: Vec<String>,
+    },
     QueueUpdated {
         chat_id: String,
         items: Vec<QueuedMessage>,

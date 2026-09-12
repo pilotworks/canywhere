@@ -18,6 +18,7 @@ import {
   useModelStore,
   useProviderStore,
   useSettingsStore,
+  useUiStore,
 } from "../store/index.js";
 import { notifyApprovalRequired, notifyTurnCompleted } from "../lib/notifications.js";
 
@@ -711,6 +712,53 @@ export class CanywhereClient {
           const activeExists = chats.some((c) => c.id === useChatStore.getState().activeChatId);
           if (!activeExists) {
             useChatStore.getState().setActiveChatId(chats[0]?.id || null);
+          }
+        }
+        break;
+      }
+
+      case "workspace.filesChanged": {
+        const wsId = params.workspaceId;
+        const paths: string[] = Array.isArray(params.paths) ? params.paths : [];
+        if (wsId) {
+          // Trigger file tree reload
+          useWorkspaceStore.getState().invalidateFileTree(wsId);
+
+          // Check if any open filePreview tab in right sidebar viewing this workspace needs reloading
+          const uiStore = useUiStore.getState();
+          const openPreviewTabs = uiStore.rightSidebarTabs.filter(
+            (t) => t.type === "filePreview" && t.data?.workspaceId === wsId
+          );
+
+          for (const tab of openPreviewTabs) {
+            const filePath = tab.data?.path;
+            if (
+              filePath &&
+              (paths.length === 0 ||
+                paths.some(
+                  (p) =>
+                    p === filePath ||
+                    p.endsWith("/" + filePath) ||
+                    filePath.endsWith("/" + p)
+                ))
+            ) {
+              this.readWorkspaceFile(wsId, filePath)
+                .then((fileData) => {
+                  uiStore.openOrFocusTab({
+                    id: tab.id,
+                    type: "filePreview",
+                    title: tab.title,
+                    data: {
+                      workspaceId: wsId,
+                      path: fileData.path,
+                      content: fileData.content,
+                    },
+                  });
+                })
+                .catch((err) => {
+                  console.warn("[DesktopClient] Failed to reload changed file preview:", err);
+                });
+            }
           }
         }
         break;
